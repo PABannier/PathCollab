@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "openseadragon": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/openseadragon": "^5.0.1"
+  }
+}

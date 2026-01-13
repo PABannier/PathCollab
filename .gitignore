@@ -1,0 +1,8 @@
+# bv (beads viewer) local config and caches
+.bv/
+
+# Web
+node_modules/
+
+# Rust (server)
+target/

@@ -1,0 +1,24 @@
+[package]
+name = "pathcollab-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PathCollab collaborative slide viewer server"
+
+[[bin]]
+name = "pathcollab"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+futures-util = "0.3"

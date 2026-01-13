@@ -1,0 +1,49 @@
+services:
+  # Frontend web application
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # PathCollab backend server
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=pathcollab=info,tower_http=info
+      - WSISTREAMER_URL=http://wsistreamer:3000
+    depends_on:
+      - wsistreamer
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # WSI tile server
+  wsistreamer:
+    image: ghcr.io/wsistreamer/wsistreamer:latest
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./data/slides:/slides:ro
+    environment:
+      - SLIDES_PATH=/slides
+    restart: unless-stopped
+
+volumes:
+  slides:

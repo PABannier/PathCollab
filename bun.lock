@@ -1,0 +1,19 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "dependencies": {
+        "openseadragon": "^5.0.1",
+      },
+      "devDependencies": {
+        "@types/openseadragon": "^5.0.1",
+      },
+    },
+  },
+  "packages": {
+    "@types/openseadragon": ["@types/openseadragon@5.0.1", "", {}, "sha512-nD34vePCKivWoYY6FeIIz9Xec7KZJgo5rsvZUlT6FqDrlbE6yTPJgTtKDKNWXLP7feqOJZPsvsS9x1XOTF1kEg=="],
+
+    "openseadragon": ["openseadragon@5.0.1", "", {}, "sha512-a/hjouW9i3UfWxRADVYN2MyRhXMGnE7x9VVL7/4jXCcDLFyO4UM5o4RStYtqa5BfaHw/wMNAaD2WbxQF8f1pJg=="],
+  }
+}
