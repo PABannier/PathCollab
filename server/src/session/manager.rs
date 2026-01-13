@@ -358,8 +358,14 @@ impl SessionManager {
     }
 
     /// Get count of active sessions
-    pub async fn session_count(&self) -> usize {
+    pub async fn session_count_async(&self) -> usize {
         let sessions = self.sessions.read().await;
+        sessions.len()
+    }
+
+    /// Get count of active sessions (blocking version for sync contexts)
+    pub fn session_count(&self) -> usize {
+        let sessions = self.sessions.blocking_read();
         sessions.len()
     }
 }

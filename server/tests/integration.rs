@@ -385,7 +385,7 @@ mod session_management {
     async fn test_session_count() {
         let manager = SessionManager::new();
 
-        assert_eq!(manager.session_count().await, 0);
+        assert_eq!(manager.session_count_async().await, 0);
 
         // Create sessions
         for _ in 0..3 {
@@ -395,7 +395,7 @@ mod session_management {
                 .unwrap();
         }
 
-        assert_eq!(manager.session_count().await, 3);
+        assert_eq!(manager.session_count_async().await, 3);
     }
 }
 

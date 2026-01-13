@@ -77,6 +77,14 @@ impl AppState {
             let _ = sender.send(msg);
         }
     }
+
+    /// Get server statistics for monitoring
+    pub fn get_stats(&self) -> (usize, usize) {
+        // Use blocking reads for sync access (for metrics endpoint)
+        let sessions = self.session_manager.session_count();
+        let connections = self.connections.blocking_read().len();
+        (sessions, connections)
+    }
 }
 
 impl Default for AppState {
