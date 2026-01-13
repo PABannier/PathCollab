@@ -78,11 +78,10 @@ impl AppState {
         }
     }
 
-    /// Get server statistics for monitoring
-    pub fn get_stats(&self) -> (usize, usize) {
-        // Use blocking reads for sync access (for metrics endpoint)
-        let sessions = self.session_manager.session_count();
-        let connections = self.connections.blocking_read().len();
+    /// Get server statistics for monitoring (async version)
+    pub async fn get_stats(&self) -> (usize, usize) {
+        let sessions = self.session_manager.session_count_async().await;
+        let connections = self.connections.read().await.len();
         (sessions, connections)
     }
 }

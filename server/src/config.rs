@@ -157,7 +157,10 @@ impl Config {
             }
         }
         if let Ok(url) = env::var("PUBLIC_BASE_URL") {
-            config.public_base_url = Some(url);
+            // Only set if non-empty
+            if !url.is_empty() {
+                config.public_base_url = Some(url);
+            }
         }
         if let Ok(val) = env::var("BEHIND_PROXY") {
             config.behind_proxy = val.to_lowercase() == "true" || val == "1";
@@ -237,10 +240,16 @@ impl Config {
             config.demo.enabled = val.to_lowercase() == "true" || val == "1";
         }
         if let Ok(id) = env::var("DEMO_SLIDE_ID") {
-            config.demo.slide_id = Some(id);
+            // Only set if non-empty
+            if !id.is_empty() {
+                config.demo.slide_id = Some(id);
+            }
         }
         if let Ok(path) = env::var("DEMO_OVERLAY_PATH") {
-            config.demo.overlay_path = Some(path);
+            // Only set if non-empty
+            if !path.is_empty() {
+                config.demo.overlay_path = Some(path);
+            }
         }
 
         config

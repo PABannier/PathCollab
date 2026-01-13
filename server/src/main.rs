@@ -44,7 +44,7 @@ async fn metrics(State(state): State<AppState>) -> Json<MetricsResponse> {
         .map(|t| t.elapsed().as_secs())
         .unwrap_or(0);
 
-    let (sessions, connections) = state.get_stats();
+    let (sessions, connections) = state.get_stats().await;
 
     Json(MetricsResponse {
         uptime_seconds: uptime,

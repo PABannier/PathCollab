@@ -509,7 +509,7 @@ mod tests {
     #[tokio::test]
     async fn test_context_creation() {
         let ctx = TestContext::new();
-        assert_eq!(ctx.session_manager().session_count().await, 0);
+        assert_eq!(ctx.session_manager().session_count_async().await, 0);
     }
 
     #[tokio::test]
@@ -520,7 +520,7 @@ mod tests {
         assert!(!session.id.is_empty());
         assert!(!session.join_secret.is_empty());
         assert!(!session.presenter_key.is_empty());
-        assert_eq!(ctx.session_manager().session_count().await, 1);
+        assert_eq!(ctx.session_manager().session_count_async().await, 1);
     }
 
     #[tokio::test]
