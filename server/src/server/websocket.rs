@@ -1,4 +1,5 @@
-use crate::protocol::{ClientMessage, ServerMessage};
+use crate::protocol::{ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport};
+use crate::session::manager::{SessionError, SessionManager};
 use axum::{
     extract::{
         State,
@@ -11,7 +12,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -29,16 +30,48 @@ pub struct Connection {
 /// Global connection registry
 pub type ConnectionRegistry = Arc<RwLock<HashMap<Uuid, Connection>>>;
 
+/// Session broadcast channels: session_id -> broadcast sender
+pub type SessionBroadcasters = Arc<RwLock<HashMap<String, broadcast::Sender<ServerMessage>>>>;
+
 /// Shared application state
 #[derive(Clone)]
 pub struct AppState {
     pub connections: ConnectionRegistry,
+    pub session_manager: Arc<SessionManager>,
+    pub session_broadcasters: SessionBroadcasters,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
+            session_manager: Arc::new(SessionManager::new()),
+            session_broadcasters: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Get or create a broadcast channel for a session
+    pub async fn get_session_broadcaster(
+        &self,
+        session_id: &str,
+    ) -> broadcast::Sender<ServerMessage> {
+        let mut broadcasters = self.session_broadcasters.write().await;
+        if let Some(sender) = broadcasters.get(session_id) {
+            sender.clone()
+        } else {
+            // Create new broadcast channel with capacity for 64 messages
+            let (tx, _) = broadcast::channel(64);
+            broadcasters.insert(session_id.to_string(), tx.clone());
+            tx
+        }
+    }
+
+    /// Broadcast a message to all participants in a session
+    pub async fn broadcast_to_session(&self, session_id: &str, msg: ServerMessage) {
+        let broadcasters = self.session_broadcasters.read().await;
+        if let Some(sender) = broadcasters.get(session_id) {
+            // Ignore send errors (no receivers)
+            let _ = sender.send(msg);
         }
     }
 }
@@ -149,6 +182,65 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     });
 
+    // Spawn task to forward broadcast messages to client
+    let broadcast_tx = tx.clone();
+    let broadcast_state = state.clone();
+    let broadcast_connection_id = connection_id;
+    let broadcast_task = tokio::spawn(async move {
+        // Poll for session_id and subscribe when available
+        let mut current_session_id: Option<String> = None;
+        let mut broadcast_rx: Option<broadcast::Receiver<ServerMessage>> = None;
+
+        loop {
+            // Check if session_id changed
+            let session_id = {
+                let connections = broadcast_state.connections.read().await;
+                connections
+                    .get(&broadcast_connection_id)
+                    .and_then(|c| c.session_id.clone())
+            };
+
+            // If session changed, subscribe to new broadcast
+            if session_id != current_session_id {
+                if let Some(ref sid) = session_id {
+                    let broadcaster = broadcast_state.get_session_broadcaster(sid).await;
+                    broadcast_rx = Some(broadcaster.subscribe());
+                    debug!(
+                        "Connection {} subscribed to session {} broadcasts",
+                        broadcast_connection_id, sid
+                    );
+                } else {
+                    broadcast_rx = None;
+                }
+                current_session_id = session_id;
+            }
+
+            // Forward broadcast messages
+            if let Some(ref mut rx) = broadcast_rx {
+                match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
+                    Ok(Ok(msg)) => {
+                        if broadcast_tx.send(msg).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(Err(broadcast::error::RecvError::Lagged(n))) => {
+                        warn!("Broadcast lagged {} messages for {}", n, broadcast_connection_id);
+                    }
+                    Ok(Err(broadcast::error::RecvError::Closed)) => {
+                        broadcast_rx = None;
+                        current_session_id = None;
+                    }
+                    Err(_) => {
+                        // Timeout - continue polling
+                    }
+                }
+            } else {
+                // No session yet, wait before checking again
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+    });
+
     // Handle incoming messages
     use futures_util::StreamExt;
     while let Some(result) = ws_receiver.next().await {
@@ -208,9 +300,48 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     }
 
-    // Cleanup
+    // Cleanup: handle participant removal from session
+    let (session_id, participant_id) = {
+        let connections = state.connections.read().await;
+        let conn = connections.get(&connection_id);
+        (
+            conn.and_then(|c| c.session_id.clone()),
+            conn.and_then(|c| c.participant_id),
+        )
+    };
+
+    if let (Some(session_id), Some(participant_id)) = (session_id, participant_id) {
+        match state
+            .session_manager
+            .remove_participant(&session_id, participant_id)
+            .await
+        {
+            Ok(was_presenter) => {
+                // Broadcast participant left
+                state
+                    .broadcast_to_session(
+                        &session_id,
+                        ServerMessage::ParticipantLeft { participant_id },
+                    )
+                    .await;
+
+                if was_presenter {
+                    info!(
+                        "Presenter {} disconnected from session {}, grace period started",
+                        participant_id, session_id
+                    );
+                }
+            }
+            Err(e) => {
+                debug!("Failed to remove participant from session: {}", e);
+            }
+        }
+    }
+
+    // Cleanup tasks
     ping_task.abort();
     send_task.abort();
+    broadcast_task.abort();
 
     // Remove from registry
     {
@@ -240,47 +371,224 @@ async fn handle_client_message(
                 .await;
         }
         ClientMessage::CreateSession { slide_id, seq } => {
-            // TODO: Implement session creation
             info!(
                 "Create session request from {}: slide={}",
                 connection_id, slide_id
             );
-            let _ = tx
-                .send(ServerMessage::Ack {
-                    ack_seq: seq,
-                    status: crate::protocol::AckStatus::Ok,
-                    reason: Some("Session creation not yet implemented".to_string()),
-                })
-                .await;
+
+            // Create a demo slide info (in production, fetch from WSIStreamer)
+            let slide = SlideInfo {
+                id: slide_id.clone(),
+                name: format!("Slide {}", slide_id),
+                width: 100000,
+                height: 100000,
+                tile_size: 256,
+                num_levels: 10,
+                tile_url_template: format!("/api/slide/{}/tile/{{level}}/{{x}}/{{y}}", slide_id),
+            };
+
+            match state.session_manager.create_session(slide, connection_id).await {
+                Ok((session, join_secret, presenter_key)) => {
+                    let session_id = session.id.clone();
+
+                    // Update connection with session info
+                    {
+                        let mut connections = state.connections.write().await;
+                        if let Some(conn) = connections.get_mut(&connection_id) {
+                            conn.session_id = Some(session_id.clone());
+                            conn.participant_id = Some(session.presenter_id);
+                            conn.is_presenter = true;
+                        }
+                    }
+
+                    // Get session snapshot
+                    let snapshot = state
+                        .session_manager
+                        .get_session(&session_id)
+                        .await
+                        .expect("Session just created");
+
+                    let _ = tx
+                        .send(ServerMessage::SessionCreated {
+                            session: snapshot,
+                            join_secret,
+                            presenter_key,
+                        })
+                        .await;
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Ok,
+                            reason: None,
+                        })
+                        .await;
+
+                    info!("Session {} created by {}", session_id, connection_id);
+                }
+                Err(e) => {
+                    error!("Failed to create session: {}", e);
+                    let _ = tx
+                        .send(ServerMessage::SessionError {
+                            code: crate::protocol::ErrorCode::InvalidSlide,
+                            message: format!("Failed to create session: {}", e),
+                        })
+                        .await;
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Rejected,
+                            reason: Some(e.to_string()),
+                        })
+                        .await;
+                }
+            }
         }
         ClientMessage::JoinSession {
             session_id,
-            join_secret: _,
+            join_secret,
             last_seen_rev: _,
             seq,
         } => {
-            // TODO: Implement session joining
             info!(
                 "Join session request from {}: session={}",
                 connection_id, session_id
             );
-            let _ = tx
-                .send(ServerMessage::SessionError {
-                    code: crate::protocol::ErrorCode::SessionNotFound,
-                    message: "Session not found".to_string(),
-                })
-                .await;
-            let _ = tx
-                .send(ServerMessage::Ack {
-                    ack_seq: seq,
-                    status: crate::protocol::AckStatus::Rejected,
-                    reason: Some("Session not found".to_string()),
-                })
-                .await;
+
+            match state
+                .session_manager
+                .join_session(&session_id, &join_secret)
+                .await
+            {
+                Ok((snapshot, participant)) => {
+                    let participant_id = participant.id;
+
+                    // Update connection with session info
+                    {
+                        let mut connections = state.connections.write().await;
+                        if let Some(conn) = connections.get_mut(&connection_id) {
+                            conn.session_id = Some(session_id.clone());
+                            conn.participant_id = Some(participant_id);
+                            conn.is_presenter = false;
+                        }
+                    }
+
+                    // Send session joined to this client
+                    let _ = tx
+                        .send(ServerMessage::SessionJoined {
+                            session: snapshot.clone(),
+                            you: participant.clone(),
+                        })
+                        .await;
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Ok,
+                            reason: None,
+                        })
+                        .await;
+
+                    // Broadcast participant_joined to session
+                    state
+                        .broadcast_to_session(
+                            &session_id,
+                            ServerMessage::ParticipantJoined {
+                                participant: participant.clone(),
+                            },
+                        )
+                        .await;
+
+                    info!(
+                        "Participant {} ({}) joined session {}",
+                        participant.name, participant_id, session_id
+                    );
+                }
+                Err(e) => {
+                    let (code, message) = match &e {
+                        SessionError::NotFound(_) => {
+                            (crate::protocol::ErrorCode::SessionNotFound, e.to_string())
+                        }
+                        SessionError::InvalidJoinSecret => {
+                            (crate::protocol::ErrorCode::SessionNotFound, e.to_string())
+                        }
+                        SessionError::SessionFull(_) => {
+                            (crate::protocol::ErrorCode::SessionFull, e.to_string())
+                        }
+                        SessionError::SessionExpired => {
+                            (crate::protocol::ErrorCode::SessionExpired, e.to_string())
+                        }
+                        _ => (crate::protocol::ErrorCode::SessionNotFound, e.to_string()),
+                    };
+                    let _ = tx.send(ServerMessage::SessionError { code, message }).await;
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Rejected,
+                            reason: Some(e.to_string()),
+                        })
+                        .await;
+                }
+            }
         }
         ClientMessage::CursorUpdate { x, y, seq: _ } => {
-            // TODO: Broadcast to session participants
-            debug!("Cursor update from {}: ({}, {})", connection_id, x, y);
+            // Get session and participant info
+            let (session_id, participant_id) = {
+                let connections = state.connections.read().await;
+                let conn = connections.get(&connection_id);
+                (
+                    conn.and_then(|c| c.session_id.clone()),
+                    conn.and_then(|c| c.participant_id),
+                )
+            };
+
+            if let (Some(session_id), Some(participant_id)) = (session_id, participant_id) {
+                // Update cursor in session
+                if let Err(e) = state
+                    .session_manager
+                    .update_cursor(&session_id, participant_id, x, y)
+                    .await
+                {
+                    debug!("Failed to update cursor: {}", e);
+                    return;
+                }
+
+                // Get participant info for broadcast
+                if let Ok(snapshot) = state.session_manager.get_session(&session_id).await {
+                    let participant = snapshot
+                        .followers
+                        .iter()
+                        .find(|p| p.id == participant_id)
+                        .or_else(|| {
+                            if snapshot.presenter.id == participant_id {
+                                Some(&snapshot.presenter)
+                            } else {
+                                None
+                            }
+                        });
+
+                    if let Some(p) = participant {
+                        let cursor = CursorWithParticipant {
+                            participant_id,
+                            name: p.name.clone(),
+                            color: p.color.clone(),
+                            is_presenter: snapshot.presenter.id == participant_id,
+                            x,
+                            y,
+                        };
+
+                        // Broadcast cursor update to session
+                        state
+                            .broadcast_to_session(
+                                &session_id,
+                                ServerMessage::PresenceDelta {
+                                    changed: vec![cursor],
+                                    removed: vec![],
+                                    server_ts: crate::session::state::now_millis(),
+                                },
+                            )
+                            .await;
+                    }
+                }
+            }
         }
         ClientMessage::ViewportUpdate {
             center_x,
@@ -288,32 +596,112 @@ async fn handle_client_message(
             zoom,
             seq: _,
         } => {
-            // TODO: Broadcast to session participants
-            debug!(
-                "Viewport update from {}: center=({}, {}), zoom={}",
-                connection_id, center_x, center_y, zoom
-            );
+            // Get session and presenter status
+            let (session_id, is_presenter) = {
+                let connections = state.connections.read().await;
+                let conn = connections.get(&connection_id);
+                (
+                    conn.and_then(|c| c.session_id.clone()),
+                    conn.is_some_and(|c| c.is_presenter),
+                )
+            };
+
+            if let Some(session_id) = session_id {
+                let viewport = Viewport {
+                    center_x,
+                    center_y,
+                    zoom,
+                    timestamp: crate::session::state::now_millis(),
+                };
+
+                // Only broadcast presenter viewport to followers
+                if is_presenter {
+                    if let Err(e) = state
+                        .session_manager
+                        .update_presenter_viewport(&session_id, viewport.clone())
+                        .await
+                    {
+                        debug!("Failed to update presenter viewport: {}", e);
+                        return;
+                    }
+
+                    state
+                        .broadcast_to_session(
+                            &session_id,
+                            ServerMessage::PresenterViewport { viewport },
+                        )
+                        .await;
+                }
+            }
         }
         ClientMessage::PresenterAuth {
-            presenter_key: _,
+            presenter_key,
             seq,
         } => {
-            // TODO: Implement presenter authentication
-            let _ = tx
-                .send(ServerMessage::Ack {
-                    ack_seq: seq,
-                    status: crate::protocol::AckStatus::Rejected,
-                    reason: Some("Not in a session".to_string()),
-                })
-                .await;
+            // Get session ID
+            let session_id = {
+                let connections = state.connections.read().await;
+                connections
+                    .get(&connection_id)
+                    .and_then(|c| c.session_id.clone())
+            };
+
+            match session_id {
+                Some(session_id) => {
+                    match state
+                        .session_manager
+                        .authenticate_presenter(&session_id, &presenter_key)
+                        .await
+                    {
+                        Ok(()) => {
+                            // Mark connection as presenter
+                            {
+                                let mut connections = state.connections.write().await;
+                                if let Some(conn) = connections.get_mut(&connection_id) {
+                                    conn.is_presenter = true;
+                                }
+                            }
+                            let _ = tx
+                                .send(ServerMessage::Ack {
+                                    ack_seq: seq,
+                                    status: crate::protocol::AckStatus::Ok,
+                                    reason: None,
+                                })
+                                .await;
+                            info!("Connection {} authenticated as presenter", connection_id);
+                        }
+                        Err(e) => {
+                            let _ = tx
+                                .send(ServerMessage::Ack {
+                                    ack_seq: seq,
+                                    status: crate::protocol::AckStatus::Rejected,
+                                    reason: Some(e.to_string()),
+                                })
+                                .await;
+                        }
+                    }
+                }
+                None => {
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Rejected,
+                            reason: Some("Not in a session".to_string()),
+                        })
+                        .await;
+                }
+            }
         }
-        ClientMessage::LayerUpdate { visibility: _, seq } => {
-            // TODO: Broadcast layer state to session
-            let connections = state.connections.read().await;
-            let is_presenter = connections
-                .get(&connection_id)
-                .is_some_and(|conn| conn.is_presenter);
-            drop(connections);
+        ClientMessage::LayerUpdate { visibility, seq } => {
+            let (session_id, is_presenter) = {
+                let connections = state.connections.read().await;
+                let conn = connections.get(&connection_id);
+                (
+                    conn.and_then(|c| c.session_id.clone()),
+                    conn.is_some_and(|c| c.is_presenter),
+                )
+            };
+
             if !is_presenter {
                 let _ = tx
                     .send(ServerMessage::Ack {
@@ -324,15 +712,56 @@ async fn handle_client_message(
                     .await;
                 return;
             }
-            let _ = tx
-                .send(ServerMessage::Ack {
-                    ack_seq: seq,
-                    status: crate::protocol::AckStatus::Ok,
-                    reason: None,
-                })
-                .await;
+
+            if let Some(session_id) = session_id {
+                if let Err(e) = state
+                    .session_manager
+                    .update_layer_visibility(&session_id, visibility.clone())
+                    .await
+                {
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Rejected,
+                            reason: Some(e.to_string()),
+                        })
+                        .await;
+                    return;
+                }
+
+                // Broadcast layer state to all participants
+                state
+                    .broadcast_to_session(&session_id, ServerMessage::LayerState { visibility })
+                    .await;
+
+                let _ = tx
+                    .send(ServerMessage::Ack {
+                        ack_seq: seq,
+                        status: crate::protocol::AckStatus::Ok,
+                        reason: None,
+                    })
+                    .await;
+            }
         }
         ClientMessage::SnapToPresenter { seq } => {
+            // Get presenter viewport and send it back
+            let session_id = {
+                let connections = state.connections.read().await;
+                connections
+                    .get(&connection_id)
+                    .and_then(|c| c.session_id.clone())
+            };
+
+            if let Some(session_id) = session_id {
+                if let Ok(snapshot) = state.session_manager.get_session(&session_id).await {
+                    let _ = tx
+                        .send(ServerMessage::PresenterViewport {
+                            viewport: snapshot.presenter_viewport,
+                        })
+                        .await;
+                }
+            }
+
             let _ = tx
                 .send(ServerMessage::Ack {
                     ack_seq: seq,

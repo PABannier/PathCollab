@@ -1,3 +1,4 @@
+mod overlay;
 mod protocol;
 mod server;
 mod session;

@@ -41,8 +41,12 @@ pub enum ClientMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
-    /// Session was created successfully
-    SessionCreated { session: SessionSnapshot },
+    /// Session was created successfully (includes secrets for presenter)
+    SessionCreated {
+        session: SessionSnapshot,
+        join_secret: String,
+        presenter_key: String,
+    },
     /// Successfully joined a session
     SessionJoined {
         session: SessionSnapshot,

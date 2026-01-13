@@ -62,6 +62,11 @@ interface UseSessionOptions {
   onError?: (message: string) => void
 }
 
+interface SessionSecrets {
+  joinSecret: string
+  presenterKey: string
+}
+
 interface UseSessionReturn {
   session: SessionState | null
   currentUser: Participant | null
@@ -69,6 +74,7 @@ interface UseSessionReturn {
   connectionStatus: ConnectionStatus
   cursors: CursorWithParticipant[]
   presenterViewport: Viewport | null
+  secrets: SessionSecrets | null
 
   // Actions
   createSession: (slideId: string) => void
@@ -91,6 +97,7 @@ export function useSession({
   const [isPresenter, setIsPresenter] = useState(false)
   const [cursors, setCursors] = useState<CursorWithParticipant[]>([])
   const [presenterViewport, setPresenterViewport] = useState<Viewport | null>(null)
+  const [secrets, setSecrets] = useState<SessionSecrets | null>(null)
 
   // Build WebSocket URL
   const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
@@ -98,7 +105,21 @@ export function useSession({
   const handleMessage = useCallback(
     (message: WebSocketMessage) => {
       switch (message.type) {
-        case 'session_created':
+        case 'session_created': {
+          const sessionData = message.session as SessionState
+          setSession(sessionData)
+          // When session is created, we're the presenter
+          setCurrentUser(sessionData.presenter)
+          setIsPresenter(true)
+          // Save secrets for sharing
+          if (message.join_secret && message.presenter_key) {
+            setSecrets({
+              joinSecret: message.join_secret as string,
+              presenterKey: message.presenter_key as string,
+            })
+          }
+          break
+        }
         case 'session_joined': {
           const sessionData = message.session as SessionState
           setSession(sessionData)
@@ -295,6 +316,7 @@ export function useSession({
     connectionStatus: status,
     cursors,
     presenterViewport,
+    secrets,
     createSession,
     joinSession,
     authenticatePresenter,
