@@ -3,15 +3,17 @@ FROM rust:1.85-slim-bookworm AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+# Install build dependencies including protobuf compiler
+RUN apt-get update && apt-get install -y pkg-config libssl-dev protobuf-compiler && rm -rf /var/lib/apt/lists/*
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock* ./
 COPY server/Cargo.toml ./server/
+COPY server/build.rs ./server/
+COPY server/proto ./server/proto
 
-# Create dummy main.rs to cache dependencies
-RUN mkdir -p server/src && echo "fn main() {}" > server/src/main.rs
+# Create dummy main.rs and lib.rs to cache dependencies
+RUN mkdir -p server/src && echo "fn main() {}" > server/src/main.rs && echo "" > server/src/lib.rs
 RUN cargo build --release --package pathcollab-server
 RUN rm -rf server/src
 
@@ -19,7 +21,7 @@ RUN rm -rf server/src
 COPY server/src ./server/src
 
 # Build the actual application
-RUN touch server/src/main.rs && cargo build --release --package pathcollab-server
+RUN touch server/src/main.rs server/src/lib.rs && cargo build --release --package pathcollab-server
 
 # Runtime stage
 FROM debian:bookworm-slim
