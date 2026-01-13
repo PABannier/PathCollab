@@ -115,7 +115,7 @@ jobs:
         working-directory: web
 
       - name: Install Playwright browsers
-        run: bun run test:e2e:install
+        run: bunx playwright install chromium
         working-directory: web
 
       - name: Start server
@@ -131,7 +131,7 @@ jobs:
         working-directory: web
 
       - name: Run E2E tests
-        run: bun run test:e2e
+        run: bunx playwright test --project=chromium
         working-directory: web
         env:
           E2E_BASE_URL: http://localhost:5173
