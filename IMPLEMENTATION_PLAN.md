@@ -48,7 +48,8 @@ The philosophy is **simplicity over features**: display slides fast, show where 
             ▼                    ▼                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                           REVERSE PROXY (Caddy/Nginx)                            │
-│  • TLS termination    • WS upgrade    • gzip/br    • cache headers for /overlay/*│
+│  • TLS termination • WS upgrade • gzip/br • cache headers for /overlay/*         │
+│  • Security headers: CSP, Referrer-Policy=no-referrer, X-Content-Type-Options    │
 └─────────────────────────────────────────────────────────────────────────────────┘
             │
             ▼
@@ -76,6 +77,22 @@ The philosophy is **simplicity over features**: display slides fast, show where 
 │                                            │ • explicit budgets/evict  │          │
 │                                            └─────────────────────────┘          │
 └─────────────────────────────────────────────────────────────────────────────────┘
+
+### 1.5 Operating Modes (explicit)
+
+PathCollab supports two deployment modes with the same API surface:
+
+**Mode A — Single-node (default)**
+- In-memory session state, periodic checkpoint to disk (optional)
+- Overlay cache on local disk
+- Best for demos, teaching, internal sharing
+
+**Mode B — Clustered (production)**
+- Redis session registry for restart-safe sessions + multi-instance
+- Shared overlay blob store (S3/MinIO) + local read-through cache
+- Reverse proxy enforces sticky WebSocket routing by session_id
+
+This keeps the "zero-auth ephemeral" UX while avoiding session loss on restarts.
             │
             │ HTTP (tile requests proxied or direct; recommend proxied for same-origin)
             ▼
@@ -149,13 +166,25 @@ TILE FLOW (Read-only, cacheable)
 OVERLAY FLOW (Upload once, stream on-demand)
 ═══════════════════════════════════════════════════════════════════════════════
 
-  Collaborator uploads .pb file (resumable chunks + checksum)
+  Collaborator uploads .pb file (preferred: direct-to-blob-store multipart)
           │
-          ▼ HTTP POST (chunk N) / HTTP PUT (chunk N) / finalize
+          ▼ (1) WS/HTTP: request_upload_intent (presenter only)
   ┌───────────────┐                     ┌───────────────┐
   │    Client     │ ──────────────────► │ PathCollab    │
-  │               │                     │ Server        │
-  └───────────────┘                     └───────┬───────┘
+  └───────────────┘                     │ Server        │
+                                        └───────┬───────┘
+                                                │ (2) returns multipart presigned URLs
+                                                ▼
+                                      ┌─────────────────┐
+                                      │ S3/MinIO Blob    │
+                                      │ Store (raw .pb)  │
+                                      └─────────────────┘
+                                                │ (3) finalize + checksum verify
+                                                ▼
+                                       ┌─────────────────┐
+                                       │ Parse / Derive   │
+                                       │ Job Queue        │
+                                       └─────────────────┘
                                                 │
                          ┌──────────────────────┼──────────────────────┐
                          │                      │                      │
@@ -164,6 +193,12 @@ OVERLAY FLOW (Upload once, stream on-demand)
                   │ Parse Proto │       │ Build Tile  │       │ Extract     │
                   │ (prost)     │       │ Bin Index   │       │ Metadata    │
                   └─────────────┘       └─────────────┘       └─────────────┘
+                         │
+                         ▼
+                  ┌─────────────┐
+                  │ Derive LODs │  (incremental: overview raster → points → polygons)
+                  │ + Raster Py │
+                  └─────────────┘
                                           (R-tree optional for ROI selection)
                                                 │
                                                 ▼
@@ -248,9 +283,9 @@ LAYER STATE FLOW (Low-frequency, on-change only)
 | # | Principle | Rationale | Implementation |
 |---|-----------|-----------|----------------|
 | **1** | **Tiles are sacred** | Tile rendering latency directly impacts perceived performance; never block on overlay operations | OpenSeadragon manages tiles independently; overlay WebGL layer is separate canvas |
-| **2** | **Server owns truth** | Distributed state is hard; server is authoritative for session state, overlay data, layer visibility | Clients are thin; all state changes go through server and are broadcast back |
+| **2** | **Server owns truth (but can rehydrate)** | Distributed state is hard; server is authoritative, but should survive restarts in production | Session snapshots can be reloaded from Redis; clients can resync from snapshot |
 | **3** | **Bandwidth is variable** | Global users have 10ms-500ms latency; design for graceful degradation | Cursor updates are small (32 bytes); overlay data is streamed incrementally; viewport sync tolerates jitter |
-| **4** | **Overlays are ephemeral but cacheable** | Default is ephemeral UX; derived artifacts should be restart-safe for reliability | Disk-backed content-addressed overlay cache + memory-mapped chunks; optional Redis only for multi-instance |
+| **4** | **Overlays are ephemeral but restart-safe** | UX is ephemeral, but expensive derived artifacts should survive restarts | Content-addressed overlay cache on disk; optional shared blob store in clustered mode |
 | **5** | **Progressive disclosure** | Don't overwhelm users; show complexity only when needed | Sidebar collapsed by default; cell hover info appears on demand; minimap shows viewport bounds subtly |
 | **6** | **Fail gracefully** | Network issues shouldn't crash the app or corrupt state | Reconnection logic with exponential backoff; optimistic UI with rollback; presenter grace period |
 | **7** | **One command deploy** | Adoption depends on ease of setup; Docker abstracts infra + TLS complexity | `docker-compose up` starts everything; reverse proxy provides HTTPS + WS upgrade |
@@ -268,10 +303,10 @@ LAYER STATE FLOW (Low-frequency, on-change only)
 
 interface Session {
   // Identity
-  id: SessionId;                    // 6-char alphanumeric, e.g., "a1b2c3"
+  id: SessionId;                    // 8-char base32, e.g., "k3m9p2qd"
   rev: number;                      // Monotonic session revision. Increments on any authoritative state change.
-  join_secret_hash: string;         // hashed; join requires secret (unlisted)
-  presenter_key_hash: string;       // hashed; required for presenter-only actions
+  join_secret_hash: string;         // Argon2id hash; join requires secret (unlisted)
+  presenter_key_hash: string;       // Argon2id hash; presenter-only actions
   // Link format (recommended):
   // - Join link:      /s/<session_id>#join=<high_entropy_secret>
   // - Presenter link: /s/<session_id>#join=<...>&presenter=<presenter_key>
@@ -291,12 +326,22 @@ interface Session {
   overlays: Map<OverlayId, OverlayState>;       // up to 2
   overlay_order: OverlayId[];                   // z-order, top-most last
   layer_visibility: LayerVisibility;
-  
+  callouts: Callout[];                     // ordered list (small)
+
   // Presenter state
   presenter_viewport: Viewport;
 }
 
-type SessionId = string;  // /^[a-z0-9]{6}$/
+interface Callout {
+  id: string;                              // UUID v4
+  x: number;
+  y: number;
+  label?: string;
+  created_by: ParticipantId;
+  created_at: Timestamp;
+}
+
+type SessionId = string;  // /^[a-z2-7]{8}$/  (base32 lowercase, avoids ambiguous chars)
 type SessionState = 'active' | 'presenter_disconnected' | 'expired';
 
 interface Participant {
@@ -416,19 +461,28 @@ interface LayerVisibility {
 // WEBSOCKET PROTOCOL
 // ═══════════════════════════════════════════════════════════════════════════
 
-// All messages are JSON except overlay_data which is MessagePack binary
-// Realtime robustness: client->server messages carry seq; server can drop/coalesce under load.
+// Protocol split:
+// - Control-plane: JSON (join, auth, layer state, callouts, errors)
+// - Data-plane: binary MessagePack (overlay batches, presence hot path)
+//
+// Realtime robustness:
+// - client->server messages carry seq
+// - server may coalesce cursor/viewport updates under load (latest-wins)
+// - server advertises QoS profile on join (rates/budgets)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLIENT → SERVER
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ClientMessage =
-  | { type: 'join_session'; session_id: SessionId; join_secret: string; last_seen_rev?: number; seq: number }
+  | { type: 'join_session'; session_id: SessionId; join_secret: string; last_seen_rev?: number; seq: number;
+      capabilities?: ClientCapabilities }
   | { type: 'create_session'; slide_id: SlideId; seq: number }
   | { type: 'presenter_auth'; presenter_key: string; seq: number }
-  | { type: 'cursor_update'; x: number; y: number; seq: number }
-  | { type: 'viewport_update'; center_x: number; center_y: number; zoom: number; seq: number }
+  | { type: 'transfer_presenter'; to_participant_id: ParticipantId; seq: number }
+  | { type: 'cursor_update'; x: number; y: number; seq: number } // control-plane fallback
+  | { type: 'viewport_update'; center_x: number; center_y: number; zoom: number; seq: number } // fallback
+  | { type: 'presence_bin'; payload: Uint8Array } // preferred: msgpack-packed cursor/viewport/laser
   | { type: 'request_vector_detail'; request_id: number; viewport: Viewport; level: number; seq: number }
   | { type: 'layer_update'; visibility: LayerVisibility; seq: number }
   | { type: 'laser_pointer'; x: number; y: number; ttl_ms: number; seq: number }
@@ -446,6 +500,7 @@ type ServerMessage =
   // Session lifecycle
   | { type: 'session_created'; session: SessionSnapshot }
   | { type: 'session_joined'; session: SessionSnapshot; you: Participant }
+  | { type: 'qos_profile'; profile: QosProfile } // server-selected rates/budgets for this client
   | { type: 'state_patch'; base_rev: number; next_rev: number; patch: SessionPatch }
   | { type: 'resync_required'; server_rev: number }  // client should request full snapshot
   | { type: 'session_error'; code: ErrorCode; message: string }
@@ -455,10 +510,12 @@ type ServerMessage =
   | { type: 'participant_joined'; participant: Participant }
   | { type: 'participant_left'; participant_id: ParticipantId }
   | { type: 'presenter_reconnected' }
-  
+  | { type: 'presenter_changed'; participant_id: ParticipantId }
+
   // Presence updates (high frequency)
-  | { type: 'presence_delta'; changed: CursorWithParticipant[]; removed: ParticipantId[]; server_ts: Timestamp }
-  | { type: 'presenter_viewport'; viewport: Viewport }
+  | { type: 'presence_delta'; changed: CursorWithParticipant[]; removed: ParticipantId[]; server_ts: Timestamp } // fallback/debug
+  | { type: 'presence_bin'; payload: Uint8Array; server_ts: Timestamp } // preferred
+  | { type: 'presenter_viewport'; viewport: Viewport } // fallback
   | { type: 'laser_pointer'; participant_id: ParticipantId; x: number; y: number; expires_at: Timestamp }
   | { type: 'callouts_state'; callouts: Callout[] }
   
@@ -501,6 +558,21 @@ interface SessionSnapshot {
   overlay_order: OverlayId[];
   layer_visibility: LayerVisibility;
   presenter_viewport: Viewport;
+  callouts: Callout[];
+}
+
+interface ClientCapabilities {
+  webgl2: boolean;
+  max_texture_size?: number;
+  device_memory_gb?: number;      // navigator.deviceMemory if available
+  prefers_reduced_motion?: boolean;
+}
+
+interface QosProfile {
+  cursor_send_hz: number;         // e.g., 30 -> 15
+  viewport_send_hz: number;       // e.g., 10 -> 5
+  overlay_batch_kb: number;       // caps WS payload size
+  overlay_mode: 'raster_only' | 'points' | 'polygons';
 }
 
 type ErrorCode =
@@ -557,7 +629,9 @@ interface CellPolygon {
 
 const ValidationRules = {
   // Session
-  SESSION_ID_PATTERN: /^[a-z0-9]{6}$/,
+  SESSION_ID_PATTERN: /^[a-z2-7]{8}$/,
+  CREATE_JOIN_RATE_LIMIT_PER_IP: 30,          // per minute
+  WS_MSG_RATE_LIMIT_PER_CONN: 200,            // per second (hard ceiling)
   MAX_FOLLOWERS: 20,
   SESSION_MAX_DURATION_MS: 4 * 60 * 60 * 1000,  // 4 hours
   PRESENTER_GRACE_PERIOD_MS: 30 * 1000,         // 30 seconds
@@ -572,6 +646,9 @@ const ValidationRules = {
   OVERLAY_UPLOAD_TIMEOUT_MS: 5 * 60 * 1000,     // 5 minutes
   OVERLAY_MAX_FILES_PER_SESSION: 2,             // small overlay stack (comparisons)
   OVERLAY_MAX_PARSE_SECONDS: 60,                // abort expensive parses
+  OVERLAY_MAX_DERIVE_SECONDS: 120,              // bounded derive work per overlay
+  OVERLAY_MAX_DERIVE_RAM_MB: 2048,              // hard memory budget
+  OVERLAY_MAX_JOBS_PER_INSTANCE: 2,             // prevents CPU starvation of presence/WS
   OVERLAY_MAX_CELLS: 5_000_000,                 // sanity bounds
   OVERLAY_MAX_TILES: 500_000,                   // sanity bounds
   CELL_CLASS_ID_RANGE: [0, 14],                 // 15 classes
@@ -728,7 +805,9 @@ function validateLayerVisibility(vis: LayerVisibility): boolean {
 │  │   ├── mod.rs                                                                │
 │  │   ├── parser.rs                 # Protobuf parsing (prost)                  │
 │  │   ├── derive.rs                 # Build raster pyramid + vector chunks       │
-│  │   ├── upload.rs                 # Resumable chunk upload + checksum          │
+│  │   ├── upload.rs                 # Upload intents + (fallback) chunk upload  │
+│  │   ├── blob.rs                   # S3/MinIO adapter (presigned multipart)    │
+│  │   ├── jobs.rs                   # Parse/derive job runner + cancellation     │
 │  │   ├── index.rs                  # Tile-bin index (fast path) + optional R-tree│
 │  │   └── streamer.rs               # Viewport-based tile streaming             │
 │  │                                                                              │
@@ -765,24 +844,18 @@ function validateLayerVisibility(vis: LayerVisibility): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Rendering strategy (explicit LOD + budgets):
- * - Low zoom: raster overlay tiles (tissue + optional density)
- * - Medium zoom: instanced centroids/points (very fast)
- * - High zoom: polygons, with a hard visible-instance budget + fallback
- *
- * Target: "smooth interaction" on typical laptops, not worst-case polygon counts.
- *
- * Renders polygons using:
- * 1. Instanced rendering (one draw call per cell class) using fixed-K resampled polygons
+ * Renders overlays using explicit LOD + correctness guarantees:
+ * 1) Points (centroids): instanced point sprites (fast path)
+ * 2) Polygons: triangulated meshes per tile (correct for non-convex polygons)
  * 2. Viewport frustum culling (only upload visible cells)
  * 3. Level-of-detail (simplify polygons at low zoom)
  * 4. GPU-based class filtering (discard in fragment shader)
  *
- * NOTE: Raw cell polygons have variable vertex counts. To make instancing practical:
- * - Server preprocesses to fixed-K vertices per cell at selected zoom levels (e.g., K=16/32)
- * - At very low zoom: render centroids / density only (or rely on raster overlay tiles)
+ * NOTE: Polygon fill is only enabled when zoomed-in enough that the number of visible cells is bounded.
+ * When budgets are exceeded, the renderer automatically degrades:
+ * polygons -> outlines -> points.
  */
-class PolygonRenderer {
+class OverlayRenderer {
   private gl: WebGL2RenderingContext;
   private program: WebGLProgram;
   
@@ -800,7 +873,8 @@ class PolygonRenderer {
   // State
   private visibleCells: CellPolygon[] = [];
   private instanceData: Float32Array;
-  private maxInstances: number = 120_000;  // Hard per-frame budget (tunable)
+  private maxPoints: number = 300_000;     // hard budget
+  private maxPolyTriangles: number = 600_000; // hard budget, beyond which we degrade
   
   constructor(canvas: HTMLCanvasElement) {
     this.gl = canvas.getContext('webgl2')!;
@@ -845,8 +919,8 @@ class PolygonRenderer {
     
     // Draw instanced (budgeted)
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
-    // Fan uses fixed-K vertices per instance (post-resample)
-    gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.kVertices, instanceCount);
+    // Correct polygon rendering uses per-tile indexed triangle meshes when enabled
+    // and budgets allow; otherwise falls back to points/outlines.
   }
   
   // ... shader initialization, buffer management, etc.
@@ -1110,7 +1184,8 @@ Week 6: WebGL2 Frontend
 
 **Validation Criteria:**
 - [ ] 300MB file uploads in < 60 seconds
-- [ ] 60fps with 1M visible polygons
+- [ ] 60fps with raster+points at overview zoom (hundreds of thousands of cells in view)
+- [ ] Polygons render correctly (non-convex safe) when zoomed-in; budgets enforce graceful degradation
 - [ ] Layer toggle latency < 100ms
 - [ ] Hover tooltip appears within 50ms
 
@@ -1164,7 +1239,8 @@ Week 7: Ship It
 |------|-------------|--------|------------|
 | WebGL2 performance issues at 1M+ polygons | Medium | High | Week 5: Early profiling; fallback to Canvas2D for < 100K |
 | Large file upload failures | Medium | Medium | Chunked upload with resume; client-side validation |
-| WebSocket scalability at 50 sessions | Low | Medium | Week 4: Load test; horizontal scaling plan |
+| WebSocket scalability at 50 sessions | Low | Medium | Week 4: Load test; sticky sessions; clustered mode |
+| Presenter drop/handoff confusion | Medium | Medium | Explicit presenter_changed event + transfer flow |
 | Browser compatibility (Safari WebGL) | Medium | Low | Week 7: Polyfill/fallback; document requirements |
 | Protobuf schema evolution | Low | Low | Version field in overlay state; backward compat |
 
@@ -1301,8 +1377,9 @@ function generateParticipantName(): string {
 ```rust
 use rand::Rng;
 
-const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
-const SESSION_ID_LENGTH: usize = 6;
+// base32 lowercase, avoids 0/1/l/o ambiguity
+const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
+const SESSION_ID_LENGTH: usize = 8;
 
 pub fn generate_session_id() -> String {
     let mut rng = rand::thread_rng();
