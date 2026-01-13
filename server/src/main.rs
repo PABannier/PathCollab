@@ -1,12 +1,7 @@
-mod overlay;
-mod protocol;
-mod server;
-mod session;
-
 use axum::{Json, Router, routing::get};
-use overlay::overlay_routes;
+use pathcollab_server::overlay::overlay_routes;
+use pathcollab_server::server::{AppState, ws_handler};
 use serde::Serialize;
-use server::{AppState, ws_handler};
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
