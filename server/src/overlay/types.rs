@@ -1,7 +1,6 @@
 //! Overlay types and error definitions
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use thiserror::Error;
 
 /// Errors that can occur during overlay processing

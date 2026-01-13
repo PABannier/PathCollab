@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
 /// Session-scoped overlay storage
 pub type OverlayStore = Arc<RwLock<HashMap<String, Arc<DerivedOverlay>>>>;
@@ -90,7 +90,7 @@ impl IntoResponse for ErrorResponse {
 pub async fn upload_overlay(
     State(state): State<AppState>,
     Query(query): Query<UploadQuery>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<UploadResponse>, ErrorResponse> {
     let session_id = &query.session_id;
@@ -218,13 +218,16 @@ pub async fn get_raster_tile(
     })?;
 
     let tile_key = (path.level, path.x, path.y);
-    let tile = overlay.raster_tiles.get(&tile_key).ok_or_else(|| ErrorResponse {
-        error: format!(
-            "Tile not found: level={}, x={}, y={}",
-            path.level, path.x, path.y
-        ),
-        code: "not_found".to_string(),
-    })?;
+    let tile = overlay
+        .raster_tiles
+        .get(&tile_key)
+        .ok_or_else(|| ErrorResponse {
+            error: format!(
+                "Tile not found: level={}, x={}, y={}",
+                path.level, path.x, path.y
+            ),
+            code: "not_found".to_string(),
+        })?;
 
     // Return RGBA as raw bytes (could be WebP in production)
     // For now, return as PNG-compatible raw RGBA
@@ -255,13 +258,16 @@ pub async fn get_vector_chunk(
     })?;
 
     let chunk_key = (path.level, path.x, path.y);
-    let chunk = overlay.vector_chunks.get(&chunk_key).ok_or_else(|| ErrorResponse {
-        error: format!(
-            "Chunk not found: level={}, x={}, y={}",
-            path.level, path.x, path.y
-        ),
-        code: "not_found".to_string(),
-    })?;
+    let chunk = overlay
+        .vector_chunks
+        .get(&chunk_key)
+        .ok_or_else(|| ErrorResponse {
+            error: format!(
+                "Chunk not found: level={}, x={}, y={}",
+                path.level, path.x, path.y
+            ),
+            code: "not_found".to_string(),
+        })?;
 
     // Convert to response format
     let cells: Vec<CellResponse> = chunk

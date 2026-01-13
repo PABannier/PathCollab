@@ -41,7 +41,7 @@ pub fn create_test_app() -> Router {
 /// Create a test slide info with standard values
 pub fn create_test_slide_info() -> SlideInfo {
     SlideInfo {
-        id: format!("test-slide-{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
+        id: format!("test-slide-{}", &uuid::Uuid::new_v4().to_string()[..8]),
         name: "Test Slide".to_string(),
         width: 100000,
         height: 100000,
@@ -52,6 +52,7 @@ pub fn create_test_slide_info() -> SlideInfo {
 }
 
 /// Initialize test logging for detailed output
+#[allow(dead_code)]
 pub fn init_test_logging() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

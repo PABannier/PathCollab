@@ -1,4 +1,3 @@
-use crate::overlay::derive::DerivedOverlay;
 use crate::overlay::routes::OverlayStore;
 use crate::protocol::{ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport};
 use crate::session::manager::{SessionError, SessionManager};
@@ -228,7 +227,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     }
                     Ok(Err(broadcast::error::RecvError::Lagged(n))) => {
-                        warn!("Broadcast lagged {} messages for {}", n, broadcast_connection_id);
+                        warn!(
+                            "Broadcast lagged {} messages for {}",
+                            n, broadcast_connection_id
+                        );
                     }
                     Ok(Err(broadcast::error::RecvError::Closed)) => {
                         broadcast_rx = None;
@@ -391,7 +393,11 @@ async fn handle_client_message(
                 tile_url_template: format!("/api/slide/{}/tile/{{level}}/{{x}}/{{y}}", slide_id),
             };
 
-            match state.session_manager.create_session(slide, connection_id).await {
+            match state
+                .session_manager
+                .create_session(slide, connection_id)
+                .await
+            {
                 Ok((session, join_secret, presenter_key)) => {
                     let session_id = session.id.clone();
 
@@ -638,10 +644,7 @@ async fn handle_client_message(
                 }
             }
         }
-        ClientMessage::PresenterAuth {
-            presenter_key,
-            seq,
-        } => {
+        ClientMessage::PresenterAuth { presenter_key, seq } => {
             // Get session ID
             let session_id = {
                 let connections = state.connections.read().await;
@@ -756,14 +759,14 @@ async fn handle_client_message(
                     .and_then(|c| c.session_id.clone())
             };
 
-            if let Some(session_id) = session_id {
-                if let Ok(snapshot) = state.session_manager.get_session(&session_id).await {
-                    let _ = tx
-                        .send(ServerMessage::PresenterViewport {
-                            viewport: snapshot.presenter_viewport,
-                        })
-                        .await;
-                }
+            if let Some(session_id) = session_id
+                && let Ok(snapshot) = state.session_manager.get_session(&session_id).await
+            {
+                let _ = tx
+                    .send(ServerMessage::PresenterViewport {
+                        viewport: snapshot.presenter_viewport,
+                    })
+                    .await;
             }
 
             let _ = tx

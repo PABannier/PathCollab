@@ -4,7 +4,7 @@
 //! Optionally uses R-tree for precise spatial queries.
 
 use crate::overlay::types::CellData;
-use rstar::{RTree, RTreeObject, AABB};
+use rstar::{AABB, RTree, RTreeObject};
 use std::collections::HashMap;
 use tracing::debug;
 
@@ -138,9 +138,7 @@ impl TileBinIndex {
         if let Some(ref rtree) = self.rtree {
             // Use R-tree for precise query
             let envelope = AABB::from_corners([min_x, min_y], [max_x, max_y]);
-            rtree
-                .locate_in_envelope_intersecting(&envelope)
-                .collect()
+            rtree.locate_in_envelope_intersecting(&envelope).collect()
         } else {
             // Fallback: linear scan with AABB check
             self.cells

@@ -7,8 +7,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use pathcollab_server::protocol::{ClientMessage, ServerMessage, SlideInfo};
-use serde_json::json;
+use pathcollab_server::protocol::{ClientMessage, ServerMessage};
 use tower::util::ServiceExt;
 
 // Re-export test utilities from the main crate
@@ -31,7 +30,7 @@ mod http_routes {
                 Request::builder()
                     .uri("/health")
                     .body(Body::empty())
-                    .unwrap()
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -58,7 +57,7 @@ mod http_routes {
                     .uri("/api/overlay/upload?session_id=nonexistent")
                     .header("Content-Type", "application/octet-stream")
                     .body(Body::from(vec![0u8; 100]))
-                    .unwrap()
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -76,7 +75,7 @@ mod http_routes {
                 Request::builder()
                     .uri("/api/overlay/nonexistent/manifest")
                     .body(Body::empty())
-                    .unwrap()
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -93,7 +92,7 @@ mod http_routes {
                 Request::builder()
                     .uri("/api/overlay/nonexistent/raster/0/0/0")
                     .body(Body::empty())
-                    .unwrap()
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -110,7 +109,7 @@ mod http_routes {
                 Request::builder()
                     .uri("/api/overlay/nonexistent/vec/0/0/0")
                     .body(Body::empty())
-                    .unwrap()
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -127,7 +126,7 @@ mod http_routes {
                 Request::builder()
                     .uri("/api/overlay/nonexistent/query?min_x=0&min_y=0&max_x=100&max_y=100")
                     .body(Body::empty())
-                    .unwrap()
+                    .unwrap(),
             )
             .await
             .unwrap();
@@ -142,8 +141,8 @@ mod http_routes {
 
 mod session_management {
     use super::*;
-    use pathcollab_server::session::manager::SessionManager;
     use pathcollab_server::protocol::ParticipantRole;
+    use pathcollab_server::session::manager::SessionManager;
     use uuid::Uuid;
 
     #[tokio::test]
@@ -211,7 +210,7 @@ mod session_management {
             let (snapshot, _) = manager
                 .join_session(&session.id, &join_secret)
                 .await
-                .expect(&format!("Failed to join session for follower {}", i));
+                .unwrap_or_else(|_| panic!("Failed to join session for follower {}", i));
 
             assert_eq!(snapshot.followers.len(), i + 1);
         }
@@ -248,7 +247,10 @@ mod session_management {
             .await
             .unwrap();
 
-        let (_, follower) = manager.join_session(&session.id, &join_secret).await.unwrap();
+        let (_, follower) = manager
+            .join_session(&session.id, &join_secret)
+            .await
+            .unwrap();
 
         // Update cursor
         let result = manager
@@ -280,7 +282,10 @@ mod session_management {
             timestamp: 12345,
         };
 
-        manager.update_presenter_viewport(&session.id, new_viewport).await.unwrap();
+        manager
+            .update_presenter_viewport(&session.id, new_viewport)
+            .await
+            .unwrap();
 
         // Verify revision incremented
         let updated_snapshot = manager.get_session(&session.id).await.unwrap();
@@ -309,12 +314,15 @@ mod session_management {
             cell_hover_enabled: false,
         };
 
-        manager.update_layer_visibility(&session.id, new_visibility.clone()).await.unwrap();
+        manager
+            .update_layer_visibility(&session.id, new_visibility.clone())
+            .await
+            .unwrap();
 
         // Verify update
         let snapshot = manager.get_session(&session.id).await.unwrap();
-        assert_eq!(snapshot.layer_visibility.tissue_heatmap_visible, false);
-        assert_eq!(snapshot.layer_visibility.cell_hover_enabled, false);
+        assert!(!snapshot.layer_visibility.tissue_heatmap_visible);
+        assert!(!snapshot.layer_visibility.cell_hover_enabled);
     }
 
     #[tokio::test]
@@ -328,14 +336,20 @@ mod session_management {
             .await
             .unwrap();
 
-        let (_, follower) = manager.join_session(&session.id, &join_secret).await.unwrap();
+        let (_, follower) = manager
+            .join_session(&session.id, &join_secret)
+            .await
+            .unwrap();
 
         // Verify follower exists
         let snapshot = manager.get_session(&session.id).await.unwrap();
         assert_eq!(snapshot.followers.len(), 1);
 
         // Remove follower
-        let was_presenter = manager.remove_participant(&session.id, follower.id).await.unwrap();
+        let was_presenter = manager
+            .remove_participant(&session.id, follower.id)
+            .await
+            .unwrap();
         assert!(!was_presenter);
 
         // Verify follower removed
@@ -355,11 +369,15 @@ mod session_management {
             .unwrap();
 
         // Valid presenter key should authenticate
-        let result = manager.authenticate_presenter(&session.id, &presenter_key).await;
+        let result = manager
+            .authenticate_presenter(&session.id, &presenter_key)
+            .await;
         assert!(result.is_ok());
 
         // Invalid presenter key should fail
-        let result = manager.authenticate_presenter(&session.id, "invalid_key").await;
+        let result = manager
+            .authenticate_presenter(&session.id, "invalid_key")
+            .await;
         assert!(result.is_err());
     }
 
@@ -453,7 +471,12 @@ mod protocol {
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
 
         match msg {
-            ClientMessage::JoinSession { session_id, join_secret, seq, .. } => {
+            ClientMessage::JoinSession {
+                session_id,
+                join_secret,
+                seq,
+                ..
+            } => {
                 assert_eq!(session_id, "abc123");
                 assert_eq!(join_secret, "secret");
                 assert_eq!(seq, 5);
@@ -496,7 +519,12 @@ mod protocol {
         let msg: ClientMessage = serde_json::from_str(json).unwrap();
 
         match msg {
-            ClientMessage::ViewportUpdate { center_x, center_y, zoom, seq } => {
+            ClientMessage::ViewportUpdate {
+                center_x,
+                center_y,
+                zoom,
+                seq,
+            } => {
                 assert_eq!(center_x, 0.3);
                 assert_eq!(center_y, 0.4);
                 assert_eq!(zoom, 2.5);

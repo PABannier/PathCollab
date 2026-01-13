@@ -6,7 +6,6 @@
 
 use crate::overlay::index::TileBinIndex;
 use crate::overlay::parser::ParsedOverlayData;
-use crate::overlay::types::CellData;
 use std::collections::HashMap;
 use tracing::{debug, info};
 
@@ -78,10 +77,10 @@ pub struct VectorChunk {
 #[derive(Debug, Clone)]
 pub struct ChunkCell {
     pub class_id: u8,
-    pub confidence: u8,      // Quantized 0-255
-    pub centroid_x: i16,     // Relative to tile origin
-    pub centroid_y: i16,     // Relative to tile origin
-    pub vertices: Vec<i16>,  // Relative to centroid
+    pub confidence: u8,     // Quantized 0-255
+    pub centroid_x: i16,    // Relative to tile origin
+    pub centroid_y: i16,    // Relative to tile origin
+    pub vertices: Vec<i16>, // Relative to centroid
 }
 
 /// Manifest data for HTTP serving
@@ -160,15 +159,15 @@ impl DerivePipeline {
 
         // Tissue class colors (8 classes)
         let class_colors: [(u8, u8, u8, u8); 9] = [
-            (239, 68, 68, 180),    // 0: Tumor - Red
-            (245, 158, 11, 180),   // 1: Stroma - Amber
-            (107, 114, 128, 180),  // 2: Necrosis - Gray
-            (59, 130, 246, 180),   // 3: Lymphocytes - Blue
-            (168, 85, 247, 180),   // 4: Mucus - Purple
-            (236, 72, 153, 180),   // 5: Smooth Muscle - Pink
-            (251, 191, 36, 180),   // 6: Adipose - Yellow
-            (229, 231, 235, 100),  // 7: Background - Light gray
-            (0, 0, 0, 0),          // 255: No data - Transparent
+            (239, 68, 68, 180),   // 0: Tumor - Red
+            (245, 158, 11, 180),  // 1: Stroma - Amber
+            (107, 114, 128, 180), // 2: Necrosis - Gray
+            (59, 130, 246, 180),  // 3: Lymphocytes - Blue
+            (168, 85, 247, 180),  // 4: Mucus - Purple
+            (236, 72, 153, 180),  // 5: Smooth Muscle - Pink
+            (251, 191, 36, 180),  // 6: Adipose - Yellow
+            (229, 231, 235, 100), // 7: Background - Light gray
+            (0, 0, 0, 0),         // 255: No data - Transparent
         ];
 
         for tile in &parsed.tissue_tiles {
@@ -221,7 +220,11 @@ impl DerivePipeline {
                 let class_id = class_data.get(src_idx).copied().unwrap_or(255);
 
                 // Map class to color
-                let color_idx = if class_id == 255 { 8 } else { (class_id as usize).min(7) };
+                let color_idx = if class_id == 255 {
+                    8
+                } else {
+                    (class_id as usize).min(7)
+                };
                 let (r, g, b, a) = colors[color_idx];
 
                 let dst_idx = (ty * target_size + tx) as usize * 4;
@@ -289,7 +292,7 @@ impl DerivePipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::overlay::types::{ParsedOverlay, TissueClassDef, CellClassDef, TissueTileData};
+    use crate::overlay::types::{CellData, ParsedOverlay, TissueTileData};
 
     fn create_test_parsed_data() -> ParsedOverlayData {
         ParsedOverlayData {
@@ -333,15 +336,13 @@ mod tests {
                     area: 400.0,
                 },
             ],
-            tissue_tiles: vec![
-                TissueTileData {
-                    tile_x: 0,
-                    tile_y: 0,
-                    level: 0,
-                    class_data: vec![0u8; 224 * 224],
-                    confidence_data: None,
-                },
-            ],
+            tissue_tiles: vec![TissueTileData {
+                tile_x: 0,
+                tile_y: 0,
+                level: 0,
+                class_data: vec![0u8; 224 * 224],
+                confidence_data: None,
+            }],
         }
     }
 

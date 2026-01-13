@@ -4,7 +4,7 @@
 //! rather than loading everything into memory at once.
 
 use crate::overlay::types::{
-    limits, CellClassDef, CellData, OverlayError, ParsedOverlay, TissueClassDef, TissueTileData,
+    CellClassDef, CellData, OverlayError, ParsedOverlay, TissueClassDef, TissueTileData, limits,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -65,7 +65,11 @@ impl OverlayParser {
             });
         }
 
-        info!("Parsing overlay file: {} ({} bytes)", path.display(), file_size);
+        info!(
+            "Parsing overlay file: {} ({} bytes)",
+            path.display(),
+            file_size
+        );
 
         // Read file and compute hash
         let file = std::fs::File::open(path)?;
