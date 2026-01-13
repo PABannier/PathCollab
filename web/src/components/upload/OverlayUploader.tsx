@@ -2,6 +2,7 @@ import { useCallback, useState, useRef } from 'react'
 
 interface OverlayUploaderProps {
   sessionId: string
+  presenterKey?: string | null
   onUploadComplete: (overlayId: string) => void
   onError: (error: string) => void
   disabled?: boolean
@@ -20,6 +21,7 @@ type UploadState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error'
 
 export function OverlayUploader({
   sessionId,
+  presenterKey,
   onUploadComplete,
   onError,
   disabled = false,
@@ -34,6 +36,10 @@ export function OverlayUploader({
     async (file: File) => {
       if (!sessionId) {
         onError('No active session')
+        return
+      }
+      if (!presenterKey) {
+        onError('Presenter key required to upload overlays')
         return
       }
 
@@ -76,6 +82,7 @@ export function OverlayUploader({
           method: 'POST',
           headers: {
             'Content-Type': 'application/octet-stream',
+            'X-Presenter-Key': presenterKey,
           },
           body: arrayBuffer,
         })
@@ -113,7 +120,7 @@ export function OverlayUploader({
         }, 3000)
       }
     },
-    [sessionId, onUploadComplete, onError]
+    [sessionId, presenterKey, onUploadComplete, onError]
   )
 
   const handleFileSelect = useCallback(

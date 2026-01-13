@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWebSocket, type ConnectionStatus, type WebSocketMessage } from './useWebSocket'
 
 export interface Participant {
@@ -109,6 +109,8 @@ export function useSession({
   const [cursors, setCursors] = useState<CursorWithParticipant[]>([])
   const [presenterViewport, setPresenterViewport] = useState<Viewport | null>(null)
   const [secrets, setSecrets] = useState<SessionSecrets | null>(null)
+  const pendingPresenterAuthSeqRef = useRef<number | null>(null)
+  const presenterAuthSessionRef = useRef<string | null>(null)
 
   // Build WebSocket URL
   const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
@@ -122,6 +124,7 @@ export function useSession({
           // When session is created, we're the presenter
           setCurrentUser(sessionData.presenter)
           setIsPresenter(true)
+          setPresenterViewport(sessionData.presenter_viewport)
           // Save secrets for sharing
           if (message.join_secret && message.presenter_key) {
             setSecrets({
@@ -138,6 +141,7 @@ export function useSession({
             setCurrentUser(message.you as Participant)
             setIsPresenter((message.you as Participant).role === 'presenter')
           }
+          setPresenterViewport(sessionData.presenter_viewport)
           break
         }
 
@@ -214,11 +218,22 @@ export function useSession({
           setIsPresenter(false)
           setCursors([])
           setPresenterViewport(null)
+          presenterAuthSessionRef.current = null
+          pendingPresenterAuthSeqRef.current = null
           onError?.(`Session ended: ${message.reason}`)
           break
         }
 
         case 'ack': {
+          const ackSeq = message.ack_seq as number | undefined
+          if (ackSeq !== undefined && pendingPresenterAuthSeqRef.current === ackSeq) {
+            pendingPresenterAuthSeqRef.current = null
+            if (message.status === 'rejected') {
+              setIsPresenter(false)
+            } else {
+              setIsPresenter(true)
+            }
+          }
           if (message.status === 'rejected') {
             onError?.(message.reason as string)
           }
@@ -277,12 +292,22 @@ export function useSession({
   // Authenticate as presenter
   const authenticatePresenter = useCallback(() => {
     if (presenterKey) {
-      sendMessage({
+      const seq = sendMessage({
         type: 'presenter_auth',
         presenter_key: presenterKey,
       })
+      pendingPresenterAuthSeqRef.current = seq
     }
   }, [presenterKey, sendMessage])
+
+  // Auto-authenticate presenter when a presenter key is provided
+  useEffect(() => {
+    if (!session || !presenterKey || status !== 'connected' || isPresenter) return
+
+    if (presenterAuthSessionRef.current === session.id) return
+    presenterAuthSessionRef.current = session.id
+    authenticatePresenter()
+  }, [authenticatePresenter, isPresenter, presenterKey, session, status])
 
   // Update cursor position
   const updateCursor = useCallback(

@@ -127,10 +127,17 @@ impl DerivePipeline {
         // Derive vector chunks from cell data
         let vector_chunks = self.derive_vector_chunks(&parsed);
 
+        let max_level = raster_tiles
+            .keys()
+            .map(|(level, _, _)| *level)
+            .max()
+            .unwrap_or(0);
+        let levels = max_level + 1;
+
         let manifest = OverlayManifestData {
             content_sha256: parsed.metadata.content_sha256.clone(),
             tile_size: self.config.tile_size,
-            levels: self.config.num_levels,
+            levels,
             total_raster_tiles: raster_tiles.len(),
             total_vector_chunks: vector_chunks.len(),
         };

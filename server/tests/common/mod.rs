@@ -22,8 +22,8 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
-/// Create a test application router with all routes configured
-pub fn create_test_app() -> Router {
+/// Create a test application router with state
+pub fn create_test_app_with_state() -> (Router, AppState) {
     let app_state = AppState::new();
 
     let cors = CorsLayer::new()
@@ -31,11 +31,18 @@ pub fn create_test_app() -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let app = Router::new()
         .route("/health", get(health))
         .nest("/api/overlay", overlay_routes())
         .layer(cors)
-        .with_state(app_state)
+        .with_state(app_state.clone());
+
+    (app, app_state)
+}
+
+/// Create a test application router with all routes configured
+pub fn create_test_app() -> Router {
+    create_test_app_with_state().0
 }
 
 /// Create a test slide info with standard values

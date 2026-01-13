@@ -24,6 +24,7 @@ interface LayerPanelProps {
   // Panel state
   collapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
+  disabled?: boolean
 }
 
 interface ClassInfo {
@@ -51,6 +52,7 @@ export function LayerPanel({
   onCellHoverEnabledChange,
   collapsed: initialCollapsed = true,
   onCollapsedChange,
+  disabled = false,
 }: LayerPanelProps) {
   const [collapsed, setCollapsed] = useState(initialCollapsed)
   const [tissueExpanded, setTissueExpanded] = useState(false)
@@ -150,6 +152,7 @@ export function LayerPanel({
               type="checkbox"
               id="tissue-enabled"
               checked={tissueEnabled}
+              disabled={disabled}
               onChange={(e) => onTissueEnabledChange(e.target.checked)}
               className="h-4 w-4 rounded"
             />
@@ -185,6 +188,7 @@ export function LayerPanel({
                   min="0"
                   max="100"
                   value={tissueOpacity * 100}
+                  disabled={disabled}
                   onChange={(e) => onTissueOpacityChange(Number(e.target.value) / 100)}
                   className="flex-1 h-1"
                 />
@@ -200,10 +204,18 @@ export function LayerPanel({
               <div className="flex justify-between text-xs text-gray-400 mb-1">
                 <span>Classes</span>
                 <div className="space-x-2">
-                  <button onClick={selectAllTissueClasses} className="hover:text-white">
+                  <button
+                    onClick={selectAllTissueClasses}
+                    disabled={disabled}
+                    className={disabled ? 'opacity-50 cursor-not-allowed' : 'hover:text-white'}
+                  >
                     All
                   </button>
-                  <button onClick={selectNoneTissueClasses} className="hover:text-white">
+                  <button
+                    onClick={selectNoneTissueClasses}
+                    disabled={disabled}
+                    className={disabled ? 'opacity-50 cursor-not-allowed' : 'hover:text-white'}
+                  >
                     None
                   </button>
                 </div>
@@ -211,11 +223,14 @@ export function LayerPanel({
               {tissueClasses.map((cls) => (
                 <label
                   key={cls.id}
-                  className="flex items-center gap-2 cursor-pointer hover:bg-gray-700/50 rounded px-1 py-0.5"
+                  className={`flex items-center gap-2 rounded px-1 py-0.5 ${
+                    disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-700/50'
+                  }`}
                 >
                   <input
                     type="checkbox"
                     checked={visibleTissueClasses.includes(cls.id)}
+                    disabled={disabled}
                     onChange={() => toggleTissueClass(cls.id)}
                     className="h-3 w-3 rounded"
                   />
@@ -234,6 +249,7 @@ export function LayerPanel({
               type="checkbox"
               id="cells-enabled"
               checked={cellsEnabled}
+              disabled={disabled}
               onChange={(e) => onCellsEnabledChange(e.target.checked)}
               className="h-4 w-4 rounded"
             />
@@ -269,6 +285,7 @@ export function LayerPanel({
                   min="0"
                   max="100"
                   value={cellsOpacity * 100}
+                  disabled={disabled}
                   onChange={(e) => onCellsOpacityChange(Number(e.target.value) / 100)}
                   className="flex-1 h-1"
                 />
@@ -279,6 +296,7 @@ export function LayerPanel({
                   <input
                     type="checkbox"
                     checked={cellHoverEnabled}
+                    disabled={disabled}
                     onChange={(e) => onCellHoverEnabledChange(e.target.checked)}
                     className="h-3 w-3 rounded"
                   />
@@ -293,10 +311,18 @@ export function LayerPanel({
               <div className="flex justify-between text-xs text-gray-400 mb-1">
                 <span>Classes</span>
                 <div className="space-x-2">
-                  <button onClick={selectAllCellClasses} className="hover:text-white">
+                  <button
+                    onClick={selectAllCellClasses}
+                    disabled={disabled}
+                    className={disabled ? 'opacity-50 cursor-not-allowed' : 'hover:text-white'}
+                  >
                     All
                   </button>
-                  <button onClick={selectNoneCellClasses} className="hover:text-white">
+                  <button
+                    onClick={selectNoneCellClasses}
+                    disabled={disabled}
+                    className={disabled ? 'opacity-50 cursor-not-allowed' : 'hover:text-white'}
+                  >
                     None
                   </button>
                 </div>
@@ -304,11 +330,14 @@ export function LayerPanel({
               {cellClasses.map((cls) => (
                 <label
                   key={cls.id}
-                  className="flex items-center gap-2 cursor-pointer hover:bg-gray-700/50 rounded px-1 py-0.5"
+                  className={`flex items-center gap-2 rounded px-1 py-0.5 ${
+                    disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-700/50'
+                  }`}
                 >
                   <input
                     type="checkbox"
                     checked={visibleCellClasses.includes(cls.id)}
+                    disabled={disabled}
                     onChange={() => toggleCellClass(cls.id)}
                     className="h-3 w-3 rounded"
                   />

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react'
 import OpenSeadragon from 'openseadragon'
 
 export interface SlideInfo {
@@ -11,6 +11,13 @@ export interface SlideInfo {
   tileUrlTemplate: string
 }
 
+export interface SlideViewerHandle {
+  setViewport: (
+    viewport: { centerX: number; centerY: number; zoom: number },
+    immediate?: boolean
+  ) => void
+}
+
 interface SlideViewerProps {
   slide: SlideInfo
   showMinimap?: boolean
@@ -19,13 +26,16 @@ interface SlideViewerProps {
   onTileLoadError?: (error: { level: number; x: number; y: number }) => void
 }
 
-export function SlideViewer({
-  slide,
-  showMinimap = true,
-  minimapPosition = 'BOTTOM_RIGHT',
-  onViewportChange,
-  onTileLoadError,
-}: SlideViewerProps) {
+export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(function SlideViewer(
+  {
+    slide,
+    showMinimap = true,
+    minimapPosition = 'BOTTOM_RIGHT',
+    onViewportChange,
+    onTileLoadError,
+  },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement>(null)
   const minimapRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
@@ -41,6 +51,22 @@ export function SlideViewer({
     onViewportChangeRef.current = onViewportChange
     onTileLoadErrorRef.current = onTileLoadError
   }, [onViewportChange, onTileLoadError])
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      setViewport: (viewport, immediate = false) => {
+        const viewer = viewerRef.current
+        if (!viewer?.viewport) return
+
+        const center = new OpenSeadragon.Point(viewport.centerX, viewport.centerY)
+        viewer.viewport.zoomTo(viewport.zoom, null, immediate)
+        viewer.viewport.panTo(center, immediate)
+        viewer.viewport.applyConstraints()
+      },
+    }),
+    []
+  )
 
   // Create custom tile source for WSIStreamer
   const createTileSource = useCallback((slideInfo: SlideInfo): OpenSeadragon.TileSource => {
@@ -271,4 +297,4 @@ export function SlideViewer({
       )}
     </div>
   )
-}
+})

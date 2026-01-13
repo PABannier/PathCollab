@@ -20,7 +20,7 @@ interface UseWebSocketOptions {
 
 interface UseWebSocketReturn {
   status: ConnectionStatus
-  sendMessage: (message: WebSocketMessage) => void
+  sendMessage: (message: WebSocketMessage) => number
   lastMessage: WebSocketMessage | null
   reconnect: () => void
   disconnect: () => void
@@ -168,9 +168,10 @@ export function useWebSocket({
   // Send message
   const sendMessage = useCallback((message: WebSocketMessage) => {
     // Add sequence number if not present
+    const seq = message.seq ?? seqRef.current++
     const msgWithSeq = {
       ...message,
-      seq: message.seq ?? seqRef.current++,
+      seq,
     }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -179,6 +180,8 @@ export function useWebSocket({
       // Queue message for when connection is established
       messageQueueRef.current.push(msgWithSeq)
     }
+
+    return seq
   }, [])
 
   // Manually reconnect

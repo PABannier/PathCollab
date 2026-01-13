@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { SlideViewer, type SlideInfo } from '../components/viewer'
+import { SlideViewer, type SlideInfo, type SlideViewerHandle } from '../components/viewer'
 import { CursorLayer } from '../components/viewer/CursorLayer'
 import { OverlayCanvas } from '../components/viewer/OverlayCanvas'
 import { TissueHeatmapLayer } from '../components/viewer/TissueHeatmapLayer'
@@ -8,7 +8,7 @@ import { LayerPanel } from '../components/viewer/LayerPanel'
 import { MinimapOverlay } from '../components/viewer/MinimapOverlay'
 import { CellTooltip } from '../components/viewer/CellTooltip'
 import { OverlayUploader } from '../components/upload/OverlayUploader'
-import { useSession } from '../hooks/useSession'
+import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 
 // Cell polygon data for rendering
@@ -79,14 +79,18 @@ export function Session() {
   const { id: sessionId } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const viewerContainerRef = useRef<HTMLDivElement>(null)
+  const viewerRef = useRef<SlideViewerHandle | null>(null)
   const [viewerBounds, setViewerBounds] = useState<DOMRect | null>(null)
   const [currentViewport, setCurrentViewport] = useState({ centerX: 0.5, centerY: 0.5, zoom: 1 })
   const [error, setError] = useState<string | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const pendingSnapRef = useRef(false)
+  const autoCreateRequestedRef = useRef(false)
 
   // Overlay state
   const [overlayId, setOverlayId] = useState<string | null>(null)
+  const [overlayManifest, setOverlayManifest] = useState<OverlayManifest | null>(null)
   const [overlayCells, setOverlayCells] = useState<CellPolygon[]>([])
   const [overlayEnabled, setOverlayEnabled] = useState(true)
   const [overlayOpacity, setOverlayOpacity] = useState(0.7)
@@ -109,10 +113,12 @@ export function Session() {
   }, [])
   const joinSecret = hashParams.get('join') || searchParams.get('join') || undefined
   const presenterKey = hashParams.get('presenter') || searchParams.get('presenter') || undefined
+  const slideParam = searchParams.get('slide')?.trim() || undefined
 
   // Handle overlay loaded
-  const handleOverlayLoaded = useCallback((id: string) => {
+  const handleOverlayLoaded = useCallback((id: string, manifest: OverlayManifest) => {
     setOverlayId(id)
+    setOverlayManifest(manifest)
     setNotification(`Overlay loaded: ${id}`)
     setTimeout(() => setNotification(null), 3000)
   }, [])
@@ -129,6 +135,7 @@ export function Session() {
     createSession,
     updateCursor,
     updateViewport,
+    updateLayerVisibility,
     snapToPresenter,
   } = useSession({
     sessionId,
@@ -137,6 +144,150 @@ export function Session() {
     onError: setError,
     onOverlayLoaded: handleOverlayLoaded,
   })
+
+  const autoCreateSlideId = useMemo(() => {
+    if (joinSecret) return null
+    if (sessionId === 'new') {
+      return slideParam || null
+    }
+    if (sessionId === 'demo') {
+      return 'demo'
+    }
+    return null
+  }, [joinSecret, sessionId, slideParam])
+
+  useEffect(() => {
+    if (!autoCreateSlideId || session || connectionStatus !== 'connected') return
+    if (autoCreateRequestedRef.current) return
+
+    autoCreateRequestedRef.current = true
+    createSession(autoCreateSlideId)
+  }, [autoCreateSlideId, connectionStatus, createSession, session])
+
+  const layerVisibility = useMemo<LayerVisibility>(
+    () => ({
+      tissue_heatmap_visible: tissueEnabled,
+      tissue_heatmap_opacity: tissueOpacity,
+      tissue_classes_visible: visibleTissueClasses,
+      cell_polygons_visible: overlayEnabled,
+      cell_polygons_opacity: overlayOpacity,
+      cell_classes_visible: visibleCellClasses,
+      cell_hover_enabled: cellHoverEnabled,
+    }),
+    [
+      tissueEnabled,
+      tissueOpacity,
+      visibleTissueClasses,
+      overlayEnabled,
+      overlayOpacity,
+      visibleCellClasses,
+      cellHoverEnabled,
+    ]
+  )
+
+  const emitLayerVisibility = useCallback(
+    (next: LayerVisibility) => {
+      if (session && isPresenter) {
+        updateLayerVisibility(next)
+      }
+    },
+    [isPresenter, session, updateLayerVisibility]
+  )
+
+  const handleTissueEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setTissueEnabled(enabled)
+      emitLayerVisibility({ ...layerVisibility, tissue_heatmap_visible: enabled })
+    },
+    [emitLayerVisibility, layerVisibility]
+  )
+
+  const handleTissueOpacityChange = useCallback(
+    (opacity: number) => {
+      setTissueOpacity(opacity)
+      emitLayerVisibility({ ...layerVisibility, tissue_heatmap_opacity: opacity })
+    },
+    [emitLayerVisibility, layerVisibility]
+  )
+
+  const handleVisibleTissueClassesChange = useCallback(
+    (classes: number[]) => {
+      setVisibleTissueClasses(classes)
+      emitLayerVisibility({ ...layerVisibility, tissue_classes_visible: classes })
+    },
+    [emitLayerVisibility, layerVisibility]
+  )
+
+  const handleCellsEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setOverlayEnabled(enabled)
+      emitLayerVisibility({ ...layerVisibility, cell_polygons_visible: enabled })
+    },
+    [emitLayerVisibility, layerVisibility]
+  )
+
+  const handleCellsOpacityChange = useCallback(
+    (opacity: number) => {
+      setOverlayOpacity(opacity)
+      emitLayerVisibility({ ...layerVisibility, cell_polygons_opacity: opacity })
+    },
+    [emitLayerVisibility, layerVisibility]
+  )
+
+  const handleVisibleCellClassesChange = useCallback(
+    (classes: number[]) => {
+      setVisibleCellClasses(classes)
+      emitLayerVisibility({ ...layerVisibility, cell_classes_visible: classes })
+    },
+    [emitLayerVisibility, layerVisibility]
+  )
+
+  const handleCellHoverEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setCellHoverEnabled(enabled)
+      emitLayerVisibility({ ...layerVisibility, cell_hover_enabled: enabled })
+    },
+    [emitLayerVisibility, layerVisibility]
+  )
+
+  const layerControlsDisabled = !!session && !isPresenter
+
+  const arraysEqual = useCallback((a: number[], b: number[]) => {
+    if (a.length !== b.length) return false
+    return a.every((value, index) => value === b[index])
+  }, [])
+
+  const applyLayerVisibility = useCallback(
+    (visibility: LayerVisibility) => {
+      setTissueEnabled((prev) =>
+        prev === visibility.tissue_heatmap_visible ? prev : visibility.tissue_heatmap_visible
+      )
+      setTissueOpacity((prev) =>
+        prev === visibility.tissue_heatmap_opacity ? prev : visibility.tissue_heatmap_opacity
+      )
+      setVisibleTissueClasses((prev) =>
+        arraysEqual(prev, visibility.tissue_classes_visible) ? prev : visibility.tissue_classes_visible
+      )
+      setOverlayEnabled((prev) =>
+        prev === visibility.cell_polygons_visible ? prev : visibility.cell_polygons_visible
+      )
+      setOverlayOpacity((prev) =>
+        prev === visibility.cell_polygons_opacity ? prev : visibility.cell_polygons_opacity
+      )
+      setVisibleCellClasses((prev) =>
+        arraysEqual(prev, visibility.cell_classes_visible) ? prev : visibility.cell_classes_visible
+      )
+      setCellHoverEnabled((prev) =>
+        prev === visibility.cell_hover_enabled ? prev : visibility.cell_hover_enabled
+      )
+    },
+    [arraysEqual]
+  )
+
+  useEffect(() => {
+    if (!session?.layer_visibility) return
+    applyLayerVisibility(session.layer_visibility)
+  }, [applyLayerVisibility, session?.layer_visibility])
 
   // Get slide info from session or use demo slide
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
@@ -189,16 +340,17 @@ export function Session() {
       const minY = (currentViewport.centerY - viewportHeight / 2) * slide.height
       const maxY = (currentViewport.centerY + viewportHeight / 2) * slide.height
 
-      // Server stores vector chunks at level 0 using a fixed 256-pixel tile grid.
-      // We must use the same tile size and always request level 0.
-      const serverTileSize = 256
+      // Server stores vector chunks at level 0 using the overlay tile grid.
+      const serverTileSize = overlayManifest?.tile_size ?? 256
       const level = 0
 
-      // Calculate tile range using the server's 256-pixel tile grid
+      // Calculate tile range using the server's tile grid
+      const maxTileX = Math.max(0, Math.ceil(slide.width / serverTileSize) - 1)
+      const maxTileY = Math.max(0, Math.ceil(slide.height / serverTileSize) - 1)
       const startTileX = Math.max(0, Math.floor(minX / serverTileSize))
-      const endTileX = Math.floor(maxX / serverTileSize)
+      const endTileX = Math.min(maxTileX, Math.floor(maxX / serverTileSize))
       const startTileY = Math.max(0, Math.floor(minY / serverTileSize))
-      const endTileY = Math.floor(maxY / serverTileSize)
+      const endTileY = Math.min(maxTileY, Math.floor(maxY / serverTileSize))
 
       // Fetch vector chunks for visible tiles
       const cells: CellPolygon[] = []
@@ -206,8 +358,27 @@ export function Session() {
 
       // Limit tile fetches to prevent excessive requests at low zoom
       const maxTilesPerAxis = 4
-      for (let ty = startTileY; ty <= endTileY && ty < startTileY + maxTilesPerAxis; ty++) {
-        for (let tx = startTileX; tx <= endTileX && tx < startTileX + maxTilesPerAxis; tx++) {
+      const centerTileX = Math.floor((minX + maxX) / 2 / serverTileSize)
+      const centerTileY = Math.floor((minY + maxY) / 2 / serverTileSize)
+      let rangeStartX = startTileX
+      let rangeEndX = endTileX
+      let rangeStartY = startTileY
+      let rangeEndY = endTileY
+
+      if (endTileX - startTileX + 1 > maxTilesPerAxis) {
+        rangeStartX = Math.max(0, centerTileX - Math.floor(maxTilesPerAxis / 2))
+        rangeEndX = Math.min(maxTileX, rangeStartX + maxTilesPerAxis - 1)
+        rangeStartX = Math.max(0, rangeEndX - maxTilesPerAxis + 1)
+      }
+
+      if (endTileY - startTileY + 1 > maxTilesPerAxis) {
+        rangeStartY = Math.max(0, centerTileY - Math.floor(maxTilesPerAxis / 2))
+        rangeEndY = Math.min(maxTileY, rangeStartY + maxTilesPerAxis - 1)
+        rangeStartY = Math.max(0, rangeEndY - maxTilesPerAxis + 1)
+      }
+
+      for (let ty = rangeStartY; ty <= rangeEndY; ty++) {
+        for (let tx = rangeStartX; tx <= rangeEndX; tx++) {
           // Capture tile coordinates for closure
           const tileX = tx
           const tileY = ty
@@ -244,7 +415,7 @@ export function Session() {
     // Debounce the fetch to avoid too many requests
     const timeoutId = setTimeout(fetchCells, 100)
     return () => clearTimeout(timeoutId)
-  }, [overlayId, overlayEnabled, currentViewport, viewerBounds, slide])
+  }, [overlayId, overlayEnabled, currentViewport, viewerBounds, slide, overlayManifest])
 
   // Update viewer bounds on resize
   useEffect(() => {
@@ -271,6 +442,17 @@ export function Session() {
     [session, updateViewport]
   )
 
+  const applyPresenterViewport = useCallback(
+    (viewport: { center_x: number; center_y: number; zoom: number }) => {
+      viewerRef.current?.setViewport({
+        centerX: viewport.center_x,
+        centerY: viewport.center_y,
+        zoom: viewport.zoom,
+      })
+    },
+    []
+  )
+
   // Handle mouse move for cursor tracking
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -287,13 +469,23 @@ export function Session() {
 
   // Handle create session
   const handleCreateSession = useCallback(() => {
-    createSession('demo')
-  }, [createSession])
+    createSession(slideParam || 'demo')
+  }, [createSession, slideParam])
 
   // Handle snap to presenter
   const handleSnapToPresenter = useCallback(() => {
+    pendingSnapRef.current = true
     snapToPresenter()
-  }, [snapToPresenter])
+    if (presenterViewport) {
+      applyPresenterViewport(presenterViewport)
+    }
+  }, [applyPresenterViewport, presenterViewport, snapToPresenter])
+
+  useEffect(() => {
+    if (!pendingSnapRef.current || !presenterViewport) return
+    applyPresenterViewport(presenterViewport)
+    pendingSnapRef.current = false
+  }, [applyPresenterViewport, presenterViewport])
 
   // Build share URL when session is created with secrets
   useEffect(() => {
@@ -368,10 +560,11 @@ export function Session() {
             <div className="flex items-center gap-2 border-r border-gray-600 pr-2 mr-2">
               {/* Tissue heatmap toggle */}
               <button
-                onClick={() => setTissueEnabled(!tissueEnabled)}
+                onClick={() => handleTissueEnabledChange(!tissueEnabled)}
+                disabled={layerControlsDisabled}
                 className={`rounded px-2 py-1 text-xs ${
                   tissueEnabled ? 'bg-amber-600 text-white' : 'bg-gray-600 text-gray-300'
-                }`}
+                } ${layerControlsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title="Toggle tissue heatmap"
               >
                 Tissue
@@ -382,17 +575,19 @@ export function Session() {
                   min="0"
                   max="100"
                   value={tissueOpacity * 100}
-                  onChange={(e) => setTissueOpacity(Number(e.target.value) / 100)}
+                  onChange={(e) => handleTissueOpacityChange(Number(e.target.value) / 100)}
                   className="w-12 h-1"
+                  disabled={layerControlsDisabled}
                   title={`Tissue opacity: ${Math.round(tissueOpacity * 100)}%`}
                 />
               )}
               {/* Cell overlay toggle */}
               <button
-                onClick={() => setOverlayEnabled(!overlayEnabled)}
+                onClick={() => handleCellsEnabledChange(!overlayEnabled)}
+                disabled={layerControlsDisabled}
                 className={`rounded px-2 py-1 text-xs ${
                   overlayEnabled ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-300'
-                }`}
+                } ${layerControlsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                 title="Toggle cell overlay"
               >
                 Cells
@@ -403,8 +598,9 @@ export function Session() {
                   min="0"
                   max="100"
                   value={overlayOpacity * 100}
-                  onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
+                  onChange={(e) => handleCellsOpacityChange(Number(e.target.value) / 100)}
                   className="w-12 h-1"
+                  disabled={layerControlsDisabled}
                   title={`Cell opacity: ${Math.round(overlayOpacity * 100)}%`}
                 />
               )}
@@ -429,6 +625,7 @@ export function Session() {
           {session && isPresenter && !overlayId && (
             <OverlayUploader
               sessionId={session.id}
+              presenterKey={secrets?.presenterKey ?? presenterKey}
               onUploadComplete={(id) => {
                 setOverlayId(id)
                 setNotification('Overlay uploaded successfully!')
@@ -469,7 +666,7 @@ export function Session() {
         ref={viewerContainerRef}
         onMouseMove={handleMouseMove}
       >
-        <SlideViewer slide={slide} onViewportChange={handleViewportChange} />
+        <SlideViewer ref={viewerRef} slide={slide} onViewportChange={handleViewportChange} />
 
         {/* Tissue heatmap overlay */}
         {viewerBounds && (
@@ -479,6 +676,8 @@ export function Session() {
             viewport={currentViewport}
             slideWidth={slide.width}
             slideHeight={slide.height}
+            tileSize={overlayManifest?.tile_size ?? 256}
+            levels={overlayManifest?.levels ?? 1}
             tissueClasses={DEFAULT_TISSUE_CLASSES}
             visibleClasses={visibleTissueClasses}
             opacity={tissueOpacity}
@@ -585,21 +784,22 @@ export function Session() {
         {overlayId && (
           <LayerPanel
             tissueEnabled={tissueEnabled}
-            onTissueEnabledChange={setTissueEnabled}
+            onTissueEnabledChange={handleTissueEnabledChange}
             tissueOpacity={tissueOpacity}
-            onTissueOpacityChange={setTissueOpacity}
+            onTissueOpacityChange={handleTissueOpacityChange}
             tissueClasses={DEFAULT_TISSUE_CLASSES}
             visibleTissueClasses={visibleTissueClasses}
-            onVisibleTissueClassesChange={setVisibleTissueClasses}
+            onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
             cellsEnabled={overlayEnabled}
-            onCellsEnabledChange={setOverlayEnabled}
+            onCellsEnabledChange={handleCellsEnabledChange}
             cellsOpacity={overlayOpacity}
-            onCellsOpacityChange={setOverlayOpacity}
+            onCellsOpacityChange={handleCellsOpacityChange}
             cellClasses={DEFAULT_CELL_CLASSES}
             visibleCellClasses={visibleCellClasses}
-            onVisibleCellClassesChange={setVisibleCellClasses}
+            onVisibleCellClassesChange={handleVisibleCellClassesChange}
             cellHoverEnabled={cellHoverEnabled}
-            onCellHoverEnabledChange={setCellHoverEnabled}
+            onCellHoverEnabledChange={handleCellHoverEnabledChange}
+            disabled={layerControlsDisabled}
           />
         )}
       </main>

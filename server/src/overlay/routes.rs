@@ -90,7 +90,7 @@ impl IntoResponse for ErrorResponse {
 pub async fn upload_overlay(
     State(state): State<AppState>,
     Query(query): Query<UploadQuery>,
-    _headers: HeaderMap,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<UploadResponse>, ErrorResponse> {
     let session_id = &query.session_id;
@@ -106,6 +106,33 @@ pub async fn upload_overlay(
         return Err(ErrorResponse {
             error: format!("Session not found: {}", session_id),
             code: "not_found".to_string(),
+        });
+    }
+
+    // Require presenter key for overlay uploads
+    let presenter_key = headers
+        .get("x-presenter-key")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty());
+
+    let presenter_key = match presenter_key {
+        Some(key) => key,
+        None => {
+            return Err(ErrorResponse {
+                error: "Presenter key required".to_string(),
+                code: "unauthorized".to_string(),
+            });
+        }
+    };
+
+    if let Err(err) = state
+        .session_manager
+        .authenticate_presenter(session_id, presenter_key)
+        .await
+    {
+        return Err(ErrorResponse {
+            error: format!("Presenter auth failed: {}", err),
+            code: "unauthorized".to_string(),
         });
     }
 
@@ -130,6 +157,8 @@ pub async fn upload_overlay(
     let content_sha256 = derived.content_sha256.clone();
     let total_raster_tiles = derived.manifest.total_raster_tiles;
     let total_vector_chunks = derived.manifest.total_vector_chunks;
+    let manifest_tile_size = derived.manifest.tile_size;
+    let manifest_levels = derived.manifest.levels;
 
     // Store in session-scoped storage
     {
@@ -153,8 +182,8 @@ pub async fn upload_overlay(
                     content_sha256: content_sha256.clone(),
                     raster_base_url: format!("/api/overlay/{}/raster", overlay_id),
                     vec_base_url: format!("/api/overlay/{}/vec", overlay_id),
-                    tile_size: 256,
-                    levels: 10,
+                    tile_size: manifest_tile_size,
+                    levels: manifest_levels,
                 },
             },
         )

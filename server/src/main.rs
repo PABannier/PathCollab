@@ -4,7 +4,7 @@ use pathcollab_server::overlay::overlay_routes;
 use pathcollab_server::server::{AppState, ws_handler};
 use serde::Serialize;
 use std::net::SocketAddr;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -77,6 +77,16 @@ async fn main() -> anyhow::Result<()> {
 
     // Create shared application state
     let app_state = AppState::new();
+
+    // Periodic cleanup for expired sessions
+    let cleanup_state = app_state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            cleanup_state.session_manager.cleanup_expired().await;
+        }
+    });
 
     // Build CORS layer
     let cors = CorsLayer::new()

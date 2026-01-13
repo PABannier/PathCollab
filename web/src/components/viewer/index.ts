@@ -1,4 +1,4 @@
-export { SlideViewer, type SlideInfo } from './SlideViewer'
+export { SlideViewer, type SlideInfo, type SlideViewerHandle } from './SlideViewer'
 export { CursorLayer } from './CursorLayer'
 export { OverlayCanvas } from './OverlayCanvas'
 export { TissueHeatmapLayer } from './TissueHeatmapLayer'

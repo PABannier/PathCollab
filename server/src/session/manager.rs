@@ -447,6 +447,7 @@ fn verify_secret(secret: &str, hash: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn test_slide() -> SlideInfo {
         SlideInfo {
@@ -504,5 +505,25 @@ mod tests {
 
         let result = manager.join_session(&session.id, "invalid").await;
         assert!(matches!(result, Err(SessionError::InvalidJoinSecret)));
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired_sessions() {
+        let config = SessionConfig {
+            max_duration: Duration::from_millis(1),
+            presenter_grace_period: Duration::from_secs(1),
+            max_followers: 20,
+        };
+        let manager = SessionManager::with_config(config);
+
+        manager
+            .create_session(test_slide(), Uuid::new_v4())
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        manager.cleanup_expired().await;
+
+        assert_eq!(manager.session_count_async().await, 0);
     }
 }

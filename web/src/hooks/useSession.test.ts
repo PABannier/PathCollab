@@ -429,6 +429,36 @@ describe('useSession', () => {
       expect(authMessage).toBeDefined()
       expect(authMessage?.presenter_key).toBe('test-presenter-key')
     })
+
+    it('should set isPresenter when presenter_auth ack succeeds', async () => {
+      const { result } = renderHook(() =>
+        useSession({
+          presenterKey: 'test-presenter-key',
+        })
+      )
+
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+      })
+
+      act(() => {
+        result.current.authenticatePresenter()
+      })
+
+      const sentMessages = mockWs.getInstance()?.getSentMessages()
+      const authMessage = sentMessages?.find((m) => m.type === 'presenter_auth')
+
+      await act(async () => {
+        mockWs.getInstance()?.simulateMessage({
+          type: 'ack',
+          ack_seq: authMessage?.seq,
+          status: 'ok',
+        })
+      })
+
+      expect(result.current.isPresenter).toBe(true)
+    })
   })
 
   describe('error handling', () => {

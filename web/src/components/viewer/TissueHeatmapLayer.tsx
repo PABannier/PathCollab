@@ -6,6 +6,8 @@ interface TissueHeatmapLayerProps {
   viewport: { centerX: number; centerY: number; zoom: number }
   slideWidth: number
   slideHeight: number
+  tileSize: number
+  levels: number
   tissueClasses: TissueClass[]
   visibleClasses: number[]
   opacity: number
@@ -16,6 +18,14 @@ interface TissueClass {
   id: number
   name: string
   color: string
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = hex.startsWith('#') ? hex.slice(1) : hex
+  const r = parseInt(normalized.slice(0, 2), 16) / 255
+  const g = parseInt(normalized.slice(2, 4), 16) / 255
+  const b = parseInt(normalized.slice(4, 6), 16) / 255
+  return [r, g, b]
 }
 
 // Vertex shader for tile rendering
@@ -51,7 +61,7 @@ void main() {
 }
 `
 
-// Fragment shader - applies opacity to pre-colorized tiles from server
+// Fragment shader - applies opacity and class visibility to pre-colorized tiles from server
 const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 
@@ -60,12 +70,22 @@ out vec4 fragColor;
 
 uniform sampler2D u_texture;
 uniform float u_opacity;
+uniform vec3 u_classColors[8];
+uniform float u_classVisible[8];
 
 void main() {
   vec4 texColor = texture(u_texture, v_texCoord);
   // The texture contains RGBA from server with pre-applied class colors
-  // We just apply the user's opacity setting here
-  fragColor = vec4(texColor.rgb, texColor.a * u_opacity);
+  // Apply class visibility by matching colors to palette entries.
+  float visible = 1.0;
+  float epsilon = 0.01;
+  for (int i = 0; i < 8; i++) {
+    if (distance(texColor.rgb, u_classColors[i]) < epsilon) {
+      visible = u_classVisible[i];
+      break;
+    }
+  }
+  fragColor = vec4(texColor.rgb, texColor.a * u_opacity * visible);
 }
 `
 
@@ -77,23 +97,21 @@ interface TileCache {
 
 // Maximum number of tiles to cache (prevents unbounded GPU memory growth)
 const MAX_TILE_CACHE_SIZE = 64
+const CLASS_COUNT = 8
 
 export function TissueHeatmapLayer({
   overlayId,
   viewerBounds,
   viewport,
-  slideWidth: _slideWidth,
-  slideHeight: _slideHeight,
-  tissueClasses: _tissueClasses,
-  visibleClasses: _visibleClasses,
+  slideWidth,
+  slideHeight,
+  tileSize,
+  levels,
+  tissueClasses,
+  visibleClasses,
   opacity,
   enabled,
 }: TissueHeatmapLayerProps) {
-  // Reserved props for future filtering/scaling features
-  void _slideWidth
-  void _slideHeight
-  void _tissueClasses
-  void _visibleClasses
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const glRef = useRef<WebGL2RenderingContext | null>(null)
   const programRef = useRef<WebGLProgram | null>(null)
@@ -102,6 +120,23 @@ export function TissueHeatmapLayer({
   const texCoordBufferRef = useRef<WebGLBuffer | null>(null)
   const tileCacheRef = useRef<Map<string, TileCache>>(new Map())
   const [error, setError] = useState<string | null>(null)
+  const visibleClassSet = useMemo(() => new Set(visibleClasses), [visibleClasses])
+  const classColors = useMemo(() => {
+    const colors: number[] = []
+    for (let i = 0; i < CLASS_COUNT; i++) {
+      const entry = tissueClasses.find((cls) => cls.id === i)
+      const [r, g, b] = entry ? hexToRgb(entry.color) : [0, 0, 0]
+      colors.push(r, g, b)
+    }
+    return new Float32Array(colors)
+  }, [tissueClasses])
+  const classVisibility = useMemo(() => {
+    const visibility = new Float32Array(CLASS_COUNT)
+    for (let i = 0; i < CLASS_COUNT; i++) {
+      visibility[i] = visibleClassSet.has(i) ? 1 : 0
+    }
+    return visibility
+  }, [visibleClassSet])
 
   // Initialize WebGL2 context
   useEffect(() => {
@@ -327,6 +362,7 @@ export function TissueHeatmapLayer({
   // Calculate visible tiles for current viewport
   const visibleTiles = useMemo(() => {
     if (!viewerBounds || !overlayId) return []
+    if (slideWidth <= 0 || slideHeight <= 0 || tileSize <= 0) return []
 
     const viewportWidth = 1 / viewport.zoom
     const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
@@ -337,17 +373,40 @@ export function TissueHeatmapLayer({
     const minY = viewport.centerY - viewportHeight / 2
     const maxY = viewport.centerY + viewportHeight / 2
 
-    // Determine tile level based on zoom
-    const level = Math.max(0, Math.min(9, Math.floor(Math.log2(viewport.zoom))))
-    const tilesPerDim = Math.pow(2, level)
-    const tileWidth = 1 / tilesPerDim
-    const tileHeight = 1 / tilesPerDim
+    // Determine tile level based on viewport coverage
+    const maxTilesPerAxis = 5
+    const maxLevel = Math.max(0, levels - 1)
+    const tilesAcross = (viewportWidth * slideWidth) / (tileSize * maxTilesPerAxis)
+    const desiredLevel = Number.isFinite(tilesAcross) && tilesAcross > 0 ? Math.ceil(Math.log2(tilesAcross)) : 0
+    const level = Math.max(0, Math.min(maxLevel, desiredLevel))
+    const scale = Math.pow(2, level)
+
+    const tileWidth = (tileSize * scale) / slideWidth
+    const tileHeight = (tileSize * scale) / slideHeight
+    const tilesPerDimX = Math.max(1, Math.ceil(slideWidth / (tileSize * scale)))
+    const tilesPerDimY = Math.max(1, Math.ceil(slideHeight / (tileSize * scale)))
 
     // Calculate tile range
-    const startX = Math.max(0, Math.floor(minX / tileWidth))
-    const endX = Math.min(tilesPerDim - 1, Math.ceil(maxX / tileWidth))
-    const startY = Math.max(0, Math.floor(minY / tileHeight))
-    const endY = Math.min(tilesPerDim - 1, Math.ceil(maxY / tileHeight))
+    let startX = Math.max(0, Math.floor(minX / tileWidth))
+    let endX = Math.min(tilesPerDimX - 1, Math.ceil(maxX / tileWidth))
+    let startY = Math.max(0, Math.floor(minY / tileHeight))
+    let endY = Math.min(tilesPerDimY - 1, Math.ceil(maxY / tileHeight))
+
+    // Limit tiles around the viewport center
+    const centerTileX = Math.floor((viewport.centerX * slideWidth) / (tileSize * scale))
+    const centerTileY = Math.floor((viewport.centerY * slideHeight) / (tileSize * scale))
+
+    if (endX - startX + 1 > maxTilesPerAxis) {
+      startX = Math.max(0, centerTileX - Math.floor(maxTilesPerAxis / 2))
+      endX = Math.min(tilesPerDimX - 1, startX + maxTilesPerAxis - 1)
+      startX = Math.max(0, endX - maxTilesPerAxis + 1)
+    }
+
+    if (endY - startY + 1 > maxTilesPerAxis) {
+      startY = Math.max(0, centerTileY - Math.floor(maxTilesPerAxis / 2))
+      endY = Math.min(tilesPerDimY - 1, startY + maxTilesPerAxis - 1)
+      startY = Math.max(0, endY - maxTilesPerAxis + 1)
+    }
 
     const tiles: Array<{
       level: number
@@ -356,8 +415,8 @@ export function TissueHeatmapLayer({
       rect: [number, number, number, number]
     }> = []
 
-    for (let ty = startY; ty <= endY && ty <= startY + 4; ty++) {
-      for (let tx = startX; tx <= endX && tx <= startX + 4; tx++) {
+    for (let ty = startY; ty <= endY; ty++) {
+      for (let tx = startX; tx <= endX; tx++) {
         tiles.push({
           level,
           x: tx,
@@ -368,7 +427,7 @@ export function TissueHeatmapLayer({
     }
 
     return tiles
-  }, [viewerBounds, viewport, overlayId])
+  }, [viewerBounds, viewport, overlayId, slideWidth, slideHeight, tileSize, levels])
 
   // Load tiles and render
   useEffect(() => {
@@ -407,12 +466,20 @@ export function TissueHeatmapLayer({
     const opacityLoc = gl.getUniformLocation(program, 'u_opacity')
     const textureLoc = gl.getUniformLocation(program, 'u_texture')
     const tileRectLoc = gl.getUniformLocation(program, 'u_tileRect')
+    const classColorsLoc = gl.getUniformLocation(program, 'u_classColors[0]')
+    const classVisibleLoc = gl.getUniformLocation(program, 'u_classVisible[0]')
 
     gl.uniform2f(centerLoc, viewport.centerX, viewport.centerY)
     gl.uniform1f(zoomLoc, viewport.zoom)
     gl.uniform2f(sizeLoc, viewerBounds.width, viewerBounds.height)
     gl.uniform1f(opacityLoc, opacity)
     gl.uniform1i(textureLoc, 0)
+    if (classColorsLoc) {
+      gl.uniform3fv(classColorsLoc, classColors)
+    }
+    if (classVisibleLoc) {
+      gl.uniform1fv(classVisibleLoc, classVisibility)
+    }
 
     // Load and render tiles asynchronously
     const renderTiles = async () => {
@@ -436,7 +503,17 @@ export function TissueHeatmapLayer({
     return () => {
       cancelled = true
     }
-  }, [viewport, viewerBounds, visibleTiles, opacity, enabled, overlayId, loadTile])
+  }, [
+    viewport,
+    viewerBounds,
+    visibleTiles,
+    opacity,
+    enabled,
+    overlayId,
+    loadTile,
+    classColors,
+    classVisibility,
+  ])
 
   if (!enabled || !viewerBounds || !overlayId) return null
 

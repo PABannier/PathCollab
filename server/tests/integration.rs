@@ -20,6 +20,7 @@ use common::*;
 
 mod http_routes {
     use super::*;
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn test_health_endpoint_returns_ok() {
@@ -64,6 +65,80 @@ mod http_routes {
 
         // Should return 404 for non-existent session
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_overlay_upload_requires_presenter_key() {
+        let (app, state) = create_test_app_with_state();
+        let (session, _, _) = state
+            .session_manager
+            .create_session(create_test_slide_info(), Uuid::new_v4())
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/overlay/upload?session_id={}", session.id))
+                    .header("Content-Type", "application/octet-stream")
+                    .body(Body::from(vec![0u8; 10]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_overlay_upload_rejects_invalid_presenter_key() {
+        let (app, state) = create_test_app_with_state();
+        let (session, _, _) = state
+            .session_manager
+            .create_session(create_test_slide_info(), Uuid::new_v4())
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/overlay/upload?session_id={}", session.id))
+                    .header("Content-Type", "application/octet-stream")
+                    .header("x-presenter-key", "invalid")
+                    .body(Body::from(vec![0u8; 10]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_overlay_upload_accepts_presenter_key() {
+        let (app, state) = create_test_app_with_state();
+        let (session, _, presenter_key) = state
+            .session_manager
+            .create_session(create_test_slide_info(), Uuid::new_v4())
+            .await
+            .unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/overlay/upload?session_id={}", session.id))
+                    .header("Content-Type", "application/octet-stream")
+                    .header("x-presenter-key", presenter_key)
+                    .body(Body::from(vec![0u8; 10]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
