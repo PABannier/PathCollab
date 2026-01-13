@@ -180,6 +180,7 @@ function createMockWebGL2Context(): WebGL2RenderingContext {
 // Override canvas getContext to return mock WebGL2
 const originalGetContext = HTMLCanvasElement.prototype.getContext
 HTMLCanvasElement.prototype.getContext = function (
+  this: HTMLCanvasElement,
   contextId: string,
   options?: unknown
 ): RenderingContext | null {
@@ -194,11 +195,11 @@ HTMLCanvasElement.prototype.getContext = function (
 // ============================================================================
 
 // Store original fetch
-const originalFetch = global.fetch
+const originalFetch = globalThis.fetch
 
 // Restore fetch after all tests
 afterAll(() => {
-  global.fetch = originalFetch
+  globalThis.fetch = originalFetch
 })
 
 // ============================================================================

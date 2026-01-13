@@ -4,10 +4,10 @@
  * Helper functions for rendering components and mocking dependencies.
  */
 
-import { ReactElement, ReactNode } from 'react'
-import { render, RenderOptions, RenderResult } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
+import { render, type RenderOptions, type RenderResult } from '@testing-library/react'
 import { BrowserRouter, MemoryRouter } from 'react-router-dom'
-import { vi, Mock } from 'vitest'
+import { vi, type Mock } from 'vitest'
 
 // ============================================================================
 // Custom Render with Providers
@@ -53,8 +53,8 @@ export interface MockWebSocketInstance {
   onclose: ((event: CloseEvent) => void) | null
   onmessage: ((event: MessageEvent) => void) | null
   onerror: ((event: Event) => void) | null
-  send: Mock<[string], void>
-  close: Mock<[number?, string?], void>
+  send: Mock
+  close: Mock
   // Test helpers
   simulateOpen: () => void
   simulateClose: (code?: number, reason?: string) => void
@@ -120,17 +120,17 @@ export function createMockWebSocket(): MockWebSocketInstance {
 }
 
 /**
- * Install a mock WebSocket globally
+ * Install a mock WebSocket globalThisly
  */
 export function installMockWebSocket(): {
   getInstance: () => MockWebSocketInstance | null
   restore: () => void
 } {
   let instance: MockWebSocketInstance | null = null
-  const OriginalWebSocket = global.WebSocket
+  const OriginalWebSocket = globalThis.WebSocket
 
   // @ts-expect-error - Mocking WebSocket constructor
-  global.WebSocket = class MockWebSocket {
+  globalThis.WebSocket = class MockWebSocket {
     constructor(url: string) {
       instance = createMockWebSocket()
       instance.url = url
@@ -148,7 +148,7 @@ export function installMockWebSocket(): {
   return {
     getInstance: () => instance,
     restore: () => {
-      global.WebSocket = OriginalWebSocket
+      globalThis.WebSocket = OriginalWebSocket
       instance = null
     },
   }
@@ -180,9 +180,9 @@ export function installMockFetch(options: MockFetchOptions): {
   restore: () => void
 } {
   const calls: Array<{ url: string; init?: RequestInit }> = []
-  const originalFetch = global.fetch
+  const originalFetch = globalThis.fetch
 
-  global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
     calls.push({ url, init })
 
@@ -218,7 +218,7 @@ export function installMockFetch(options: MockFetchOptions): {
   return {
     getCalls: () => calls,
     restore: () => {
-      global.fetch = originalFetch
+      globalThis.fetch = originalFetch
     },
   }
 }

@@ -759,14 +759,15 @@ async fn handle_client_message(
                     .and_then(|c| c.session_id.clone())
             };
 
-            if let Some(session_id) = session_id
-                && let Ok(snapshot) = state.session_manager.get_session(&session_id).await
-            {
-                let _ = tx
-                    .send(ServerMessage::PresenterViewport {
-                        viewport: snapshot.presenter_viewport,
-                    })
-                    .await;
+            #[allow(clippy::collapsible_if)]
+            if let Some(session_id) = session_id {
+                if let Ok(snapshot) = state.session_manager.get_session(&session_id).await {
+                    let _ = tx
+                        .send(ServerMessage::PresenterViewport {
+                            viewport: snapshot.presenter_viewport,
+                        })
+                        .await;
+                }
             }
 
             let _ = tx
