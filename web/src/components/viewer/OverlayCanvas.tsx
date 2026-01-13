@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
 interface CellPolygon {
-  x: number  // Slide coordinates
+  x: number // Slide coordinates
   y: number
   classId: number
   confidence: number
-  vertices: number[]  // Flat array of relative vertex positions
+  vertices: number[] // Flat array of relative vertex positions
 }
 
 interface OverlayCanvasProps {
@@ -95,7 +95,7 @@ function hexToRgba(hex: string): [number, number, number, number] {
   const r = parseInt(hex.slice(1, 3), 16) / 255
   const g = parseInt(hex.slice(3, 5), 16) / 255
   const b = parseInt(hex.slice(5, 7), 16) / 255
-  return [r, g, b, 0.7]  // 70% alpha for polygons
+  return [r, g, b, 0.7] // 70% alpha for polygons
 }
 
 export function OverlayCanvas({
@@ -202,7 +202,7 @@ export function OverlayCanvas({
     // Create color lookup from cellClasses or use defaults
     const colorLookup: [number, number, number, number][] = []
     for (let i = 0; i < 15; i++) {
-      const cellClass = cellClasses.find(c => c.id === i)
+      const cellClass = cellClasses.find((c) => c.id === i)
       const hex = cellClass?.color || DEFAULT_CELL_COLORS[i]
       colorLookup[i] = hexToRgba(hex)
     }
@@ -263,10 +263,16 @@ export function OverlayCanvas({
           vertices.push(cx, cy)
           colors.push(...color)
 
-          vertices.push(cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius * (slideWidth / slideHeight))
+          vertices.push(
+            cx + Math.cos(a0) * radius,
+            cy + Math.sin(a0) * radius * (slideWidth / slideHeight)
+          )
           colors.push(...color)
 
-          vertices.push(cx + Math.cos(a1) * radius, cy + Math.sin(a1) * radius * (slideWidth / slideHeight))
+          vertices.push(
+            cx + Math.cos(a1) * radius,
+            cy + Math.sin(a1) * radius * (slideWidth / slideHeight)
+          )
           colors.push(...color)
         }
       }
@@ -316,7 +322,6 @@ export function OverlayCanvas({
     gl.bindVertexArray(null)
 
     vertexCountRef.current = vertices.length / 2
-
   }, [cells, cellClasses, visibleClasses, slideWidth, slideHeight])
 
   // Render on viewport change
@@ -361,7 +366,6 @@ export function OverlayCanvas({
     gl.bindVertexArray(vao)
     gl.drawArrays(gl.TRIANGLES, 0, vertexCountRef.current)
     gl.bindVertexArray(null)
-
   }, [viewport, viewerBounds, opacity, enabled])
 
   if (!enabled || !viewerBounds) return null

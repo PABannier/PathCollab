@@ -9,11 +9,14 @@ import { test, expect, Page } from '@playwright/test'
 
 // Test configuration
 const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:5173'
-const API_URL = process.env.E2E_API_URL || 'http://localhost:8080'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _API_URL = process.env.E2E_API_URL || 'http://localhost:8080'
 
 // ============================================================================
-// Helper Functions
+// Helper Functions (used by skipped tests, will be enabled when backend is ready)
 // ============================================================================
+
+/* eslint-disable @typescript-eslint/no-unused-vars */
 
 /**
  * Wait for the WebSocket connection to be established
@@ -65,6 +68,8 @@ async function joinSession(page: Page, sessionId: string, joinSecret: string): P
   await page.goto(`${BASE_URL}/join/${sessionId}/${joinSecret}`)
   await page.waitForURL(/\/session\/[a-z0-9]+/)
 }
+
+/* eslint-enable @typescript-eslint/no-unused-vars */
 
 // ============================================================================
 // Test Suites
@@ -178,8 +183,9 @@ test.describe('Follower Experience', () => {
     await presenterPage.mouse.move(400, 300)
 
     // Verify cursor appears on follower's view
-    const cursorOverlay = followerPage.locator('[data-testid="cursor-overlay"]')
+    const _cursorOverlay = followerPage.locator('[data-testid="cursor-overlay"]')
     // Implementation depends on cursor rendering approach
+    void _cursorOverlay // Will be used when test is enabled
 
     await presenterContext.close()
     await followerContext.close()
@@ -189,11 +195,13 @@ test.describe('Follower Experience', () => {
     const presenterContext = await browser.newContext()
     const followerContext = await browser.newContext()
 
-    const presenterPage = await presenterContext.newPage()
-    const followerPage = await followerContext.newPage()
+    const _presenterPage = await presenterContext.newPage()
+    const _followerPage = await followerContext.newPage()
 
     // Setup: Create and join session
     // (Implementation depends on actual UI)
+    void _presenterPage // Will be used when test is enabled
+    void _followerPage // Will be used when test is enabled
 
     // Presenter changes viewport
     // Follower should see the change
@@ -220,8 +228,9 @@ test.describe('Error Handling', () => {
     // Simulate server disconnect (would need server control)
     // Verify reconnection indicator appears
 
-    const reconnectingIndicator = page.locator('[data-testid="reconnecting-indicator"]')
+    const _reconnectingIndicator = page.locator('[data-testid="reconnecting-indicator"]')
     // Implementation depends on how disconnection is handled
+    void _reconnectingIndicator // Will be used when test is enabled
   })
 })
 

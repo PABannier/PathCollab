@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 
 interface CellPolygon {
-  x: number  // Absolute slide coordinates
+  x: number // Absolute slide coordinates
   y: number
   classId: number
   confidence: number
@@ -22,7 +22,7 @@ interface CellTooltipProps {
   slideWidth: number
   slideHeight: number
   enabled: boolean
-  hoverRadiusPx?: number  // Radius in pixels for hover detection
+  hoverRadiusPx?: number // Radius in pixels for hover detection
 }
 
 interface TooltipData {
@@ -43,7 +43,6 @@ export function CellTooltip({
   hoverRadiusPx = 20,
 }: CellTooltipProps) {
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null)
-  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
 
   // Convert screen coordinates to slide coordinates
   const screenToSlide = useCallback(
@@ -54,7 +53,7 @@ export function CellTooltip({
 
       // Viewport dimensions in normalized coords
       const vpWidth = 1 / viewport.zoom
-      const vpHeight = (viewerBounds.height / viewerBounds.width) / viewport.zoom
+      const vpHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
 
       // Convert to slide coordinates
       const slideX = (viewport.centerX - vpWidth / 2 + relX * vpWidth) * slideWidth
@@ -69,7 +68,7 @@ export function CellTooltip({
   const slideToScreen = useCallback(
     (slideX: number, slideY: number) => {
       const vpWidth = 1 / viewport.zoom
-      const vpHeight = (viewerBounds.height / viewerBounds.width) / viewport.zoom
+      const vpHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
 
       const normX = slideX / slideWidth
       const normY = slideY / slideHeight
@@ -91,7 +90,7 @@ export function CellTooltip({
 
     // Calculate viewport bounds in slide coordinates
     const vpWidth = (1 / viewport.zoom) * slideWidth
-    const vpHeight = ((viewerBounds.height / viewerBounds.width) / viewport.zoom) * slideHeight
+    const vpHeight = (viewerBounds.height / viewerBounds.width / viewport.zoom) * slideHeight
     const minX = viewport.centerX * slideWidth - vpWidth / 2
     const maxX = viewport.centerX * slideWidth + vpWidth / 2
     const minY = viewport.centerY * slideHeight - vpHeight / 2
@@ -144,8 +143,6 @@ export function CellTooltip({
         return
       }
 
-      setMousePos({ x: e.clientX, y: e.clientY })
-
       const slideCoords = screenToSlide(e.clientX, e.clientY)
       const nearestCell = findNearestCell(slideCoords.x, slideCoords.y)
 
@@ -168,12 +165,16 @@ export function CellTooltip({
   // Handle mouse leave
   const handleMouseLeave = useCallback(() => {
     setTooltipData(null)
-    setMousePos(null)
   }, [])
 
   // Attach event listeners
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      // Clear any stale tooltip when becoming disabled
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTooltipData(null)
+      return
+    }
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true })
     window.addEventListener('mouseleave', handleMouseLeave)
@@ -183,13 +184,6 @@ export function CellTooltip({
       window.removeEventListener('mouseleave', handleMouseLeave)
     }
   }, [enabled, handleMouseMove, handleMouseLeave])
-
-  // Clear tooltip when disabled
-  useEffect(() => {
-    if (!enabled) {
-      setTooltipData(null)
-    }
-  }, [enabled])
 
   if (!tooltipData || !enabled) return null
 

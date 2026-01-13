@@ -198,7 +198,9 @@ export const mockCursors: CursorWithParticipant[] = [
   },
 ]
 
-export function createMockCursor(overrides: Partial<CursorWithParticipant> = {}): CursorWithParticipant {
+export function createMockCursor(
+  overrides: Partial<CursorWithParticipant> = {}
+): CursorWithParticipant {
   return {
     participant_id: `cursor-${Math.random().toString(36).slice(2, 8)}`,
     name: 'Test User',

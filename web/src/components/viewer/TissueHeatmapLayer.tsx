@@ -72,7 +72,7 @@ void main() {
 interface TileCache {
   texture: WebGLTexture
   loading: boolean
-  lastUsed: number  // Timestamp for LRU eviction
+  lastUsed: number // Timestamp for LRU eviction
 }
 
 // Maximum number of tiles to cache (prevents unbounded GPU memory growth)
@@ -82,13 +82,18 @@ export function TissueHeatmapLayer({
   overlayId,
   viewerBounds,
   viewport,
-  slideWidth,
-  slideHeight,
-  tissueClasses,
-  visibleClasses,
+  slideWidth: _slideWidth,
+  slideHeight: _slideHeight,
+  tissueClasses: _tissueClasses,
+  visibleClasses: _visibleClasses,
   opacity,
   enabled,
 }: TissueHeatmapLayerProps) {
+  // Reserved props for future filtering/scaling features
+  void _slideWidth
+  void _slideHeight
+  void _tissueClasses
+  void _visibleClasses
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const glRef = useRef<WebGL2RenderingContext | null>(null)
   const programRef = useRef<WebGLProgram | null>(null)
@@ -110,6 +115,7 @@ export function TissueHeatmapLayer({
     })
 
     if (!gl) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError('WebGL2 not supported')
       return
     }
@@ -122,6 +128,7 @@ export function TissueHeatmapLayer({
     gl.compileShader(vertShader)
     if (!gl.getShaderParameter(vertShader, gl.COMPILE_STATUS)) {
       console.error('Vertex shader error:', gl.getShaderInfoLog(vertShader))
+
       setError('Shader compilation failed')
       return
     }
@@ -131,6 +138,7 @@ export function TissueHeatmapLayer({
     gl.compileShader(fragShader)
     if (!gl.getShaderParameter(fragShader, gl.COMPILE_STATUS)) {
       console.error('Fragment shader error:', gl.getShaderInfoLog(fragShader))
+
       setError('Shader compilation failed')
       return
     }
@@ -142,6 +150,7 @@ export function TissueHeatmapLayer({
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
       console.error('Program link error:', gl.getProgramInfoLog(program))
+
       setError('Shader link failed')
       return
     }
@@ -154,10 +163,14 @@ export function TissueHeatmapLayer({
 
     // Position buffer (unit quad)
     const positions = new Float32Array([
-      0, 0,  // bottom-left
-      1, 0,  // bottom-right
-      0, 1,  // top-left
-      1, 1,  // top-right
+      0,
+      0, // bottom-left
+      1,
+      0, // bottom-right
+      0,
+      1, // top-left
+      1,
+      1, // top-right
     ])
     const posBuffer = gl.createBuffer()!
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer)
@@ -170,10 +183,14 @@ export function TissueHeatmapLayer({
 
     // Texture coordinate buffer
     const texCoords = new Float32Array([
-      0, 1,  // bottom-left
-      1, 1,  // bottom-right
-      0, 0,  // top-left
-      1, 0,  // top-right
+      0,
+      1, // bottom-left
+      1,
+      1, // bottom-right
+      0,
+      0, // top-left
+      1,
+      0, // top-right
     ])
     const texCoordBuffer = gl.createBuffer()!
     gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer)
@@ -216,94 +233,101 @@ export function TissueHeatmapLayer({
   }, [])
 
   // Load a tile texture
-  const loadTile = useCallback(async (level: number, x: number, y: number) => {
-    const gl = glRef.current
-    if (!gl || !overlayId) return null
+  const loadTile = useCallback(
+    async (level: number, x: number, y: number) => {
+      const gl = glRef.current
+      if (!gl || !overlayId) return null
 
-    const tileKey = `${level}/${x}/${y}`
-    const cache = tileCacheRef.current
+      const tileKey = `${level}/${x}/${y}`
+      const cache = tileCacheRef.current
 
-    // Check cache
-    if (cache.has(tileKey)) {
-      const cached = cache.get(tileKey)!
-      if (!cached.loading) {
-        // Update last used time
-        cached.lastUsed = Date.now()
-        return cached.texture
-      }
-      return null
-    }
-
-    // Evict old tiles if cache is too large (LRU eviction)
-    if (cache.size >= MAX_TILE_CACHE_SIZE) {
-      let oldestKey: string | null = null
-      let oldestTime = Infinity
-      for (const [key, tile] of cache.entries()) {
-        if (!tile.loading && tile.lastUsed < oldestTime) {
-          oldestTime = tile.lastUsed
-          oldestKey = key
+      // Check cache
+      if (cache.has(tileKey)) {
+        const cached = cache.get(tileKey)!
+        if (!cached.loading) {
+          // Update last used time
+          cached.lastUsed = Date.now()
+          return cached.texture
         }
-      }
-      if (oldestKey) {
-        const oldTile = cache.get(oldestKey)
-        if (oldTile?.texture) {
-          gl.deleteTexture(oldTile.texture)
-        }
-        cache.delete(oldestKey)
-      }
-    }
-
-    // Mark as loading
-    cache.set(tileKey, { texture: null as unknown as WebGLTexture, loading: true, lastUsed: Date.now() })
-
-    try {
-      const response = await fetch(`/api/overlay/${overlayId}/raster/${level}/${x}/${y}`)
-      if (!response.ok) {
-        cache.delete(tileKey)
         return null
       }
 
-      // Get tile dimensions from headers
-      const width = parseInt(response.headers.get('X-Tile-Width') || '256')
-      const height = parseInt(response.headers.get('X-Tile-Height') || '256')
+      // Evict old tiles if cache is too large (LRU eviction)
+      if (cache.size >= MAX_TILE_CACHE_SIZE) {
+        let oldestKey: string | null = null
+        let oldestTime = Infinity
+        for (const [key, tile] of cache.entries()) {
+          if (!tile.loading && tile.lastUsed < oldestTime) {
+            oldestTime = tile.lastUsed
+            oldestKey = key
+          }
+        }
+        if (oldestKey) {
+          const oldTile = cache.get(oldestKey)
+          if (oldTile?.texture) {
+            gl.deleteTexture(oldTile.texture)
+          }
+          cache.delete(oldestKey)
+        }
+      }
 
-      const data = await response.arrayBuffer()
-      const pixels = new Uint8Array(data)
+      // Mark as loading
+      cache.set(tileKey, {
+        texture: null as unknown as WebGLTexture,
+        loading: true,
+        lastUsed: Date.now(),
+      })
 
-      // Create texture
-      const texture = gl.createTexture()!
-      gl.bindTexture(gl.TEXTURE_2D, texture)
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        width,
-        height,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixels
-      )
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      gl.bindTexture(gl.TEXTURE_2D, null)
+      try {
+        const response = await fetch(`/api/overlay/${overlayId}/raster/${level}/${x}/${y}`)
+        if (!response.ok) {
+          cache.delete(tileKey)
+          return null
+        }
 
-      cache.set(tileKey, { texture, loading: false, lastUsed: Date.now() })
-      return texture
-    } catch (e) {
-      cache.delete(tileKey)
-      return null
-    }
-  }, [overlayId])
+        // Get tile dimensions from headers
+        const width = parseInt(response.headers.get('X-Tile-Width') || '256')
+        const height = parseInt(response.headers.get('X-Tile-Height') || '256')
+
+        const data = await response.arrayBuffer()
+        const pixels = new Uint8Array(data)
+
+        // Create texture
+        const texture = gl.createTexture()!
+        gl.bindTexture(gl.TEXTURE_2D, texture)
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          width,
+          height,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          pixels
+        )
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+        gl.bindTexture(gl.TEXTURE_2D, null)
+
+        cache.set(tileKey, { texture, loading: false, lastUsed: Date.now() })
+        return texture
+      } catch {
+        cache.delete(tileKey)
+        return null
+      }
+    },
+    [overlayId]
+  )
 
   // Calculate visible tiles for current viewport
   const visibleTiles = useMemo(() => {
     if (!viewerBounds || !overlayId) return []
 
     const viewportWidth = 1 / viewport.zoom
-    const viewportHeight = (viewerBounds.height / viewerBounds.width) / viewport.zoom
+    const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
 
     // Viewport bounds in normalized coords [0,1]
     const minX = viewport.centerX - viewportWidth / 2
@@ -323,7 +347,12 @@ export function TissueHeatmapLayer({
     const startY = Math.max(0, Math.floor(minY / tileHeight))
     const endY = Math.min(tilesPerDim - 1, Math.ceil(maxY / tileHeight))
 
-    const tiles: Array<{ level: number; x: number; y: number; rect: [number, number, number, number] }> = []
+    const tiles: Array<{
+      level: number
+      x: number
+      y: number
+      rect: [number, number, number, number]
+    }> = []
 
     for (let ty = startY; ty <= endY && ty <= startY + 4; ty++) {
       for (let tx = startX; tx <= endX && tx <= startX + 4; tx++) {

@@ -11,11 +11,10 @@
 
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { useSession, type SessionState, type Participant, type LayerVisibility } from './useSession'
+import { useSession, type LayerVisibility } from './useSession'
 import { installMockWebSocket, type MockWebSocketInstance } from '../test/utils'
 import {
   mockSession,
-  mockPresenter,
   mockFollower1,
   mockViewport,
   mockLayerVisibility,
@@ -40,9 +39,7 @@ describe('useSession', () => {
 
   describe('initial state', () => {
     it('should start with null session and user', () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       expect(result.current.session).toBeNull()
       expect(result.current.currentUser).toBeNull()
@@ -53,9 +50,7 @@ describe('useSession', () => {
     })
 
     it('should start with disconnected connection status', () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       expect(result.current.connectionStatus).toBe('disconnected')
     })
@@ -63,9 +58,7 @@ describe('useSession', () => {
 
   describe('session creation', () => {
     it('should create session and update state on session_created message', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       // Connect
       await act(async () => {
@@ -156,9 +149,7 @@ describe('useSession', () => {
 
   describe('participant management', () => {
     it('should add participant on participant_joined message', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       // Setup: Create session first
       await act(async () => {
@@ -187,9 +178,7 @@ describe('useSession', () => {
     })
 
     it('should remove participant on participant_left message', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       // Setup: Join session with followers
       await act(async () => {
@@ -219,9 +208,7 @@ describe('useSession', () => {
 
   describe('cursor updates', () => {
     it('should update cursors on presence_delta message', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       // Setup
       await act(async () => {
@@ -248,9 +235,7 @@ describe('useSession', () => {
     })
 
     it('should remove cursors for removed participants', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       // Setup with cursors
       await act(async () => {
@@ -282,13 +267,13 @@ describe('useSession', () => {
         })
       })
 
-      expect(result.current.cursors.find((c) => c.participant_id === cursorToRemove)).toBeUndefined()
+      expect(
+        result.current.cursors.find((c) => c.participant_id === cursorToRemove)
+      ).toBeUndefined()
     })
 
     it('should send cursor update when updateCursor is called', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       await act(async () => {
         vi.advanceTimersByTime(10)
@@ -309,9 +294,7 @@ describe('useSession', () => {
 
   describe('viewport updates', () => {
     it('should update presenter viewport on presenter_viewport message', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       await act(async () => {
         vi.advanceTimersByTime(10)
@@ -334,9 +317,7 @@ describe('useSession', () => {
     })
 
     it('should send viewport update when updateViewport is called', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       await act(async () => {
         vi.advanceTimersByTime(10)
@@ -356,9 +337,7 @@ describe('useSession', () => {
     })
 
     it('should send snap_to_presenter when snapToPresenter is called', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       await act(async () => {
         vi.advanceTimersByTime(10)
@@ -376,9 +355,7 @@ describe('useSession', () => {
 
   describe('layer visibility', () => {
     it('should update layer visibility on layer_state message', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       await act(async () => {
         vi.advanceTimersByTime(10)
@@ -407,9 +384,7 @@ describe('useSession', () => {
     })
 
     it('should send layer update when updateLayerVisibility is called', async () => {
-      const { result } = renderHook(() =>
-        useSession({})
-      )
+      const { result } = renderHook(() => useSession({}))
 
       await act(async () => {
         vi.advanceTimersByTime(10)

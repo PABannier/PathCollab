@@ -91,7 +91,7 @@ export function Session() {
   const [overlayEnabled, setOverlayEnabled] = useState(true)
   const [overlayOpacity, setOverlayOpacity] = useState(0.7)
   const [visibleCellClasses, setVisibleCellClasses] = useState<number[]>(
-    DEFAULT_CELL_CLASSES.map(c => c.id)
+    DEFAULT_CELL_CLASSES.map((c) => c.id)
   )
   const [cellHoverEnabled, setCellHoverEnabled] = useState(true)
 
@@ -99,7 +99,7 @@ export function Session() {
   const [tissueEnabled, setTissueEnabled] = useState(true)
   const [tissueOpacity, setTissueOpacity] = useState(0.5)
   const [visibleTissueClasses, setVisibleTissueClasses] = useState<number[]>(
-    DEFAULT_TISSUE_CLASSES.map(c => c.id)
+    DEFAULT_TISSUE_CLASSES.map((c) => c.id)
   )
 
   // Get secrets from URL hash fragment (not sent to server)
@@ -111,7 +111,7 @@ export function Session() {
   const presenterKey = hashParams.get('presenter') || searchParams.get('presenter') || undefined
 
   // Handle overlay loaded
-  const handleOverlayLoaded = useCallback((id: string, _manifest?: unknown) => {
+  const handleOverlayLoaded = useCallback((id: string) => {
     setOverlayId(id)
     setNotification(`Overlay loaded: ${id}`)
     setTimeout(() => setNotification(null), 3000)
@@ -139,6 +139,7 @@ export function Session() {
   })
 
   // Get slide info from session or use demo slide
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const slide = useMemo((): SlideInfo => {
     if (session?.slide) {
       return {
@@ -181,7 +182,7 @@ export function Session() {
     const fetchCells = async () => {
       // Calculate viewport bounds in slide coordinates
       const viewportWidth = 1 / currentViewport.zoom
-      const viewportHeight = (viewerBounds.height / viewerBounds.width) / currentViewport.zoom
+      const viewportHeight = viewerBounds.height / viewerBounds.width / currentViewport.zoom
 
       const minX = (currentViewport.centerX - viewportWidth / 2) * slide.width
       const maxX = (currentViewport.centerX + viewportWidth / 2) * slide.width
@@ -190,7 +191,10 @@ export function Session() {
 
       // Determine which tiles to fetch based on zoom level
       // Cap level at numLevels - 1 to avoid requesting non-existent tiles
-      const level = Math.max(0, Math.min(slide.numLevels - 1, Math.floor(Math.log2(currentViewport.zoom))))
+      const level = Math.max(
+        0,
+        Math.min(slide.numLevels - 1, Math.floor(Math.log2(currentViewport.zoom)))
+      )
       const tilesPerDim = Math.pow(2, level)
       const tileWidth = slide.width / tilesPerDim
       const tileHeight = slide.height / tilesPerDim
@@ -215,8 +219,8 @@ export function Session() {
 
           fetchPromises.push(
             fetch(`/api/overlay/${overlayId}/vec/${level}/${tileX}/${tileY}`)
-              .then(res => res.ok ? res.json() : null)
-              .then(data => {
+              .then((res) => (res.ok ? res.json() : null))
+              .then((data) => {
                 if (data?.cells) {
                   for (const cell of data.cells) {
                     // Cell x/y are relative to tile origin, convert to absolute slide coords
@@ -274,12 +278,7 @@ export function Session() {
     (e: React.MouseEvent) => {
       if (!session || !viewerBounds) return
 
-      const slideCoords = convertToSlideCoords(
-        e.clientX,
-        e.clientY,
-        viewerBounds,
-        currentViewport
-      )
+      const slideCoords = convertToSlideCoords(e.clientX, e.clientY, viewerBounds, currentViewport)
 
       if (slideCoords) {
         updateCursorPosition(slideCoords.x, slideCoords.y)
@@ -303,6 +302,7 @@ export function Session() {
     if (session && secrets) {
       // Build share URL with join secret in hash (not sent to server)
       const baseUrl = `${window.location.origin}/s/${session.id}#join=${secrets.joinSecret}`
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShareUrl(baseUrl)
     }
   }, [session, secrets])
@@ -328,7 +328,9 @@ export function Session() {
         return <span className="h-2 w-2 rounded-full bg-green-500" title="Connected" />
       case 'connecting':
       case 'reconnecting':
-        return <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-500" title="Connecting" />
+        return (
+          <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-500" title="Connecting" />
+        )
       case 'disconnected':
         return <span className="h-2 w-2 rounded-full bg-red-500" title="Disconnected" />
     }
@@ -351,7 +353,9 @@ export function Session() {
                 {participantCount} viewer{participantCount !== 1 ? 's' : ''}
               </span>
               {isPresenter && (
-                <span className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white">Presenter</span>
+                <span className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white">
+                  Presenter
+                </span>
               )}
             </>
           ) : (
@@ -368,9 +372,7 @@ export function Session() {
               <button
                 onClick={() => setTissueEnabled(!tissueEnabled)}
                 className={`rounded px-2 py-1 text-xs ${
-                  tissueEnabled
-                    ? 'bg-amber-600 text-white'
-                    : 'bg-gray-600 text-gray-300'
+                  tissueEnabled ? 'bg-amber-600 text-white' : 'bg-gray-600 text-gray-300'
                 }`}
                 title="Toggle tissue heatmap"
               >
@@ -391,9 +393,7 @@ export function Session() {
               <button
                 onClick={() => setOverlayEnabled(!overlayEnabled)}
                 className={`rounded px-2 py-1 text-xs ${
-                  overlayEnabled
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-gray-600 text-gray-300'
+                  overlayEnabled ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-300'
                 }`}
                 title="Toggle cell overlay"
               >
@@ -462,13 +462,15 @@ export function Session() {
 
       {/* Notification banner */}
       {notification && (
-        <div className="bg-green-600 px-4 py-2 text-sm text-white">
-          {notification}
-        </div>
+        <div className="bg-green-600 px-4 py-2 text-sm text-white">{notification}</div>
       )}
 
       {/* Main viewer area */}
-      <main className="relative flex-1 overflow-hidden" ref={viewerContainerRef} onMouseMove={handleMouseMove}>
+      <main
+        className="relative flex-1 overflow-hidden"
+        ref={viewerContainerRef}
+        onMouseMove={handleMouseMove}
+      >
         <SlideViewer slide={slide} onViewportChange={handleViewportChange} />
 
         {/* Tissue heatmap overlay */}

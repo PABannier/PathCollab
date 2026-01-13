@@ -318,7 +318,8 @@ export function createMockFile(
   content: string | ArrayBuffer = '',
   type = 'application/octet-stream'
 ): File {
-  const blob = typeof content === 'string' ? new Blob([content], { type }) : new Blob([content], { type })
+  const blob =
+    typeof content === 'string' ? new Blob([content], { type }) : new Blob([content], { type })
   return new File([blob], name, { type })
 }
 
@@ -346,5 +347,11 @@ export async function advanceTimersAndFlush(ms: number): Promise<void> {
 // Re-export testing library utilities
 // ============================================================================
 
-export { render, screen, fireEvent, waitFor as waitForElement, within } from '@testing-library/react'
+export {
+  render,
+  screen,
+  fireEvent,
+  waitFor as waitForElement,
+  within,
+} from '@testing-library/react'
 export { userEvent } from '@testing-library/user-event'

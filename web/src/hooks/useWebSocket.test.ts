@@ -8,9 +8,9 @@
  * - Error handling
  */
 
-import { renderHook, act, waitFor } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { useWebSocket, type ConnectionStatus, type WebSocketMessage } from './useWebSocket'
+import { useWebSocket, type WebSocketMessage } from './useWebSocket'
 import { installMockWebSocket, type MockWebSocketInstance } from '../test/utils'
 
 describe('useWebSocket', () => {

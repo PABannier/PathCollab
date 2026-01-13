@@ -56,29 +56,38 @@ export function LayerPanel({
   const [tissueExpanded, setTissueExpanded] = useState(false)
   const [cellsExpanded, setCellsExpanded] = useState(false)
 
-  const handleCollapsedChange = useCallback((value: boolean) => {
-    setCollapsed(value)
-    onCollapsedChange?.(value)
-  }, [onCollapsedChange])
+  const handleCollapsedChange = useCallback(
+    (value: boolean) => {
+      setCollapsed(value)
+      onCollapsedChange?.(value)
+    },
+    [onCollapsedChange]
+  )
 
-  const toggleTissueClass = useCallback((classId: number) => {
-    if (visibleTissueClasses.includes(classId)) {
-      onVisibleTissueClassesChange(visibleTissueClasses.filter(id => id !== classId))
-    } else {
-      onVisibleTissueClassesChange([...visibleTissueClasses, classId])
-    }
-  }, [visibleTissueClasses, onVisibleTissueClassesChange])
+  const toggleTissueClass = useCallback(
+    (classId: number) => {
+      if (visibleTissueClasses.includes(classId)) {
+        onVisibleTissueClassesChange(visibleTissueClasses.filter((id) => id !== classId))
+      } else {
+        onVisibleTissueClassesChange([...visibleTissueClasses, classId])
+      }
+    },
+    [visibleTissueClasses, onVisibleTissueClassesChange]
+  )
 
-  const toggleCellClass = useCallback((classId: number) => {
-    if (visibleCellClasses.includes(classId)) {
-      onVisibleCellClassesChange(visibleCellClasses.filter(id => id !== classId))
-    } else {
-      onVisibleCellClassesChange([...visibleCellClasses, classId])
-    }
-  }, [visibleCellClasses, onVisibleCellClassesChange])
+  const toggleCellClass = useCallback(
+    (classId: number) => {
+      if (visibleCellClasses.includes(classId)) {
+        onVisibleCellClassesChange(visibleCellClasses.filter((id) => id !== classId))
+      } else {
+        onVisibleCellClassesChange([...visibleCellClasses, classId])
+      }
+    },
+    [visibleCellClasses, onVisibleCellClassesChange]
+  )
 
   const selectAllTissueClasses = useCallback(() => {
-    onVisibleTissueClassesChange(tissueClasses.map(c => c.id))
+    onVisibleTissueClassesChange(tissueClasses.map((c) => c.id))
   }, [tissueClasses, onVisibleTissueClassesChange])
 
   const selectNoneTissueClasses = useCallback(() => {
@@ -86,7 +95,7 @@ export function LayerPanel({
   }, [onVisibleTissueClassesChange])
 
   const selectAllCellClasses = useCallback(() => {
-    onVisibleCellClassesChange(cellClasses.map(c => c.id))
+    onVisibleCellClassesChange(cellClasses.map((c) => c.id))
   }, [cellClasses, onVisibleCellClassesChange])
 
   const selectNoneCellClasses = useCallback(() => {
@@ -101,7 +110,12 @@ export function LayerPanel({
         title="Show layer controls"
       >
         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 6h16M4 10h16M4 14h16M4 18h16"
+          />
         </svg>
       </button>
     )
@@ -118,7 +132,12 @@ export function LayerPanel({
           title="Collapse panel"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
           </svg>
         </button>
       </div>
@@ -147,7 +166,12 @@ export function LayerPanel({
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
             </button>
           </div>
@@ -164,7 +188,9 @@ export function LayerPanel({
                   onChange={(e) => onTissueOpacityChange(Number(e.target.value) / 100)}
                   className="flex-1 h-1"
                 />
-                <span className="text-xs text-gray-400 w-8">{Math.round(tissueOpacity * 100)}%</span>
+                <span className="text-xs text-gray-400 w-8">
+                  {Math.round(tissueOpacity * 100)}%
+                </span>
               </div>
             </div>
           )}
@@ -174,8 +200,12 @@ export function LayerPanel({
               <div className="flex justify-between text-xs text-gray-400 mb-1">
                 <span>Classes</span>
                 <div className="space-x-2">
-                  <button onClick={selectAllTissueClasses} className="hover:text-white">All</button>
-                  <button onClick={selectNoneTissueClasses} className="hover:text-white">None</button>
+                  <button onClick={selectAllTissueClasses} className="hover:text-white">
+                    All
+                  </button>
+                  <button onClick={selectNoneTissueClasses} className="hover:text-white">
+                    None
+                  </button>
                 </div>
               </div>
               {tissueClasses.map((cls) => (
@@ -189,10 +219,7 @@ export function LayerPanel({
                     onChange={() => toggleTissueClass(cls.id)}
                     className="h-3 w-3 rounded"
                   />
-                  <span
-                    className="h-3 w-3 rounded"
-                    style={{ backgroundColor: cls.color }}
-                  />
+                  <span className="h-3 w-3 rounded" style={{ backgroundColor: cls.color }} />
                   <span className="text-xs">{cls.name}</span>
                 </label>
               ))}
@@ -223,7 +250,12 @@ export function LayerPanel({
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
               </svg>
             </button>
           </div>
@@ -261,8 +293,12 @@ export function LayerPanel({
               <div className="flex justify-between text-xs text-gray-400 mb-1">
                 <span>Classes</span>
                 <div className="space-x-2">
-                  <button onClick={selectAllCellClasses} className="hover:text-white">All</button>
-                  <button onClick={selectNoneCellClasses} className="hover:text-white">None</button>
+                  <button onClick={selectAllCellClasses} className="hover:text-white">
+                    All
+                  </button>
+                  <button onClick={selectNoneCellClasses} className="hover:text-white">
+                    None
+                  </button>
                 </div>
               </div>
               {cellClasses.map((cls) => (
@@ -276,10 +312,7 @@ export function LayerPanel({
                     onChange={() => toggleCellClass(cls.id)}
                     className="h-3 w-3 rounded"
                   />
-                  <span
-                    className="h-3 w-3 rounded"
-                    style={{ backgroundColor: cls.color }}
-                  />
+                  <span className="h-3 w-3 rounded" style={{ backgroundColor: cls.color }} />
                   <span className="text-xs">{cls.name}</span>
                 </label>
               ))}

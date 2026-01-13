@@ -30,8 +30,8 @@ interface MinimapOverlayProps {
     participant_id: string
     name: string
     color: string
-    x: number  // Normalized 0-1
-    y: number  // Normalized 0-1
+    x: number // Normalized 0-1
+    y: number // Normalized 0-1
   }>
   currentUserId?: string
 }
@@ -39,7 +39,7 @@ interface MinimapOverlayProps {
 export function MinimapOverlay({
   presenterViewport,
   presenterInfo,
-  currentViewport,
+  currentViewport: _currentViewport,
   minimapWidth,
   minimapHeight,
   slideAspectRatio,
@@ -47,6 +47,8 @@ export function MinimapOverlay({
   cursors = [],
   currentUserId,
 }: MinimapOverlayProps) {
+  // _currentViewport reserved for future use (e.g., showing current viewport outline)
+  void _currentViewport
   // Calculate viewport rectangle bounds in minimap coordinates
   const presenterRect = useMemo(() => {
     if (!presenterViewport || isPresenter) return null
