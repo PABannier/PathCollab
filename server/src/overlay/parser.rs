@@ -8,7 +8,7 @@ use crate::overlay::types::{
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufReader, Read};
 use std::path::Path;
 use tracing::{debug, info, warn};
 
@@ -241,12 +241,7 @@ pub struct ParsedOverlayData {
     pub tissue_tiles: Vec<TissueTileData>,
 }
 
-// Add hex crate for encoding
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-// Simple hex encoding implementation
+/// Simple hex encoding for SHA256 hashes
 mod hex {
     pub fn encode(bytes: impl AsRef<[u8]>) -> String {
         bytes
