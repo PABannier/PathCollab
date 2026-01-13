@@ -20,7 +20,7 @@ The philosophy is **simplicity over features**: display slides fast, show where 
 | **Hybrid Overlay Rendering** | Serve overlay as HTTP-cacheable raster tiles for overview; stream vector cells only when zoomed-in / interacting | Predictable performance across browsers; graceful fallback when WebGL2 is flaky |
 | **Server-Side Protobuf Processing** | Rust backend parses and spatially indexes `.pb` files, streams viewport-relevant data to clients | Sub-second overlay loading for 300MB files; minimal client memory footprint |
 | **Ephemeral Zero-Auth Sessions** | Shareable links with automatic cleanup; no accounts required | Friction-free sharing for demos, teaching, consultations |
-| **Unlisted Join Tokens + Presenter Key** | Session URLs include a high-entropy join secret; presenter actions require a separate key | Prevents casual session guessing and role abuse without adding accounts |
+| **Unlisted Join Tokens + Presenter Key** | Secrets are carried in the URL fragment (not sent to servers via HTTP); presenter actions require a separate key | Prevents casual guessing + avoids secrets in logs/referrers |
 | **Hierarchical State Sync** | Different sync frequencies for cursors (30Hz), viewports (10Hz), and layer state (on-change) | Optimal bandwidth usage across variable network conditions |
 | **Docker-Native Deployment** | Single `docker-compose.yml` bundles PathCollab + WSIStreamer + S3 config | Self-host in under 5 minutes |
 
@@ -42,11 +42,16 @@ The philosophy is **simplicity over features**: display slides fast, show where 
 │  │   (React App)   │  │   (React App)   │  │   (React App)   │                  │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘                  │
 │           │                    │                    │                            │
-│           │ WebSocket          │ WebSocket          │ WebSocket                  │
-│           │ (wss://)           │ (wss://)           │ (wss://)                   │
+│           │ HTTPS + WebSocket (same origin, same port; WS upgrade)               │
 └───────────┼────────────────────┼────────────────────┼────────────────────────────┘
             │                    │                    │
             ▼                    ▼                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           REVERSE PROXY (Caddy/Nginx)                            │
+│  • TLS termination    • WS upgrade    • gzip/br    • cache headers for /overlay/*│
+└─────────────────────────────────────────────────────────────────────────────────┘
+            │
+            ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                           PATHCOLLAB SERVER (Rust)                               │
 │  ┌──────────────────────────────────────────────────────────────────────────┐   │
@@ -65,14 +70,14 @@ The philosophy is **simplicity over features**: display slides fast, show where 
 │           ▼                                         ▼                            │
 │  ┌────────────────┐                        ┌─────────────────────────┐          │
 │  │  Session Store │                        │ Overlay Store            │          │
-│  │  (In-Memory)   │                        │ (session-scoped, mmap)   │          │
+│  │  (In-Memory)   │                        │ (disk-backed + mmap)     │          │
 │  └────────────────┘                        │ • chunked by (z,x,y)     │          │
 │                                            │ • hot metadata in RAM     │          │
 │                                            │ • explicit budgets/evict  │          │
 │                                            └─────────────────────────┘          │
 └─────────────────────────────────────────────────────────────────────────────────┘
             │
-            │ HTTP (tile requests proxied or direct)
+            │ HTTP (tile requests proxied or direct; recommend proxied for same-origin)
             ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              WSIStreamer                                         │
@@ -144,9 +149,9 @@ TILE FLOW (Read-only, cacheable)
 OVERLAY FLOW (Upload once, stream on-demand)
 ═══════════════════════════════════════════════════════════════════════════════
 
-  Collaborator uploads .pb file
+  Collaborator uploads .pb file (resumable chunks + checksum)
           │
-          ▼ HTTP POST (multipart, chunked)
+          ▼ HTTP POST (chunk N) / HTTP PUT (chunk N) / finalize
   ┌───────────────┐                     ┌───────────────┐
   │    Client     │ ──────────────────► │ PathCollab    │
   │               │                     │ Server        │
@@ -156,9 +161,10 @@ OVERLAY FLOW (Upload once, stream on-demand)
                          │                      │                      │
                          ▼                      ▼                      ▼
                   ┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-                  │ Parse Proto │       │ Build R-Tree│       │ Extract     │
-                  │ (prost)     │       │ Spatial Idx │       │ Metadata    │
+                  │ Parse Proto │       │ Build Tile  │       │ Extract     │
+                  │ (prost)     │       │ Bin Index   │       │ Metadata    │
                   └─────────────┘       └─────────────┘       └─────────────┘
+                                          (R-tree optional for ROI selection)
                                                 │
                                                 ▼
                                        ┌─────────────────┐
@@ -179,7 +185,7 @@ OVERLAY FLOW (Upload once, stream on-demand)
           ├──────────────────────────────────────────────────────────────┐
           │ HTTP GET (cacheable overlay tiles)                            │
           ▼                                                              ▼
-  /overlay/{overlay_id}/tile/{z}/{x}/{y}.webp                     (optional) WS: request_vector_detail
+  /overlay/{overlay_id}/tile/{z}/{x}/{y}.webp (ETag, Cache-Control: immutable)   (optional) WS: request_vector_detail
   ┌───────────────┐                     ┌───────────────┐
   │    Client     │ ──────────────────► │ PathCollab    │
   │               │                     │ Server        │
@@ -202,8 +208,8 @@ PRESENCE FLOW (High-frequency, small payloads)
                                                 ▼
                                        ┌─────────────────┐
                                        │   Broadcast     │
-                                       │ cursors_state   │
-                                       │ (all clients)   │
+                                       │ presence_delta  │
+                                       │ (only changes)  │
                                        └─────────────────┘
 
   Every 100ms (10Hz):
@@ -244,10 +250,10 @@ LAYER STATE FLOW (Low-frequency, on-change only)
 | **1** | **Tiles are sacred** | Tile rendering latency directly impacts perceived performance; never block on overlay operations | OpenSeadragon manages tiles independently; overlay WebGL layer is separate canvas |
 | **2** | **Server owns truth** | Distributed state is hard; server is authoritative for session state, overlay data, layer visibility | Clients are thin; all state changes go through server and are broadcast back |
 | **3** | **Bandwidth is variable** | Global users have 10ms-500ms latency; design for graceful degradation | Cursor updates are small (32 bytes); overlay data is streamed incrementally; viewport sync tolerates jitter |
-| **4** | **Overlays are ephemeral (but restart-safe optional)** | Default is ephemeral; optional shared state enables production ops | Default: session-scoped overlay store + in-memory session state. Optional: Redis for session registry + reconnection snapshots |
+| **4** | **Overlays are ephemeral but cacheable** | Default is ephemeral UX; derived artifacts should be restart-safe for reliability | Disk-backed content-addressed overlay cache + memory-mapped chunks; optional Redis only for multi-instance |
 | **5** | **Progressive disclosure** | Don't overwhelm users; show complexity only when needed | Sidebar collapsed by default; cell hover info appears on demand; minimap shows viewport bounds subtly |
 | **6** | **Fail gracefully** | Network issues shouldn't crash the app or corrupt state | Reconnection logic with exponential backoff; optimistic UI with rollback; presenter grace period |
-| **7** | **One command deploy** | Adoption depends on ease of setup; Docker abstracts infrastructure complexity | `docker-compose up` starts everything; environment variables configure S3/ports |
+| **7** | **One command deploy** | Adoption depends on ease of setup; Docker abstracts infra + TLS complexity | `docker-compose up` starts everything; reverse proxy provides HTTPS + WS upgrade |
 
 ---
 
@@ -263,8 +269,12 @@ LAYER STATE FLOW (Low-frequency, on-change only)
 interface Session {
   // Identity
   id: SessionId;                    // 6-char alphanumeric, e.g., "a1b2c3"
+  rev: number;                      // Monotonic session revision. Increments on any authoritative state change.
   join_secret_hash: string;         // hashed; join requires secret (unlisted)
   presenter_key_hash: string;       // hashed; required for presenter-only actions
+  // Link format (recommended):
+  // - Join link:      /s/<session_id>#join=<high_entropy_secret>
+  // - Presenter link: /s/<session_id>#join=<...>&presenter=<presenter_key>
   created_at: Timestamp;            // Unix millis
   
   // Lifecycle
@@ -278,7 +288,8 @@ interface Session {
   
   // Content
   slide: SlideInfo;
-  overlay?: OverlayState;
+  overlays: Map<OverlayId, OverlayState>;       // up to 2
+  overlay_order: OverlayId[];                   // z-order, top-most last
   layer_visibility: LayerVisibility;
   
   // Presenter state
@@ -359,7 +370,8 @@ interface OverlayState {
   // Source file info
   filename: string;
   file_size_bytes: number;
-  
+  content_sha256: string;           // content-addressed cache key
+
   // Parsed content summary
   cell_count: number;
   tile_count: number;
@@ -412,7 +424,7 @@ interface LayerVisibility {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ClientMessage =
-  | { type: 'join_session'; session_id: SessionId; join_secret: string; seq: number }
+  | { type: 'join_session'; session_id: SessionId; join_secret: string; last_seen_rev?: number; seq: number }
   | { type: 'create_session'; slide_id: SlideId; seq: number }
   | { type: 'presenter_auth'; presenter_key: string; seq: number }
   | { type: 'cursor_update'; x: number; y: number; seq: number }
@@ -434,6 +446,8 @@ type ServerMessage =
   // Session lifecycle
   | { type: 'session_created'; session: SessionSnapshot }
   | { type: 'session_joined'; session: SessionSnapshot; you: Participant }
+  | { type: 'state_patch'; base_rev: number; next_rev: number; patch: SessionPatch }
+  | { type: 'resync_required'; server_rev: number }  // client should request full snapshot
   | { type: 'session_error'; code: ErrorCode; message: string }
   | { type: 'session_ended'; reason: 'expired' | 'presenter_left' }
   
@@ -443,16 +457,16 @@ type ServerMessage =
   | { type: 'presenter_reconnected' }
   
   // Presence updates (high frequency)
-  | { type: 'cursors_state'; cursors: CursorWithParticipant[] }
+  | { type: 'presence_delta'; changed: CursorWithParticipant[]; removed: ParticipantId[]; server_ts: Timestamp }
   | { type: 'presenter_viewport'; viewport: Viewport }
   | { type: 'laser_pointer'; participant_id: ParticipantId; x: number; y: number; expires_at: Timestamp }
   | { type: 'callouts_state'; callouts: Callout[] }
   
   // Overlay events
   | { type: 'overlay_upload_progress'; percent: number }
-  | { type: 'overlay_loaded'; overlay: OverlayState }
+  | { type: 'overlay_loaded'; overlay: OverlayState; overlay_order: OverlayId[] }
   | { type: 'overlay_data'; tiles: OverlayTileBatch }  // MessagePack binary
-  | { type: 'overlay_cleared' }
+  | { type: 'overlay_removed'; overlay_id: OverlayId }
   
   // Layer state
   | { type: 'layer_state'; visibility: LayerVisibility }
@@ -469,12 +483,22 @@ interface CursorWithParticipant {
   y: number;
 }
 
+interface SessionPatch {
+  // Minimal patch format: only fields that changed (server-defined)
+  layer_visibility?: LayerVisibility;
+  overlay?: OverlayState | null;
+  presenter_viewport?: Viewport;
+  callouts_state?: Callout[];
+}
+
 interface SessionSnapshot {
   id: SessionId;
+  rev: number;
   slide: SlideInfo;
   presenter: Participant;
   followers: Participant[];
-  overlay?: OverlayState;
+  overlays: OverlayState[];
+  overlay_order: OverlayId[];
   layer_visibility: LayerVisibility;
   presenter_viewport: Viewport;
 }
@@ -546,13 +570,15 @@ const ValidationRules = {
   // Overlay
   OVERLAY_MAX_SIZE_BYTES: 500 * 1024 * 1024,    // 500MB hard limit
   OVERLAY_UPLOAD_TIMEOUT_MS: 5 * 60 * 1000,     // 5 minutes
-  OVERLAY_MAX_FILES_PER_SESSION: 2,             // prevent spam
+  OVERLAY_MAX_FILES_PER_SESSION: 2,             // small overlay stack (comparisons)
   OVERLAY_MAX_PARSE_SECONDS: 60,                // abort expensive parses
   OVERLAY_MAX_CELLS: 5_000_000,                 // sanity bounds
   OVERLAY_MAX_TILES: 500_000,                   // sanity bounds
   CELL_CLASS_ID_RANGE: [0, 14],                 // 15 classes
   TISSUE_CLASS_ID_RANGE: [0, 7],                // 8 classes
-  TILE_SIZE: 224,
+  // Render-time raster tiles should match slide tile size (256/512) to avoid resampling.
+  // Underlying model artifacts may be 224; server resamples into render tiles.
+  TILE_SIZE: 256,
   
   // Layer visibility
   OPACITY_RANGE: [0.0, 1.0],
@@ -701,7 +727,9 @@ function validateLayerVisibility(vis: LayerVisibility): boolean {
 │  ├── overlay/                                                                   │
 │  │   ├── mod.rs                                                                │
 │  │   ├── parser.rs                 # Protobuf parsing (prost)                  │
-│  │   ├── index.rs                  # R-tree spatial index (rstar)              │
+│  │   ├── derive.rs                 # Build raster pyramid + vector chunks       │
+│  │   ├── upload.rs                 # Resumable chunk upload + checksum          │
+│  │   ├── index.rs                  # Tile-bin index (fast path) + optional R-tree│
 │  │   └── streamer.rs               # Viewport-based tile streaming             │
 │  │                                                                              │
 │  ├── protocol/                                                                  │
@@ -737,7 +765,14 @@ function validateLayerVisibility(vis: LayerVisibility): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Renders up to 2M cell polygons at 60fps using:
+ * Rendering strategy (explicit LOD + budgets):
+ * - Low zoom: raster overlay tiles (tissue + optional density)
+ * - Medium zoom: instanced centroids/points (very fast)
+ * - High zoom: polygons, with a hard visible-instance budget + fallback
+ *
+ * Target: "smooth interaction" on typical laptops, not worst-case polygon counts.
+ *
+ * Renders polygons using:
  * 1. Instanced rendering (one draw call per cell class) using fixed-K resampled polygons
  * 2. Viewport frustum culling (only upload visible cells)
  * 3. Level-of-detail (simplify polygons at low zoom)
@@ -765,7 +800,7 @@ class PolygonRenderer {
   // State
   private visibleCells: CellPolygon[] = [];
   private instanceData: Float32Array;
-  private maxInstances: number = 100_000;  // Batch size
+  private maxInstances: number = 120_000;  // Hard per-frame budget (tunable)
   
   constructor(canvas: HTMLCanvasElement) {
     this.gl = canvas.getContext('webgl2')!;
@@ -808,7 +843,7 @@ class PolygonRenderer {
     // Set class colors and visibility
     this.updateClassUniforms(layerState);
     
-    // Draw instanced
+    // Draw instanced (budgeted)
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
     // Fan uses fixed-K vertices per instance (post-resample)
     gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, this.kVertices, instanceCount);
@@ -830,18 +865,21 @@ function usePresence(sessionId: string, isPresenter: boolean) {
   const [presenterViewport, setPresenterViewport] = useState<Viewport | null>(null);
   const { sendMessage, lastMessage } = useWebSocket();
   
-  // Send cursor updates at 30Hz
+  // Send cursor updates: event-driven + throttled (avoid sending when cursor is stationary)
   useEffect(() => {
     if (!sessionId) return;
-    
-    const interval = setInterval(() => {
-      const cursor = getCurrentCursor();  // From mouse position
-      if (cursor) {
-        sendMessage({ type: 'cursor_update', x: cursor.x, y: cursor.y });
-      }
-    }, 33);  // 30Hz
-    
-    return () => clearInterval(interval);
+
+    const sendThrottled = throttle((cursor) => {
+      sendMessage({ type: 'cursor_update', x: cursor.x, y: cursor.y });
+    }, 33);
+
+    const onMove = () => {
+      const cursor = getCurrentCursor();
+      if (cursor) sendThrottled(cursor);
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+
+    return () => window.removeEventListener('pointermove', onMove);
   }, [sessionId, sendMessage]);
   
   // Send viewport updates at 10Hz (presenter only)
@@ -865,8 +903,9 @@ function usePresence(sessionId: string, isPresenter: boolean) {
   useEffect(() => {
     if (!lastMessage) return;
     
-    if (lastMessage.type === 'cursors_state') {
-      setCursors(lastMessage.cursors);
+    if (lastMessage.type === 'presence_delta') {
+      // merge deltas locally; use server_ts for interpolation
+      setCursors(prev => applyPresenceDelta(prev, lastMessage));
     } else if (lastMessage.type === 'presenter_viewport') {
       setPresenterViewport(lastMessage.viewport);
     }
@@ -1140,7 +1179,8 @@ Week 7: Ship It
 server:
   host: "0.0.0.0"
   port: 8080
-  websocket_port: 8081
+  public_base_url: "https://pathcollab.io"  # used for link generation (optional)
+  behind_proxy: true                         # trust X-Forwarded-* (optional)
 
 session:
   max_duration_hours: 4
@@ -1153,7 +1193,9 @@ session:
 overlay:
   max_upload_size_mb: 500
   upload_timeout_seconds: 300
-  
+  cache_dir: "/var/lib/pathcollab/overlays"
+  cache_max_gb: 50
+
 presence:
   cursor_broadcast_hz: 30
   viewport_broadcast_hz: 10
