@@ -8,7 +8,6 @@ use crate::overlay::index::TileBinIndex;
 use crate::overlay::parser::ParsedOverlayData;
 use crate::overlay::types::CellData;
 use std::collections::HashMap;
-use std::path::Path;
 use tracing::{debug, info};
 
 /// Configuration for derive pipeline
@@ -127,7 +126,7 @@ impl DerivePipeline {
         let raster_tiles = self.derive_raster_tiles(&parsed);
 
         // Derive vector chunks from cell data
-        let vector_chunks = self.derive_vector_chunks(&parsed, &index);
+        let vector_chunks = self.derive_vector_chunks(&parsed);
 
         let manifest = OverlayManifestData {
             content_sha256: parsed.metadata.content_sha256.clone(),
@@ -240,12 +239,11 @@ impl DerivePipeline {
     fn derive_vector_chunks(
         &self,
         parsed: &ParsedOverlayData,
-        index: &TileBinIndex,
     ) -> HashMap<(u32, u32, u32), VectorChunk> {
         let mut chunks: HashMap<(u32, u32, u32), VectorChunk> = HashMap::new();
 
         // Group cells by tile at level 0 (full resolution)
-        for (cell_idx, cell) in parsed.cells.iter().enumerate() {
+        for cell in &parsed.cells {
             // Compute tile coordinates at level 0
             let tile_x = (cell.centroid_x as u32) / self.config.tile_size;
             let tile_y = (cell.centroid_y as u32) / self.config.tile_size;
