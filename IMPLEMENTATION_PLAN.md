@@ -17,16 +17,17 @@ The philosophy is **simplicity over features**: display slides fast, show where 
 
 | Innovation | Description | Impact |
 |------------|-------------|--------|
-| **Hybrid Overlay Rendering** | Serve overlay as HTTP-cacheable raster tiles for overview; stream vector cells only when zoomed-in / interacting | Predictable performance across browsers; graceful fallback when WebGL2 is flaky |
+| **Hybrid Overlay Rendering** | Serve overlay as HTTP-cacheable raster tiles for overview; serve viewport-scoped vector chunks via HTTP (ETag/range/retry); WS stays control-only | Predictable performance, easier caching, fewer WS stalls; graceful fallback when WebGL2 is flaky |
 | **Server-Side Protobuf Processing** | Rust backend parses and spatially indexes `.pb` files, streams viewport-relevant data to clients | Sub-second overlay loading for 300MB files; minimal client memory footprint |
 | **Ephemeral Zero-Auth Sessions** | Shareable links with automatic cleanup; no accounts required | Friction-free sharing for demos, teaching, consultations |
 | **Unlisted Join Tokens + Presenter Key** | Secrets are carried in the URL fragment (not sent to servers via HTTP); presenter actions require a separate key | Prevents casual guessing + avoids secrets in logs/referrers |
 | **Hierarchical State Sync** | Different sync frequencies for cursors (30Hz), viewports (10Hz), and layer state (on-change) | Optimal bandwidth usage across variable network conditions |
 | **Docker-Native Deployment** | Single `docker-compose.yml` bundles PathCollab + WSIStreamer + S3 config | Self-host in under 5 minutes |
 
-**Overlay strategy (new):**
-- **Raster overlay tiles (HTTP):** tissue heatmaps + optional cell-density/outline layers, cacheable and retryable
-- **Vector detail (WS/HTTP):** only for close zoom / hover / selection
+**Overlay strategy (revised):**
+- **Raster overlay tiles (HTTP):** tissue heatmaps + optional density/outline layers (cacheable + retryable)
+- **Vector chunks (HTTP):** viewport-scoped chunks per (level, tile_x, tile_y) with `ETag` + optional `Range`
+- **WS is control-only:** announce overlay readiness + session/layer state + presence
 
 ---
 
@@ -76,6 +77,12 @@ The philosophy is **simplicity over features**: display slides fast, show where 
 │                                            │ • hot metadata in RAM     │          │
 │                                            │ • explicit budgets/evict  │          │
 │                                            └─────────────────────────┘          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+Optional isolation (recommended for production):
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         OVERLAY WORKER (Rust, separate pool)                     │
+│  • Parse/derive jobs only • strict RAM caps • crash-safe • writes to OverlayStore │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ### 1.5 Operating Modes (explicit)
@@ -220,13 +227,22 @@ OVERLAY FLOW (Upload once, stream on-demand)
           ├──────────────────────────────────────────────────────────────┐
           │ HTTP GET (cacheable overlay tiles)                            │
           ▼                                                              ▼
-  /overlay/{overlay_id}/tile/{z}/{x}/{y}.webp (ETag, Cache-Control: immutable)   (optional) WS: request_vector_detail
+  /overlay/{overlay_id}/raster/{z}/{x}/{y}.webp (ETag, Cache-Control: immutable)
   ┌───────────────┐                     ┌───────────────┐
   │    Client     │ ──────────────────► │ PathCollab    │
-  │               │                     │ Server        │
-  │               │ ◄────────────────── │ (tile store / index)│
-  └───────────────┘   WS: overlay_data  └───────────────┘
-                      (binary msgpack)
+  └───────────────┘                     │ Server        │
+                                        └───────────────┘
+
+  Vector detail fetch (HTTP, retryable, cacheable-by-ETag)
+          │
+          ▼
+  GET /overlay/{overlay_id}/manifest.json
+          │
+          ▼
+  GET /overlay/{overlay_id}/vec/{level}/{tile_x}/{tile_y}.bin  (Content-Encoding: zstd)
+          │
+          ▼
+  overlayWorker decode → GPU buffers
 
 
 PRESENCE FLOW (High-frequency, small payloads)
@@ -247,7 +263,7 @@ PRESENCE FLOW (High-frequency, small payloads)
                                        │ (only changes)  │
                                        └─────────────────┘
 
-  Every 100ms (10Hz):
+  Every 100ms (10Hz) presenter viewport:
   ┌───────────────┐                     ┌───────────────┐
   │  Presenter    │ ─ viewport_update ► │ PathCollab    │
   │               │                     │ Server        │
@@ -258,6 +274,19 @@ PRESENCE FLOW (High-frequency, small payloads)
                                        │   Broadcast     │
                                        │ presenter_viewport
                                        │ (followers only)│
+                                       └─────────────────┘
+
+  Every 500ms (2Hz) follower viewport (coalesced, optional under QoS):
+  ┌───────────────┐                     ┌───────────────┐
+  │  Follower     │ ─ viewport_update ► │ PathCollab    │
+  │               │                     │ Server        │
+  └───────────────┘                     └───────┬───────┘
+                                                │
+                                                ▼
+                                       ┌─────────────────┐
+                                       │   Broadcast     │
+                                       │ presence_bin     │
+                                       │ (cursor+viewport)│
                                        └─────────────────┘
 
 
@@ -283,6 +312,7 @@ LAYER STATE FLOW (Low-frequency, on-change only)
 | # | Principle | Rationale | Implementation |
 |---|-----------|-----------|----------------|
 | **1** | **Tiles are sacred** | Tile rendering latency directly impacts perceived performance; never block on overlay operations | OpenSeadragon manages tiles independently; overlay WebGL layer is separate canvas |
+| **1b** | **Prefetch follows the presenter** | Presenter-led sessions should feel instant for followers | Followers prefetch tiles around presenter viewport + next-zoom ring (bounded) |
 | **2** | **Server owns truth (but can rehydrate)** | Distributed state is hard; server is authoritative, but should survive restarts in production | Session snapshots can be reloaded from Redis; clients can resync from snapshot |
 | **3** | **Bandwidth is variable** | Global users have 10ms-500ms latency; design for graceful degradation | Cursor updates are small (32 bytes); overlay data is streamed incrementally; viewport sync tolerates jitter |
 | **4** | **Overlays are ephemeral but restart-safe** | UX is ephemeral, but expensive derived artifacts should survive restarts | Content-addressed overlay cache on disk; optional shared blob store in clustered mode |
@@ -303,10 +333,13 @@ LAYER STATE FLOW (Low-frequency, on-change only)
 
 interface Session {
   // Identity
-  id: SessionId;                    // 8-char base32, e.g., "k3m9p2qd"
+  id: SessionId;                    // 10-char base32, e.g., "k3m9p2qdx7"
   rev: number;                      // Monotonic session revision. Increments on any authoritative state change.
   join_secret_hash: string;         // Argon2id hash; join requires secret (unlisted)
   presenter_key_hash: string;       // Argon2id hash; presenter-only actions
+  // Safety controls (presenter-only)
+  locked: boolean;                  // if true, no new followers may join
+  allow_presenter_rotation: boolean;// enable one-click presenter key rotation
   // Link format (recommended):
   // - Join link:      /s/<session_id>#join=<high_entropy_secret>
   // - Presenter link: /s/<session_id>#join=<...>&presenter=<presenter_key>
@@ -341,7 +374,7 @@ interface Callout {
   created_at: Timestamp;
 }
 
-type SessionId = string;  // /^[a-z2-7]{8}$/  (base32 lowercase, avoids ambiguous chars)
+type SessionId = string;  // /^[a-z2-7]{10}$/ (base32 lowercase, avoids ambiguous chars)
 type SessionState = 'active' | 'presenter_disconnected' | 'expired';
 
 interface Participant {
@@ -352,7 +385,7 @@ interface Participant {
   connected_at: Timestamp;
   last_seen_at: Timestamp;          // Updated on any message
   cursor?: CursorState;             // Null if not in viewport
-  viewport?: Viewport;              // Follower's independent viewport
+  viewport?: Viewport;              // Both presenter/follower may publish (QoS-dependent)
 }
 
 type ParticipantId = string;  // UUID v4
@@ -465,10 +498,11 @@ interface LayerVisibility {
 // - Control-plane: JSON (join, auth, layer state, callouts, errors)
 // - Data-plane: binary MessagePack (overlay batches, presence hot path)
 //
-// Realtime robustness:
+// Realtime robustness (revised):
 // - client->server messages carry seq
-// - server may coalesce cursor/viewport updates under load (latest-wins)
-// - server advertises QoS profile on join (rates/budgets)
+// - server acks authoritative actions (layer/callout/presenter/upload intents)
+// - cursor/viewport are latest-wins and may be coalesced without ack
+// - reconnect uses resume_token to keep identity stable across drops/instances
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLIENT → SERVER
@@ -477,13 +511,17 @@ interface LayerVisibility {
 type ClientMessage =
   | { type: 'join_session'; session_id: SessionId; join_secret: string; last_seen_rev?: number; seq: number;
       capabilities?: ClientCapabilities }
+  | { type: 'resume_session'; session_id: SessionId; participant_id: ParticipantId; resume_token: string; last_seen_rev?: number; seq: number }
   | { type: 'create_session'; slide_id: SlideId; seq: number }
   | { type: 'presenter_auth'; presenter_key: string; seq: number }
+  | { type: 'rotate_presenter_key'; seq: number }     // server returns new presenter link once
+  | { type: 'set_session_lock'; locked: boolean; seq: number }
+  | { type: 'end_session_now'; seq: number }
   | { type: 'transfer_presenter'; to_participant_id: ParticipantId; seq: number }
   | { type: 'cursor_update'; x: number; y: number; seq: number } // control-plane fallback
-  | { type: 'viewport_update'; center_x: number; center_y: number; zoom: number; seq: number } // fallback
+  | { type: 'viewport_update'; center_x: number; center_y: number; zoom: number; seq: number } // presenter=10Hz, follower=2Hz
   | { type: 'presence_bin'; payload: Uint8Array } // preferred: msgpack-packed cursor/viewport/laser
-  | { type: 'request_vector_detail'; request_id: number; viewport: Viewport; level: number; seq: number }
+  | { type: 'request_overlay_manifest'; overlay_id: OverlayId; seq: number }  // returns URLs/metadata (control-plane)
   | { type: 'layer_update'; visibility: LayerVisibility; seq: number }
   | { type: 'laser_pointer'; x: number; y: number; ttl_ms: number; seq: number }
   | { type: 'add_callout'; x: number; y: number; label?: string; seq: number }
@@ -500,9 +538,11 @@ type ServerMessage =
   // Session lifecycle
   | { type: 'session_created'; session: SessionSnapshot }
   | { type: 'session_joined'; session: SessionSnapshot; you: Participant }
+  | { type: 'resume_ok'; session: SessionSnapshot; you: Participant }
   | { type: 'qos_profile'; profile: QosProfile } // server-selected rates/budgets for this client
   | { type: 'state_patch'; base_rev: number; next_rev: number; patch: SessionPatch }
   | { type: 'resync_required'; server_rev: number }  // client should request full snapshot
+  | { type: 'ack'; ack_seq: number; status: 'ok' | 'rejected'; reason?: string }
   | { type: 'session_error'; code: ErrorCode; message: string }
   | { type: 'session_ended'; reason: 'expired' | 'presenter_left' }
   
@@ -522,8 +562,18 @@ type ServerMessage =
   // Overlay events
   | { type: 'overlay_upload_progress'; percent: number }
   | { type: 'overlay_loaded'; overlay: OverlayState; overlay_order: OverlayId[] }
-  | { type: 'overlay_data'; tiles: OverlayTileBatch }  // MessagePack binary
+  | { type: 'overlay_manifest'; overlay_id: OverlayId; manifest: OverlayManifest }
   | { type: 'overlay_removed'; overlay_id: OverlayId }
+
+interface OverlayManifest {
+  overlay_id: OverlayId;
+  content_sha256: string;
+  raster_base_url: string;   // e.g. /overlay/<id>/raster
+  vec_base_url: string;      // e.g. /overlay/<id>/vec
+  chunk_format: 'msgpack+zstd';
+  tile_size: number;         // render tile size (256/512)
+  levels: number;            // pyramid levels for overlay assets
+}
   
   // Layer state
   | { type: 'layer_state'; visibility: LayerVisibility }
@@ -559,6 +609,11 @@ interface SessionSnapshot {
   layer_visibility: LayerVisibility;
   presenter_viewport: Viewport;
   callouts: Callout[];
+}
+
+// Not broadcast to other clients; returned only to the joining client.
+interface JoinSecrets {
+  resume_token: string;   // >= 128 bits entropy
 }
 
 interface ClientCapabilities {
@@ -629,8 +684,11 @@ interface CellPolygon {
 
 const ValidationRules = {
   // Session
-  SESSION_ID_PATTERN: /^[a-z2-7]{8}$/,
+  SESSION_ID_PATTERN: /^[a-z2-7]{10}$/,
   CREATE_JOIN_RATE_LIMIT_PER_IP: 30,          // per minute
+  WS_ORIGIN_REQUIRED: true,                  // enforce Origin/Host checks behind proxy
+  JOIN_SECRET_MIN_BITS: 128,
+  PRESENTER_KEY_MIN_BITS: 192,
   WS_MSG_RATE_LIMIT_PER_CONN: 200,            // per second (hard ceiling)
   MAX_FOLLOWERS: 20,
   SESSION_MAX_DURATION_MS: 4 * 60 * 60 * 1000,  // 4 hours
@@ -808,6 +866,7 @@ function validateLayerVisibility(vis: LayerVisibility): boolean {
 │  │   ├── upload.rs                 # Upload intents + (fallback) chunk upload  │
 │  │   ├── blob.rs                   # S3/MinIO adapter (presigned multipart)    │
 │  │   ├── jobs.rs                   # Parse/derive job runner + cancellation     │
+│  │   ├── worker.rs                 # spawn_blocking pool OR IPC client to sidecar│
 │  │   ├── index.rs                  # Tile-bin index (fast path) + optional R-tree│
 │  │   └── streamer.rs               # Viewport-based tile streaming             │
 │  │                                                                              │
@@ -844,16 +903,16 @@ function validateLayerVisibility(vis: LayerVisibility): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Renders overlays using explicit LOD + correctness guarantees:
- * 1) Points (centroids): instanced point sprites (fast path)
- * 2) Polygons: triangulated meshes per tile (correct for non-convex polygons)
- * 2. Viewport frustum culling (only upload visible cells)
- * 3. Level-of-detail (simplify polygons at low zoom)
- * 4. GPU-based class filtering (discard in fragment shader)
+ * LOD strategy (revised, robustness-first):
+ * 1) Raster overview (always): tissue heatmap + optional density/outline tiles
+ * 2) Mid zoom: centroids as instanced point sprites (fast path, informative)
+ * 3) High zoom: polygons only within strict budgets; always allow hover/selection detail fetch
+ * 4) GPU-based class filtering + opacity on hot path
  *
- * NOTE: Polygon fill is only enabled when zoomed-in enough that the number of visible cells is bounded.
- * When budgets are exceeded, the renderer automatically degrades:
- * polygons -> outlines -> points.
+ * NOTE:
+ * - Default is points; polygons are an enhancement, not a dependency.
+ * - When budgets are exceeded, degrade to: polygons -> outlines -> points.
+ * - Hover/selection triggers targeted polygon fetch for a small radius even if polygons are globally disabled.
  */
 class OverlayRenderer {
   private gl: WebGL2RenderingContext;
@@ -873,8 +932,8 @@ class OverlayRenderer {
   // State
   private visibleCells: CellPolygon[] = [];
   private instanceData: Float32Array;
-  private maxPoints: number = 300_000;     // hard budget
-  private maxPolyTriangles: number = 600_000; // hard budget, beyond which we degrade
+  private maxPoints: number = 300_000;        // hard budget
+  private maxPolyTriangles: number = 250_000; // lower budget; rely on targeted detail fetch
   
   constructor(canvas: HTMLCanvasElement) {
     this.gl = canvas.getContext('webgl2')!;
@@ -982,6 +1041,8 @@ function usePresence(sessionId: string, isPresenter: boolean) {
       setCursors(prev => applyPresenceDelta(prev, lastMessage));
     } else if (lastMessage.type === 'presenter_viewport') {
       setPresenterViewport(lastMessage.viewport);
+      // Followers: prefetch tiles around presenter to make "snap" instant (bounded).
+      // (Implementation detail: use OpenSeadragon tile cache + add a small prefetch ring.)
     }
   }, [lastMessage]);
   
@@ -1115,6 +1176,11 @@ Week 4: Robustness
 Week 4 (add): Observability + Load test
 ├── Prometheus metrics endpoint + dashboards (latency, memory, WS queue)
 └── Load test: 20 followers * N sessions, validate fan-out + backpressure behavior
+
+Week 4 (add): Performance budgets + replay tests
+├── Define budgets: TTFP (tile), WS fanout latency, max main-thread frame time
+├── Record deterministic "session trace" (JSON events) in dev
+└── CI: replay trace headlessly (Playwright) and fail on budget regressions
 ```
 
 **Phase 2 Deliverable:**
@@ -1379,7 +1445,7 @@ use rand::Rng;
 
 // base32 lowercase, avoids 0/1/l/o ambiguity
 const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
-const SESSION_ID_LENGTH: usize = 8;
+const SESSION_ID_LENGTH: usize = 10;
 
 pub fn generate_session_id() -> String {
     let mut rng = rand::thread_rng();
