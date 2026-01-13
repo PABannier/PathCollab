@@ -1,8 +1,8 @@
 use crate::protocol::{ClientMessage, ServerMessage};
 use axum::{
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::Response,
 };
@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -165,13 +165,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         // Parse and handle message
                         match serde_json::from_str::<ClientMessage>(&text) {
                             Ok(client_msg) => {
-                                handle_client_message(
-                                    client_msg,
-                                    connection_id,
-                                    &state,
-                                    &tx,
-                                )
-                                .await;
+                                handle_client_message(client_msg, connection_id, &state, &tx).await;
                             }
                             Err(e) => {
                                 warn!("Failed to parse client message: {}", e);

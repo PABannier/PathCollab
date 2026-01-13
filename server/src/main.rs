@@ -2,9 +2,9 @@ mod protocol;
 mod server;
 mod session;
 
-use axum::{routing::get, Json, Router};
+use axum::{Json, Router, routing::get};
 use serde::Serialize;
-use server::{ws_handler, AppState};
+use server::{AppState, ws_handler};
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;

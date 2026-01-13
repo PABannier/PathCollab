@@ -135,8 +135,7 @@ pub fn validate_session_id(id: &str) -> bool {
     if id.len() != SESSION_ID_LENGTH {
         return false;
     }
-    id.chars()
-        .all(|c| SESSION_ID_CHARSET.contains(&(c as u8)))
+    id.chars().all(|c| SESSION_ID_CHARSET.contains(&(c as u8)))
 }
 
 /// Get current timestamp in milliseconds

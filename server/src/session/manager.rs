@@ -2,8 +2,8 @@ use crate::protocol::{
     LayerVisibility, Participant, ParticipantRole, SessionSnapshot, SlideInfo, Viewport,
 };
 use crate::session::state::{
-    generate_participant_name, generate_secret, generate_session_id, get_participant_color,
-    now_millis, Session, SessionConfig, SessionId, SessionParticipant, SessionState,
+    Session, SessionConfig, SessionId, SessionParticipant, SessionState, generate_participant_name,
+    generate_secret, generate_session_id, get_participant_color, now_millis,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
