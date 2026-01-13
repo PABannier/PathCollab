@@ -108,6 +108,9 @@ export function TissueHeatmapLayer({
     const canvas = canvasRef.current
     if (!canvas) return
 
+    // Capture ref value at effect setup time for cleanup
+    const tileCache = tileCacheRef.current
+
     const gl = canvas.getContext('webgl2', {
       alpha: true,
       premultipliedAlpha: false,
@@ -210,8 +213,7 @@ export function TissueHeatmapLayer({
 
     // Cleanup
     return () => {
-      // Delete cached textures
-      const tileCache = tileCacheRef.current
+      // Delete cached textures (using tileCache captured at setup time)
       for (const tile of tileCache.values()) {
         if (tile.texture) {
           gl.deleteTexture(tile.texture)

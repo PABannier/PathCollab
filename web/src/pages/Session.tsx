@@ -180,7 +180,7 @@ export function Session() {
     if (!overlayId || !overlayEnabled || !viewerBounds) return
 
     const fetchCells = async () => {
-      // Calculate viewport bounds in slide coordinates
+      // Calculate viewport bounds in slide coordinates (pixels)
       const viewportWidth = 1 / currentViewport.zoom
       const viewportHeight = viewerBounds.height / viewerBounds.width / currentViewport.zoom
 
@@ -189,33 +189,31 @@ export function Session() {
       const minY = (currentViewport.centerY - viewportHeight / 2) * slide.height
       const maxY = (currentViewport.centerY + viewportHeight / 2) * slide.height
 
-      // Determine which tiles to fetch based on zoom level
-      // Cap level at numLevels - 1 to avoid requesting non-existent tiles
-      const level = Math.max(
-        0,
-        Math.min(slide.numLevels - 1, Math.floor(Math.log2(currentViewport.zoom)))
-      )
-      const tilesPerDim = Math.pow(2, level)
-      const tileWidth = slide.width / tilesPerDim
-      const tileHeight = slide.height / tilesPerDim
+      // Server stores vector chunks at level 0 using a fixed 256-pixel tile grid.
+      // We must use the same tile size and always request level 0.
+      const serverTileSize = 256
+      const level = 0
 
-      const startTileX = Math.max(0, Math.floor(minX / tileWidth))
-      const endTileX = Math.min(tilesPerDim - 1, Math.floor(maxX / tileWidth))
-      const startTileY = Math.max(0, Math.floor(minY / tileHeight))
-      const endTileY = Math.min(tilesPerDim - 1, Math.floor(maxY / tileHeight))
+      // Calculate tile range using the server's 256-pixel tile grid
+      const startTileX = Math.max(0, Math.floor(minX / serverTileSize))
+      const endTileX = Math.floor(maxX / serverTileSize)
+      const startTileY = Math.max(0, Math.floor(minY / serverTileSize))
+      const endTileY = Math.floor(maxY / serverTileSize)
 
       // Fetch vector chunks for visible tiles
       const cells: CellPolygon[] = []
       const fetchPromises: Promise<void>[] = []
 
-      for (let ty = startTileY; ty <= endTileY && ty <= startTileY + 2; ty++) {
-        for (let tx = startTileX; tx <= endTileX && tx <= startTileX + 2; tx++) {
+      // Limit tile fetches to prevent excessive requests at low zoom
+      const maxTilesPerAxis = 4
+      for (let ty = startTileY; ty <= endTileY && ty < startTileY + maxTilesPerAxis; ty++) {
+        for (let tx = startTileX; tx <= endTileX && tx < startTileX + maxTilesPerAxis; tx++) {
           // Capture tile coordinates for closure
           const tileX = tx
           const tileY = ty
-          // Calculate tile origin in slide coordinates
-          const tileOriginX = tileX * tileWidth
-          const tileOriginY = tileY * tileHeight
+          // Calculate tile origin in slide coordinates using server's tile size
+          const tileOriginX = tileX * serverTileSize
+          const tileOriginY = tileY * serverTileSize
 
           fetchPromises.push(
             fetch(`/api/overlay/${overlayId}/vec/${level}/${tileX}/${tileY}`)
@@ -223,7 +221,7 @@ export function Session() {
               .then((data) => {
                 if (data?.cells) {
                   for (const cell of data.cells) {
-                    // Cell x/y are relative to tile origin, convert to absolute slide coords
+                    // Cell x/y are relative to tile origin (in pixels), convert to absolute slide coords
                     cells.push({
                       x: tileOriginX + cell.x,
                       y: tileOriginY + cell.y,
