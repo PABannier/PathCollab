@@ -72,7 +72,7 @@ export function Home() {
             <h1 className="text-xl font-bold text-white">PathCollab</h1>
             <nav className="flex gap-4">
               <a
-                href="https://github.com/your-org/pathcollab"
+                href="https://github.com/PABannier/PathCollab"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-gray-400 hover:text-white"
@@ -199,7 +199,7 @@ export function Home() {
                 Try Demo
               </button>
               <a
-                href="https://github.com/your-org/pathcollab#quick-start"
+                href="https://github.com/PABannier/PathCollab#quick-start"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="rounded-lg border border-gray-600 bg-gray-800 px-6 py-2 font-semibold text-white transition hover:bg-gray-700"
@@ -217,7 +217,7 @@ export function Home() {
           <p>PathCollab - Open Source Collaborative Pathology Viewer</p>
           <p className="mt-1">
             <a
-              href="https://github.com/your-org/pathcollab"
+              href="https://github.com/PABannier/PathCollab"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-gray-400"
@@ -230,7 +230,7 @@ export function Home() {
             </a>
             {' | '}
             <a
-              href="https://github.com/your-org/pathcollab/issues"
+              href="https://github.com/PABannier/PathCollab/issues"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-gray-400"

@@ -60,7 +60,7 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
         if (!viewer?.viewport) return
 
         const center = new OpenSeadragon.Point(viewport.centerX, viewport.centerY)
-        viewer.viewport.zoomTo(viewport.zoom, null, immediate)
+        viewer.viewport.zoomTo(viewport.zoom, undefined, immediate)
         viewer.viewport.panTo(center, immediate)
         viewer.viewport.applyConstraints()
       },

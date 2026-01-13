@@ -24,7 +24,7 @@ A web-based collaborative viewer for digital pathology, enabling real-time multi
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-org/pathcollab.git
+   git clone https://github.com/PABannier/PathCollab.git
    cd pathcollab
    ```
 

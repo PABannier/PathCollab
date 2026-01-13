@@ -81,6 +81,7 @@ interface UseSessionReturn {
   session: SessionState | null
   currentUser: Participant | null
   isPresenter: boolean
+  isCreatingSession: boolean
   connectionStatus: ConnectionStatus
   cursors: CursorWithParticipant[]
   presenterViewport: Viewport | null
@@ -106,6 +107,7 @@ export function useSession({
   const [session, setSession] = useState<SessionState | null>(null)
   const [currentUser, setCurrentUser] = useState<Participant | null>(null)
   const [isPresenter, setIsPresenter] = useState(false)
+  const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [cursors, setCursors] = useState<CursorWithParticipant[]>([])
   const [presenterViewport, setPresenterViewport] = useState<Viewport | null>(null)
   const [secrets, setSecrets] = useState<SessionSecrets | null>(null)
@@ -121,6 +123,7 @@ export function useSession({
         case 'session_created': {
           const sessionData = message.session as SessionState
           setSession(sessionData)
+          setIsCreatingSession(false)
           // When session is created, we're the presenter
           setCurrentUser(sessionData.presenter)
           setIsPresenter(true)
@@ -208,6 +211,7 @@ export function useSession({
         }
 
         case 'session_error': {
+          setIsCreatingSession(false)
           onError?.(message.message as string)
           break
         }
@@ -270,6 +274,7 @@ export function useSession({
   // Create session action
   const createSession = useCallback(
     (slideId: string) => {
+      setIsCreatingSession(true)
       sendMessage({
         type: 'create_session',
         slide_id: slideId,
@@ -356,6 +361,7 @@ export function useSession({
     session,
     currentUser,
     isPresenter,
+    isCreatingSession,
     connectionStatus: status,
     cursors,
     presenterViewport,

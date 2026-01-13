@@ -166,9 +166,9 @@ export function useWebSocket({
   }, [doConnect])
 
   // Send message
-  const sendMessage = useCallback((message: WebSocketMessage) => {
+  const sendMessage = useCallback((message: WebSocketMessage): number => {
     // Add sequence number if not present
-    const seq = message.seq ?? seqRef.current++
+    const seq = (typeof message.seq === 'number' ? message.seq : seqRef.current++) as number
     const msgWithSeq = {
       ...message,
       seq,

@@ -10,7 +10,7 @@ Get PathCollab running in under 5 minutes.
 ## Step 1: Clone and Setup
 
 ```bash
-git clone https://github.com/your-org/pathcollab.git
+git clone https://github.com/PABannier/PathCollab.git
 cd pathcollab
 ```
 
