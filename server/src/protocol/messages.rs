@@ -84,7 +84,9 @@ pub enum ServerMessage {
         overlay_id: String,
         manifest: OverlayManifest,
     },
-    /// Pong response
+    /// Ping for keepalive (server to client)
+    Ping,
+    /// Pong response (to client's Ping)
     Pong,
 }
 

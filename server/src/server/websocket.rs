@@ -179,8 +179,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 break;
             }
 
-            // Send ping (client should respond with pong)
-            if ping_tx.send(ServerMessage::Pong).await.is_err() {
+            // Send ping (client may respond, or we just use any activity as keepalive)
+            if ping_tx.send(ServerMessage::Ping).await.is_err() {
                 break;
             }
         }

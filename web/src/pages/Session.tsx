@@ -189,7 +189,8 @@ export function Session() {
       const maxY = (currentViewport.centerY + viewportHeight / 2) * slide.height
 
       // Determine which tiles to fetch based on zoom level
-      const level = Math.max(0, Math.floor(Math.log2(currentViewport.zoom)))
+      // Cap level at numLevels - 1 to avoid requesting non-existent tiles
+      const level = Math.max(0, Math.min(slide.numLevels - 1, Math.floor(Math.log2(currentViewport.zoom))))
       const tilesPerDim = Math.pow(2, level)
       const tileWidth = slide.width / tilesPerDim
       const tileHeight = slide.height / tilesPerDim

@@ -203,6 +203,7 @@ impl OverlayParser {
             .collect();
 
         // Create metadata
+        // Use actual parsed counts (after filtering invalid entries) for accuracy
         let metadata = ParsedOverlay {
             content_sha256,
             slide_id: overlay.slide_id,
@@ -214,8 +215,8 @@ impl OverlayParser {
             tile_size: overlay.tile_size,
             tissue_classes,
             cell_classes,
-            total_cells: cell_count,
-            total_tissue_tiles: tile_count,
+            total_cells: cells.len() as u64,
+            total_tissue_tiles: tissue_tiles.len() as u64,
         };
 
         info!(
