@@ -73,7 +73,7 @@ pub struct PresenceConfig {
 }
 
 /// Demo mode configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DemoConfig {
     /// Whether demo mode is enabled
     pub enabled: bool,
@@ -132,16 +132,6 @@ impl Default for PresenceConfig {
     }
 }
 
-impl Default for DemoConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            slide_id: None,
-            overlay_path: None,
-        }
-    }
-}
-
 impl Config {
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
@@ -151,16 +141,15 @@ impl Config {
         if let Ok(host) = env::var("HOST") {
             config.host = host;
         }
-        if let Ok(port) = env::var("PORT") {
-            if let Ok(p) = port.parse() {
-                config.port = p;
-            }
+        if let Ok(port) = env::var("PORT")
+            && let Ok(p) = port.parse()
+        {
+            config.port = p;
         }
-        if let Ok(url) = env::var("PUBLIC_BASE_URL") {
-            // Only set if non-empty
-            if !url.is_empty() {
-                config.public_base_url = Some(url);
-            }
+        if let Ok(url) = env::var("PUBLIC_BASE_URL")
+            && !url.is_empty()
+        {
+            config.public_base_url = Some(url);
         }
         if let Ok(val) = env::var("BEHIND_PROXY") {
             config.behind_proxy = val.to_lowercase() == "true" || val == "1";
@@ -172,84 +161,82 @@ impl Config {
         }
 
         // Session config
-        if let Ok(val) = env::var("MAX_FOLLOWERS") {
-            if let Ok(v) = val.parse() {
-                config.session.max_followers = v;
-            }
+        if let Ok(val) = env::var("MAX_FOLLOWERS")
+            && let Ok(v) = val.parse()
+        {
+            config.session.max_followers = v;
         }
-        if let Ok(val) = env::var("MAX_CONCURRENT_SESSIONS") {
-            if let Ok(v) = val.parse() {
-                config.session.max_concurrent_sessions = v;
-            }
+        if let Ok(val) = env::var("MAX_CONCURRENT_SESSIONS")
+            && let Ok(v) = val.parse()
+        {
+            config.session.max_concurrent_sessions = v;
         }
-        if let Ok(val) = env::var("SESSION_MAX_DURATION_HOURS") {
-            if let Ok(hours) = val.parse::<u64>() {
-                config.session.max_duration = Duration::from_secs(hours * 60 * 60);
-            }
+        if let Ok(val) = env::var("SESSION_MAX_DURATION_HOURS")
+            && let Ok(hours) = val.parse::<u64>()
+        {
+            config.session.max_duration = Duration::from_secs(hours * 60 * 60);
         }
-        if let Ok(val) = env::var("PRESENTER_GRACE_PERIOD_SECS") {
-            if let Ok(secs) = val.parse::<u64>() {
-                config.session.presenter_grace_period = Duration::from_secs(secs);
-            }
+        if let Ok(val) = env::var("PRESENTER_GRACE_PERIOD_SECS")
+            && let Ok(secs) = val.parse::<u64>()
+        {
+            config.session.presenter_grace_period = Duration::from_secs(secs);
         }
 
         // Overlay config
-        if let Ok(val) = env::var("OVERLAY_MAX_SIZE_MB") {
-            if let Ok(mb) = val.parse::<usize>() {
-                config.overlay.max_upload_size = mb * 1024 * 1024;
-            }
+        if let Ok(val) = env::var("OVERLAY_MAX_SIZE_MB")
+            && let Ok(mb) = val.parse::<usize>()
+        {
+            config.overlay.max_upload_size = mb * 1024 * 1024;
         }
-        if let Ok(val) = env::var("OVERLAY_UPLOAD_TIMEOUT_SECS") {
-            if let Ok(secs) = val.parse::<u64>() {
-                config.overlay.upload_timeout = Duration::from_secs(secs);
-            }
+        if let Ok(val) = env::var("OVERLAY_UPLOAD_TIMEOUT_SECS")
+            && let Ok(secs) = val.parse::<u64>()
+        {
+            config.overlay.upload_timeout = Duration::from_secs(secs);
         }
         if let Ok(path) = env::var("OVERLAY_CACHE_DIR") {
             config.overlay.cache_dir = path;
         }
-        if let Ok(val) = env::var("OVERLAY_CACHE_MAX_GB") {
-            if let Ok(gb) = val.parse::<usize>() {
-                config.overlay.cache_max_size = gb * 1024 * 1024 * 1024;
-            }
+        if let Ok(val) = env::var("OVERLAY_CACHE_MAX_GB")
+            && let Ok(gb) = val.parse::<usize>()
+        {
+            config.overlay.cache_max_size = gb * 1024 * 1024 * 1024;
         }
-        if let Ok(val) = env::var("TILE_SIZE") {
-            if let Ok(size) = val.parse() {
-                config.overlay.tile_size = size;
-            }
+        if let Ok(val) = env::var("TILE_SIZE")
+            && let Ok(size) = val.parse()
+        {
+            config.overlay.tile_size = size;
         }
-        if let Ok(val) = env::var("OVERLAY_MAX_JOBS") {
-            if let Ok(jobs) = val.parse() {
-                config.overlay.max_jobs = jobs;
-            }
+        if let Ok(val) = env::var("OVERLAY_MAX_JOBS")
+            && let Ok(jobs) = val.parse()
+        {
+            config.overlay.max_jobs = jobs;
         }
 
         // Presence config
-        if let Ok(val) = env::var("CURSOR_BROADCAST_HZ") {
-            if let Ok(hz) = val.parse() {
-                config.presence.cursor_broadcast_hz = hz;
-            }
+        if let Ok(val) = env::var("CURSOR_BROADCAST_HZ")
+            && let Ok(hz) = val.parse()
+        {
+            config.presence.cursor_broadcast_hz = hz;
         }
-        if let Ok(val) = env::var("VIEWPORT_BROADCAST_HZ") {
-            if let Ok(hz) = val.parse() {
-                config.presence.viewport_broadcast_hz = hz;
-            }
+        if let Ok(val) = env::var("VIEWPORT_BROADCAST_HZ")
+            && let Ok(hz) = val.parse()
+        {
+            config.presence.viewport_broadcast_hz = hz;
         }
 
         // Demo config
         if let Ok(val) = env::var("DEMO_ENABLED") {
             config.demo.enabled = val.to_lowercase() == "true" || val == "1";
         }
-        if let Ok(id) = env::var("DEMO_SLIDE_ID") {
-            // Only set if non-empty
-            if !id.is_empty() {
-                config.demo.slide_id = Some(id);
-            }
+        if let Ok(id) = env::var("DEMO_SLIDE_ID")
+            && !id.is_empty()
+        {
+            config.demo.slide_id = Some(id);
         }
-        if let Ok(path) = env::var("DEMO_OVERLAY_PATH") {
-            // Only set if non-empty
-            if !path.is_empty() {
-                config.demo.overlay_path = Some(path);
-            }
+        if let Ok(path) = env::var("DEMO_OVERLAY_PATH")
+            && !path.is_empty()
+        {
+            config.demo.overlay_path = Some(path);
         }
 
         config

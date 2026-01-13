@@ -1,4 +1,4 @@
-use axum::{Json, Router, routing::get, extract::State};
+use axum::{Json, Router, extract::State, routing::get};
 use pathcollab_server::config::Config;
 use pathcollab_server::overlay::overlay_routes;
 use pathcollab_server::server::{AppState, ws_handler};
@@ -39,10 +39,7 @@ struct MetricsResponse {
 }
 
 async fn metrics(State(state): State<AppState>) -> Json<MetricsResponse> {
-    let uptime = START_TIME
-        .get()
-        .map(|t| t.elapsed().as_secs())
-        .unwrap_or(0);
+    let uptime = START_TIME.get().map(|t| t.elapsed().as_secs()).unwrap_or(0);
 
     let (sessions, connections) = state.get_stats().await;
 
@@ -70,12 +67,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Load configuration from environment
     let config = Config::from_env();
-    info!("Loaded configuration: host={}, port={}", config.host, config.port);
+    info!(
+        "Loaded configuration: host={}, port={}",
+        config.host, config.port
+    );
     if config.demo.enabled {
-        info!(
-            "Demo mode enabled: slide_id={:?}",
-            config.demo.slide_id
-        );
+        info!("Demo mode enabled: slide_id={:?}", config.demo.slide_id);
     }
 
     // Create shared application state
