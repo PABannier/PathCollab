@@ -22,6 +22,7 @@ export function Session() {
   const [viewerBounds, setViewerBounds] = useState<DOMRect | null>(null)
   const [currentViewport, setCurrentViewport] = useState({ centerX: 0.5, centerY: 0.5, zoom: 1 })
   const [error, setError] = useState<string | null>(null)
+  const [notification, setNotification] = useState<string | null>(null)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
 
   // Get secrets from URL hash fragment (not sent to server)
@@ -158,8 +159,8 @@ export function Session() {
     const url = shareUrl || window.location.href
     try {
       await navigator.clipboard.writeText(url)
-      setError('Link copied to clipboard!')
-      setTimeout(() => setError(null), 2000)
+      setNotification('Link copied to clipboard!')
+      setTimeout(() => setNotification(null), 2000)
     } catch {
       setError('Failed to copy link')
     }
@@ -242,6 +243,13 @@ export function Session() {
         </div>
       )}
 
+      {/* Notification banner */}
+      {notification && (
+        <div className="bg-green-600 px-4 py-2 text-sm text-white">
+          {notification}
+        </div>
+      )}
+
       {/* Main viewer area */}
       <main className="relative flex-1 overflow-hidden" ref={viewerContainerRef} onMouseMove={handleMouseMove}>
         <SlideViewer slide={slide} onViewportChange={handleViewportChange} />
@@ -257,27 +265,27 @@ export function Session() {
             currentUserId={currentUser?.id}
           />
         )}
-      </main>
 
-      {/* Participant list (sidebar could be added here) */}
-      {session && session.followers.length > 0 && (
-        <div className="absolute bottom-4 left-4 rounded bg-black/70 p-2 text-xs text-white">
-          <div className="mb-1 font-semibold">Participants:</div>
-          <div className="flex items-center gap-1">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: session.presenter.color }}
-            />
-            <span>{session.presenter.name} (Presenter)</span>
-          </div>
-          {session.followers.map((f) => (
-            <div key={f.id} className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: f.color }} />
-              <span>{f.name}</span>
+        {/* Participant list (inside main for proper positioning) */}
+        {session && session.followers.length > 0 && (
+          <div className="absolute bottom-4 left-4 rounded bg-black/70 p-2 text-xs text-white">
+            <div className="mb-1 font-semibold">Participants:</div>
+            <div className="flex items-center gap-1">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: session.presenter.color }}
+              />
+              <span>{session.presenter.name} (Presenter)</span>
             </div>
-          ))}
-        </div>
-      )}
+            {session.followers.map((f) => (
+              <div key={f.id} className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: f.color }} />
+                <span>{f.name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   )
 }
