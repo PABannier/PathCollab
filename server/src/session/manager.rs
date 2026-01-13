@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 /// Session manager errors
 #[derive(Debug, Error)]
+#[allow(dead_code)] // Variants used when session management is fully integrated
 pub enum SessionError {
     #[error("Session not found: {0}")]
     NotFound(SessionId),
@@ -41,11 +42,13 @@ pub enum SessionError {
 }
 
 /// Session manager: handles all session CRUD operations
+#[allow(dead_code)] // Used when session management is fully integrated
 pub struct SessionManager {
     sessions: Arc<RwLock<HashMap<SessionId, Session>>>,
     config: SessionConfig,
 }
 
+#[allow(dead_code)] // Methods used when session management is fully integrated
 impl SessionManager {
     pub fn new() -> Self {
         Self {

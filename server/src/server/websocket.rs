@@ -16,6 +16,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// Connection state for a single client
+#[allow(dead_code)] // Fields used when session management is fully integrated
 pub struct Connection {
     pub id: Uuid,
     pub session_id: Option<String>,
@@ -49,6 +50,7 @@ impl Default for AppState {
 }
 
 /// Configuration for WebSocket connections
+#[allow(dead_code)] // Fields used when configuration is fully integrated
 pub struct WsConfig {
     pub ping_interval: Duration,
     pub ping_timeout: Duration,
@@ -103,7 +105,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         while let Some(msg) = rx.recv().await {
             match serde_json::to_string(&msg) {
                 Ok(json) => {
-                    if ws_sender.send(Message::Text(json.into())).await.is_err() {
+                    if ws_sender.send(Message::Text(json)).await.is_err() {
                         break;
                     }
                 }
@@ -308,17 +310,17 @@ async fn handle_client_message(
         ClientMessage::LayerUpdate { visibility: _, seq } => {
             // TODO: Broadcast layer state to session
             let connections = state.connections.read().await;
-            if let Some(conn) = connections.get(&connection_id) {
-                if !conn.is_presenter {
-                    let _ = tx
-                        .send(ServerMessage::Ack {
-                            ack_seq: seq,
-                            status: crate::protocol::AckStatus::Rejected,
-                            reason: Some("Only presenter can update layers".to_string()),
-                        })
-                        .await;
-                    return;
-                }
+            if let Some(conn) = connections.get(&connection_id)
+                && !conn.is_presenter
+            {
+                let _ = tx
+                    .send(ServerMessage::Ack {
+                        ack_seq: seq,
+                        status: crate::protocol::AckStatus::Rejected,
+                        reason: Some("Only presenter can update layers".to_string()),
+                    })
+                    .await;
+                return;
             }
             let _ = tx
                 .send(ServerMessage::Ack {
