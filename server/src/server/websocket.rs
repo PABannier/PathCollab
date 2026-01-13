@@ -310,9 +310,11 @@ async fn handle_client_message(
         ClientMessage::LayerUpdate { visibility: _, seq } => {
             // TODO: Broadcast layer state to session
             let connections = state.connections.read().await;
-            if let Some(conn) = connections.get(&connection_id)
-                && !conn.is_presenter
-            {
+            let is_presenter = connections
+                .get(&connection_id)
+                .is_some_and(|conn| conn.is_presenter);
+            drop(connections);
+            if !is_presenter {
                 let _ = tx
                     .send(ServerMessage::Ack {
                         ack_seq: seq,
