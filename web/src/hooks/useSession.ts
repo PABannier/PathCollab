@@ -55,11 +55,21 @@ interface CursorWithParticipant {
   y: number
 }
 
+export interface OverlayManifest {
+  overlay_id: string
+  content_sha256: string
+  raster_base_url: string
+  vec_base_url: string
+  tile_size: number
+  levels: number
+}
+
 interface UseSessionOptions {
   sessionId?: string
   joinSecret?: string
   presenterKey?: string
   onError?: (message: string) => void
+  onOverlayLoaded?: (overlayId: string, manifest: OverlayManifest) => void
 }
 
 interface SessionSecrets {
@@ -91,6 +101,7 @@ export function useSession({
   joinSecret,
   presenterKey,
   onError,
+  onOverlayLoaded,
 }: UseSessionOptions): UseSessionReturn {
   const [session, setSession] = useState<SessionState | null>(null)
   const [currentUser, setCurrentUser] = useState<Participant | null>(null)
@@ -213,9 +224,16 @@ export function useSession({
           }
           break
         }
+
+        case 'overlay_loaded': {
+          const overlayId = message.overlay_id as string
+          const manifest = message.manifest as OverlayManifest
+          onOverlayLoaded?.(overlayId, manifest)
+          break
+        }
       }
     },
-    [onError]
+    [onError, onOverlayLoaded]
   )
 
   const { status, sendMessage } = useWebSocket({

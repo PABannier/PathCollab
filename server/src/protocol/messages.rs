@@ -79,8 +79,24 @@ pub enum ServerMessage {
     PresenterViewport { viewport: Viewport },
     /// Layer state update
     LayerState { visibility: LayerVisibility },
+    /// Overlay loaded notification
+    OverlayLoaded {
+        overlay_id: String,
+        manifest: OverlayManifest,
+    },
     /// Pong response
     Pong,
+}
+
+/// Overlay manifest sent to clients
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverlayManifest {
+    pub overlay_id: String,
+    pub content_sha256: String,
+    pub raster_base_url: String,
+    pub vec_base_url: String,
+    pub tile_size: u32,
+    pub levels: u32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

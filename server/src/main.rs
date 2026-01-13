@@ -4,6 +4,7 @@ mod server;
 mod session;
 
 use axum::{Json, Router, routing::get};
+use overlay::overlay_routes;
 use serde::Serialize;
 use server::{AppState, ws_handler};
 use std::net::SocketAddr;
@@ -49,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/ws", get(ws_handler))
+        .nest("/api/overlay", overlay_routes())
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(app_state);

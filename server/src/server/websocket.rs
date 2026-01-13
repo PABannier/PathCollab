@@ -1,3 +1,5 @@
+use crate::overlay::derive::DerivedOverlay;
+use crate::overlay::routes::OverlayStore;
 use crate::protocol::{ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport};
 use crate::session::manager::{SessionError, SessionManager};
 use axum::{
@@ -39,6 +41,7 @@ pub struct AppState {
     pub connections: ConnectionRegistry,
     pub session_manager: Arc<SessionManager>,
     pub session_broadcasters: SessionBroadcasters,
+    pub overlay_store: OverlayStore,
 }
 
 impl AppState {
@@ -47,6 +50,7 @@ impl AppState {
             connections: Arc::new(RwLock::new(HashMap::new())),
             session_manager: Arc::new(SessionManager::new()),
             session_broadcasters: Arc::new(RwLock::new(HashMap::new())),
+            overlay_store: crate::overlay::routes::new_overlay_store(),
         }
     }
 
