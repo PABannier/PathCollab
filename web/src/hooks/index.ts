@@ -9,3 +9,4 @@ export {
 } from './useSession'
 export { usePresence } from './usePresence'
 export { useDefaultSlide, type DefaultSlide } from './useDefaultSlide'
+export { useKeyboardShortcuts, formatShortcut, type KeyboardShortcut } from './useKeyboardShortcuts'

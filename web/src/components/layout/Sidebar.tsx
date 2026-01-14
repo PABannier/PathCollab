@@ -22,8 +22,16 @@ export function Sidebar({ isOpen, onToggle, children }: SidebarProps) {
           borderRight: isOpen ? '1px solid var(--sidebar-border)' : 'none',
           transition: `width var(--transition-normal) var(--ease-default)`,
         }}
+        aria-hidden={!isOpen}
+        role="complementary"
+        aria-label="Session sidebar"
       >
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4">{children}</div>
+        <nav
+          className="flex-1 overflow-y-auto overflow-x-hidden p-4"
+          aria-label="Session navigation"
+        >
+          {children}
+        </nav>
       </aside>
 
       {/* Toggle button */}
@@ -38,8 +46,10 @@ export function Sidebar({ isOpen, onToggle, children }: SidebarProps) {
         }}
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-gray-600)')}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-gray-700)')}
-        title={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        title={`${isOpen ? 'Collapse' : 'Expand'} sidebar (Ctrl+\\)`}
         aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+        aria-expanded={isOpen}
+        aria-controls="sidebar"
       >
         <svg
           className={`w-4 h-4 transition-transform ${isOpen ? '' : 'rotate-180'}`}

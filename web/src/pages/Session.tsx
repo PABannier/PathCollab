@@ -10,10 +10,11 @@ import { CellTooltip } from '../components/viewer/CellTooltip'
 import { OverlayUploader } from '../components/upload/OverlayUploader'
 import { Sidebar, SidebarSection } from '../components/layout'
 import { StatusBar, ConnectionBadge } from '../components/layout'
-import { Button } from '../components/ui'
+import { Button, KeyboardShortcutsHelp } from '../components/ui'
 import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
+import { useKeyboardShortcuts, type KeyboardShortcut } from '../hooks/useKeyboardShortcuts'
 
 // Cell polygon data for rendering
 interface CellPolygon {
@@ -553,6 +554,52 @@ export function Session() {
     }
   }, [shareUrl, session])
 
+  // Handle zoom reset
+  const handleZoomReset = useCallback(() => {
+    viewerRef.current?.setViewport({ centerX: 0.5, centerY: 0.5, zoom: 1 })
+  }, [])
+
+  // Keyboard shortcuts
+  const shortcuts = useMemo<KeyboardShortcut[]>(
+    () => [
+      {
+        key: '\\',
+        ctrl: true,
+        description: 'Toggle sidebar',
+        action: () => setSidebarOpen((prev) => !prev),
+      },
+      {
+        key: '0',
+        ctrl: true,
+        description: 'Reset zoom to fit',
+        action: handleZoomReset,
+      },
+      {
+        key: 'f',
+        ctrl: true,
+        description: 'Follow presenter',
+        action: handleSnapToPresenter,
+      },
+      {
+        key: 'l',
+        ctrl: true,
+        description: 'Copy share link',
+        action: handleShare,
+      },
+      {
+        key: 'Escape',
+        description: 'Close panels',
+        action: () => setShowHelp(false),
+      },
+    ],
+    [handleZoomReset, handleSnapToPresenter, handleShare]
+  )
+
+  const { showHelp, setShowHelp } = useKeyboardShortcuts({
+    shortcuts,
+    enabled: true,
+  })
+
   const isSoloMode = connectionStatus === 'solo'
 
   // Participant count
@@ -932,8 +979,33 @@ export function Session() {
               disabled={layerControlsDisabled}
             />
           )}
+
+          {/* Keyboard shortcuts hint */}
+          <button
+            onClick={() => setShowHelp(true)}
+            className="absolute bottom-4 right-4 px-2 py-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            title="Keyboard shortcuts (press ? for help)"
+          >
+            Press <kbd className="px-1 py-0.5 bg-gray-700 rounded text-gray-400">?</kbd> for
+            shortcuts
+          </button>
         </main>
       </div>
+
+      {/* Keyboard shortcuts help modal */}
+      {showHelp && (
+        <KeyboardShortcutsHelp
+          shortcuts={[
+            { key: '\\', ctrl: true, description: 'Toggle sidebar' },
+            { key: '0', ctrl: true, description: 'Reset zoom to fit' },
+            { key: 'f', ctrl: true, description: 'Follow presenter' },
+            { key: 'l', ctrl: true, description: 'Copy share link' },
+            { key: 'Escape', description: 'Close panels / exit follow mode' },
+            { key: '?', description: 'Show this help' },
+          ]}
+          onClose={() => setShowHelp(false)}
+        />
+      )}
     </div>
   )
 }
