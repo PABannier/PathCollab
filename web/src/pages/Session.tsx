@@ -20,6 +20,7 @@ import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
 import { useKeyboardShortcuts, type KeyboardShortcut } from '../hooks/useKeyboardShortcuts'
+import { DebugPanel, type DebugStats } from '../components/debug'
 
 // Cell polygon data for rendering
 interface CellPolygon {
@@ -621,6 +622,34 @@ export function Session() {
   // Participant count
   const participantCount = session ? 1 + session.followers.length : 0
 
+  // Debug stats for the debug panel
+  const debugStats = useMemo<DebugStats>(
+    () => ({
+      connection: {
+        status: connectionStatus,
+        retryCount: 0, // TODO: expose from useWebSocket
+        messagesSent: 0, // TODO: expose from useWebSocket
+        messagesReceived: 0, // TODO: expose from useWebSocket
+      },
+      tiles: {
+        requested: 0, // TODO: track tile requests
+        loaded: 0, // TODO: track loaded tiles
+        errors: 0, // TODO: track tile errors
+      },
+      overlay: {
+        id: overlayId,
+        status: overlayId ? 'loaded' : 'none',
+        cellCount: overlayCells.length,
+      },
+      session: {
+        id: session?.id ?? null,
+        role: session ? (isPresenter ? 'presenter' : 'follower') : null,
+        participantCount,
+      },
+    }),
+    [connectionStatus, overlayId, overlayCells.length, session, isPresenter, participantCount]
+  )
+
   return (
     <div className="flex h-screen flex-col">
       {/* Status Bar */}
@@ -919,6 +948,9 @@ export function Session() {
               </div>
             </SidebarSection>
           )}
+
+          {/* Debug Panel - collapsed by default */}
+          <DebugPanel stats={debugStats} defaultCollapsed />
         </Sidebar>
 
         {/* Main viewer area */}
