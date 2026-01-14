@@ -38,13 +38,39 @@ fn ensure_directory(path: &Path, name: &str) -> std::io::Result<bool> {
 struct HealthResponse {
     status: &'static str,
     version: &'static str,
+    slide_service: &'static str,
+    websocket: &'static str,
+    uptime_seconds: u64,
 }
 
-async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "ok",
-        version: env!("CARGO_PKG_VERSION"),
-    })
+async fn health(State(state): State<AppState>) -> (axum::http::StatusCode, Json<HealthResponse>) {
+    let uptime = START_TIME.get().map(|t| t.elapsed().as_secs()).unwrap_or(0);
+
+    // Check if slide service is operational by listing slides
+    let slide_ready = if let Some(ref service) = state.slide_service {
+        service.list_slides().await.is_ok()
+    } else {
+        false
+    };
+
+    let status = if slide_ready { "healthy" } else { "degraded" };
+    let slide_status = if slide_ready { "ready" } else { "unavailable" };
+    let http_status = if slide_ready {
+        axum::http::StatusCode::OK
+    } else {
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    (
+        http_status,
+        Json(HealthResponse {
+            status,
+            version: env!("CARGO_PKG_VERSION"),
+            slide_service: slide_status,
+            websocket: "ready", // WebSocket is always ready if server is running
+            uptime_seconds: uptime,
+        }),
+    )
 }
 
 #[derive(Serialize)]
