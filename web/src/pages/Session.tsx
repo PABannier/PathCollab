@@ -575,10 +575,19 @@ export function Session() {
     }
   }, [session, secrets])
 
-  // Handle share link
+  // Track pending copy request (for auto-copy after session creation)
+  const pendingCopyRef = useRef(false)
+
+  // Handle share link - auto-creates session if needed
   const handleShare = useCallback(async () => {
     if (copyState === 'success') return // Prevent rapid double-clicks
-    if (!shareUrl && !session) return
+
+    // If no session, auto-create one and mark pending copy
+    if (!session && slide) {
+      pendingCopyRef.current = true
+      createSession(slide.id)
+      return
+    }
 
     const url = shareUrl || window.location.href
     try {
@@ -589,7 +598,24 @@ export function Session() {
       setCopyState('error')
       setTimeout(() => setCopyState('idle'), 3000)
     }
-  }, [shareUrl, session, copyState])
+  }, [shareUrl, session, slide, copyState, createSession])
+
+  // Auto-copy share URL when session is created after Copy Link click
+  useEffect(() => {
+    if (!pendingCopyRef.current || !shareUrl) return
+    pendingCopyRef.current = false
+
+    navigator.clipboard
+      .writeText(shareUrl)
+      .then(() => {
+        setCopyState('success')
+        setTimeout(() => setCopyState('idle'), 2000)
+      })
+      .catch(() => {
+        setCopyState('error')
+        setTimeout(() => setCopyState('idle'), 3000)
+      })
+  }, [shareUrl])
 
   // Handle zoom reset
   const handleZoomReset = useCallback(() => {
@@ -881,10 +907,59 @@ export function Session() {
             ) : (
               <div className="text-sm">
                 <p className="text-gray-400 mb-2">No active session</p>
-                <p className="text-gray-500 text-xs">
-                  Click &quot;Start Session&quot; above to begin collaborating.
+                <p className="text-gray-500 text-xs mb-3">
+                  Share this slide to start collaborating.
                 </p>
               </div>
+            )}
+
+            {/* Copy Link button - always available */}
+            {slide && !isSoloMode && (
+              <Button
+                size="sm"
+                variant={copyState === 'success' ? 'primary' : 'secondary'}
+                onClick={handleShare}
+                className="w-full mt-2"
+                disabled={copyState === 'success'}
+              >
+                {copyState === 'success' ? (
+                  <>
+                    <svg
+                      className="w-4 h-4 mr-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                    Copied!
+                  </>
+                ) : copyState === 'error' ? (
+                  'Copy failed'
+                ) : (
+                  <>
+                    <svg
+                      className="w-4 h-4 mr-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                      />
+                    </svg>
+                    Copy Link
+                  </>
+                )}
+              </Button>
             )}
           </SidebarSection>
 
