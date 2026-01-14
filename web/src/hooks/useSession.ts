@@ -102,14 +102,6 @@ interface UseSessionReturn {
   setIsFollowing: (following: boolean) => void
 }
 
-// Stub functions for solo mode (must be defined outside hook to avoid recreating on each render)
-const noopVoid = () => {}
-const noopString = (_slideId: string) => {}
-const noopXY = (_x: number, _y: number) => {}
-const noopXYZ = (_centerX: number, _centerY: number, _zoom: number) => {}
-const noopVisibility = (_visibility: LayerVisibility) => {}
-const noopBool = (_value: boolean) => {}
-
 export function useSession({
   sessionId,
   joinSecret,
@@ -117,29 +109,7 @@ export function useSession({
   onError,
   onOverlayLoaded,
 }: UseSessionOptions): UseSessionReturn {
-  // In solo mode, return stubs immediately - no WebSocket, no session
-  if (SOLO_MODE) {
-    return {
-      session: null,
-      currentUser: null,
-      isPresenter: true, // Act as presenter in solo mode for full controls
-      isCreatingSession: false,
-      connectionStatus: 'solo',
-      cursors: [],
-      presenterViewport: null,
-      secrets: null,
-      isFollowing: false,
-      createSession: noopString,
-      joinSession: noopVoid,
-      authenticatePresenter: noopVoid,
-      updateCursor: noopXY,
-      updateViewport: noopXYZ,
-      updateLayerVisibility: noopVisibility,
-      snapToPresenter: noopVoid,
-      setIsFollowing: noopBool,
-    }
-  }
-
+  // All hooks must be called unconditionally to satisfy React's rules of hooks
   const [session, setSession] = useState<SessionState | null>(null)
   const [currentUser, setCurrentUser] = useState<Participant | null>(null)
   const [isPresenter, setIsPresenter] = useState(false)
@@ -151,8 +121,13 @@ export function useSession({
   const pendingPresenterAuthSeqRef = useRef<number | null>(null)
   const presenterAuthSessionRef = useRef<string | null>(null)
 
-  // Build WebSocket URL - always use relative path to go through proxy/same origin
-  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+  // Build WebSocket URL
+  // In development, connect directly to backend on port 8080 (Vite+Bun proxy has WebSocket issues)
+  // Use same hostname as page to support remote access (e.g., localhost or server IP)
+  // In production, use same origin (nginx/load balancer handles proxying)
+  const wsUrl = import.meta.env.DEV
+    ? `ws://${window.location.hostname}:8080/ws`
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
 
   const handleMessage = useCallback(
     (message: WebSocketMessage) => {
@@ -294,6 +269,7 @@ export function useSession({
 
   const { status, sendMessage } = useWebSocket({
     url: wsUrl,
+    enabled: !SOLO_MODE,
     onMessage: handleMessage,
   })
 
@@ -393,6 +369,30 @@ export function useSession({
       type: 'snap_to_presenter',
     })
   }, [sendMessage])
+
+  // In solo mode, override return values for standalone viewing
+  // Hooks are still called above but we return solo-appropriate values
+  if (SOLO_MODE) {
+    return {
+      session: null,
+      currentUser: null,
+      isPresenter: true, // Act as presenter in solo mode for full controls
+      isCreatingSession: false,
+      connectionStatus: status, // Will be 'solo' from useWebSocket
+      cursors: [],
+      presenterViewport: null,
+      secrets: null,
+      isFollowing: false,
+      createSession,
+      joinSession,
+      authenticatePresenter,
+      updateCursor,
+      updateViewport,
+      updateLayerVisibility,
+      snapToPresenter,
+      setIsFollowing,
+    }
+  }
 
   return {
     session,

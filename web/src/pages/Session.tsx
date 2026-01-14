@@ -391,6 +391,9 @@ export function Session() {
   useEffect(() => {
     if (!overlayId || !overlayEnabled || !viewerBounds || !slide) return
 
+    // AbortController to cancel in-flight requests when viewport changes
+    const abortController = new AbortController()
+
     const fetchCells = async () => {
       // Calculate viewport bounds in slide coordinates (pixels)
       const viewportWidth = 1 / currentViewport.zoom
@@ -448,7 +451,9 @@ export function Session() {
           const tileOriginY = tileY * serverTileSize
 
           fetchPromises.push(
-            fetch(`/api/overlay/${overlayId}/vec/${level}/${tileX}/${tileY}`)
+            fetch(`/api/overlay/${overlayId}/vec/${level}/${tileX}/${tileY}`, {
+              signal: abortController.signal,
+            })
               .then((res) => (res.ok ? res.json() : null))
               .then((data) => {
                 if (data?.cells) {
@@ -464,18 +469,29 @@ export function Session() {
                   }
                 }
               })
-              .catch(() => {})
+              .catch((err) => {
+                // Ignore abort errors - they're expected when viewport changes
+                if (err.name !== 'AbortError') {
+                  // Silently ignore other fetch errors (network issues, 404s, etc.)
+                }
+              })
           )
         }
       }
 
       await Promise.all(fetchPromises)
-      setOverlayCells(cells)
+      // Only update state if the request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setOverlayCells(cells)
+      }
     }
 
     // Debounce the fetch to avoid too many requests
     const timeoutId = setTimeout(fetchCells, 100)
-    return () => clearTimeout(timeoutId)
+    return () => {
+      clearTimeout(timeoutId)
+      abortController.abort()
+    }
   }, [overlayId, overlayEnabled, currentViewport, viewerBounds, slide, overlayManifest])
 
   // Update viewer bounds on resize
@@ -736,59 +752,36 @@ export function Session() {
                 Follow
               </Button>
             )}
-            {session && (
-              <Button
-                size="sm"
-                variant={
-                  copyState === 'success'
-                    ? 'secondary'
-                    : copyState === 'error'
-                      ? 'danger'
-                      : 'primary'
-                }
-                onClick={handleShare}
-                disabled={copyState === 'success'}
-                className={copyState === 'success' ? 'bg-green-600 hover:bg-green-600' : ''}
-              >
-                {copyState === 'idle' && (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-                      />
-                    </svg>
-                    Share
-                  </>
-                )}
-                {copyState === 'success' && (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                    Copied!
-                  </>
-                )}
-                {copyState === 'error' && (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                    Retry
-                  </>
-                )}
+            {session && shareUrl && (
+              <div className="flex items-center gap-0 w-full">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={shareUrl}
+                    className="w-full bg-gray-700 text-gray-200 text-xs rounded-l px-2 py-1.5 pr-16 border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                    title={shareUrl}
+                  />
+                  <button
+                    onClick={handleShare}
+                    disabled={copyState === 'success'}
+                    className={`absolute right-0 top-0 bottom-0 px-2 text-xs font-medium rounded-r border-l border-gray-600 transition-colors ${
+                      copyState === 'success'
+                        ? 'bg-green-600 text-white'
+                        : copyState === 'error'
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
+                    }`}
+                  >
+                    {copyState === 'success' ? 'Copied!' : copyState === 'error' ? 'Retry' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {session && !shareUrl && (
+              <Button size="sm" onClick={handleShare} loading={isCreatingSession}>
+                Generate Link
               </Button>
             )}
           </>
@@ -913,52 +906,57 @@ export function Session() {
               </div>
             )}
 
-            {/* Copy Link button - always available */}
-            {slide && !isSoloMode && (
+            {/* Share link - textbox with copy button when session exists */}
+            {slide && !isSoloMode && shareUrl && (
+              <div className="mt-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    readOnly
+                    value={shareUrl}
+                    className="w-full bg-gray-700 text-gray-300 text-xs rounded px-2 py-2 pr-16 border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                    title={shareUrl}
+                  />
+                  <button
+                    onClick={handleShare}
+                    disabled={copyState === 'success'}
+                    className={`absolute right-1 top-1 bottom-1 px-3 text-xs font-medium rounded transition-colors ${
+                      copyState === 'success'
+                        ? 'bg-green-600 text-white'
+                        : copyState === 'error'
+                          ? 'bg-red-600 text-white hover:bg-red-700'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {copyState === 'success' ? 'Copied!' : copyState === 'error' ? 'Retry' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Create session button when no session exists */}
+            {slide && !isSoloMode && !shareUrl && (
               <Button
                 size="sm"
-                variant={copyState === 'success' ? 'primary' : 'secondary'}
+                variant="secondary"
                 onClick={handleShare}
                 className="w-full mt-2"
-                disabled={copyState === 'success'}
+                loading={isCreatingSession}
               >
-                {copyState === 'success' ? (
-                  <>
-                    <svg
-                      className="w-4 h-4 mr-2"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                    Copied!
-                  </>
-                ) : copyState === 'error' ? (
-                  'Copy failed'
-                ) : (
-                  <>
-                    <svg
-                      className="w-4 h-4 mr-2"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-                      />
-                    </svg>
-                    Copy Link
-                  </>
-                )}
+                <svg
+                  className="w-4 h-4 mr-2"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                  />
+                </svg>
+                {isCreatingSession ? 'Creating...' : 'Create Share Link'}
               </Button>
             )}
           </SidebarSection>

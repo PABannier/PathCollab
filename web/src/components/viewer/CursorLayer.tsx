@@ -91,7 +91,7 @@ export function CursorLayer({
             <rect
               x={-2}
               y={-10}
-              width={cursor.name.length * 7 + 8}
+              width={(cursor.is_presenter ? cursor.name.length + 2 : cursor.name.length) * 7 + 8}
               height={14}
               rx={3}
               fill={cursor.color}

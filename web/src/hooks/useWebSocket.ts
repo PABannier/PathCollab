@@ -9,6 +9,8 @@ export interface WebSocketMessage {
 
 interface UseWebSocketOptions {
   url: string
+  /** When false, disables connection (e.g., for solo mode). Defaults to true. */
+  enabled?: boolean
   reconnect?: boolean
   reconnectInterval?: number
   maxReconnectAttempts?: number
@@ -31,6 +33,7 @@ const DEFAULT_MAX_RECONNECT_ATTEMPTS = 10
 
 export function useWebSocket({
   url,
+  enabled = true,
   reconnect: shouldReconnect = true,
   reconnectInterval = DEFAULT_RECONNECT_INTERVAL,
   maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS,
@@ -39,7 +42,7 @@ export function useWebSocket({
   onError,
   onMessage,
 }: UseWebSocketOptions): UseWebSocketReturn {
-  const [status, setStatus] = useState<ConnectionStatus>('disconnected')
+  const [status, setStatus] = useState<ConnectionStatus>(enabled ? 'disconnected' : 'solo')
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -55,6 +58,7 @@ export function useWebSocket({
   const onMessageRef = useRef(onMessage)
   const configRef = useRef({
     url,
+    enabled,
     shouldReconnect,
     reconnectInterval,
     maxReconnectAttempts,
@@ -68,13 +72,14 @@ export function useWebSocket({
     onCloseRef.current = onClose
     onErrorRef.current = onError
     onMessageRef.current = onMessage
-    configRef.current = { url, shouldReconnect, reconnectInterval, maxReconnectAttempts }
+    configRef.current = { url, enabled, shouldReconnect, reconnectInterval, maxReconnectAttempts }
   }, [
     onOpen,
     onClose,
     onError,
     onMessage,
     url,
+    enabled,
     shouldReconnect,
     reconnectInterval,
     maxReconnectAttempts,
@@ -90,7 +95,13 @@ export function useWebSocket({
 
   // Internal connect function
   const doConnect = useCallback(() => {
-    const { url, shouldReconnect, reconnectInterval, maxReconnectAttempts } = configRef.current
+    const { url, enabled, shouldReconnect, reconnectInterval, maxReconnectAttempts } =
+      configRef.current
+
+    // Don't connect if disabled (solo mode)
+    if (!enabled) {
+      return
+    }
 
     // Don't connect if already connected or connecting
     if (wsRef.current?.readyState === WebSocket.OPEN) {
