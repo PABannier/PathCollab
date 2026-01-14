@@ -10,7 +10,12 @@ import { CellTooltip } from '../components/viewer/CellTooltip'
 import { OverlayUploader } from '../components/upload/OverlayUploader'
 import { Sidebar, SidebarSection } from '../components/layout'
 import { StatusBar, ConnectionBadge } from '../components/layout'
-import { Button, KeyboardShortcutsHelp, NetworkErrorBanner } from '../components/ui'
+import {
+  Button,
+  KeyboardShortcutsHelp,
+  NetworkErrorBanner,
+  PresetEmptyState,
+} from '../components/ui'
 import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
@@ -736,7 +741,12 @@ export function Session() {
           {/* Session info */}
           <SidebarSection title="Session">
             {isSoloMode ? (
-              <p className="text-sm text-gray-400">Solo mode - collaboration disabled</p>
+              <div className="text-sm">
+                <p className="text-gray-400 mb-2">Solo mode - viewing without collaboration</p>
+                <p className="text-gray-500 text-xs">
+                  To collaborate, start a session by connecting to the server.
+                </p>
+              </div>
             ) : session ? (
               <div className="space-y-2">
                 <p className="text-sm text-gray-300 font-mono truncate">{session.id}</p>
@@ -761,7 +771,12 @@ export function Session() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-400">No active session</p>
+              <div className="text-sm">
+                <p className="text-gray-400 mb-2">No active session</p>
+                <p className="text-gray-500 text-xs">
+                  Click &quot;Start Session&quot; above to begin collaborating.
+                </p>
+              </div>
             )}
           </SidebarSection>
 
@@ -874,47 +889,16 @@ export function Session() {
           ref={viewerContainerRef}
           onMouseMove={handleMouseMove}
         >
-          {/* Show loading state while waiting for slide */}
+          {/* Show loading or empty state while waiting for slide */}
           {!slide && (
             <div className="flex h-full items-center justify-center bg-gray-900">
-              <div className="text-center max-w-md px-4">
-                {isLoadingDefaultSlide ||
-                isCreatingSession ||
-                connectionStatus === 'connecting' ||
-                connectionStatus === 'reconnecting' ? (
-                  <>
-                    <div className="mb-4 h-12 w-12 mx-auto animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-                    <p className="text-gray-400">
-                      {connectionStatus === 'connecting' || connectionStatus === 'reconnecting'
-                        ? 'Connecting to server...'
-                        : isCreatingSession
-                          ? 'Creating session...'
-                          : 'Loading slide...'}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <div className="mb-4 text-5xl">🔬</div>
-                    <h2 className="text-xl font-semibold text-white mb-2">No Slides Available</h2>
-                    <p className="text-gray-400 mb-4">
-                      Place whole-slide images (.svs, .ndpi, .tiff) in the slides directory to get
-                      started.
-                    </p>
-                    <p className="text-gray-500 text-sm">
-                      See the{' '}
-                      <a
-                        href="https://github.com/PABannier/PathCollab#quick-start"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:underline"
-                      >
-                        Quick Start guide
-                      </a>{' '}
-                      for setup instructions.
-                    </p>
-                  </>
-                )}
-              </div>
+              {connectionStatus === 'connecting' || connectionStatus === 'reconnecting' ? (
+                <PresetEmptyState preset="connecting" />
+              ) : isLoadingDefaultSlide || isCreatingSession ? (
+                <PresetEmptyState preset="loading" />
+              ) : (
+                <PresetEmptyState preset="no-slides" />
+              )}
             </div>
           )}
           {slide && (
