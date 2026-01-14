@@ -126,6 +126,8 @@ The protobuf schema is defined in `server/proto/overlay.proto`.
 
 ## Development
 
+> **Environment Guide**: See [docs/ENV_MATRIX.md](docs/ENV_MATRIX.md) for detailed differences between development, Docker, and production environments.
+
 ### Quick Start
 
 The fastest way to start developing:
