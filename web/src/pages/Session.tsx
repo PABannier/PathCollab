@@ -117,8 +117,16 @@ export function Session() {
     DEFAULT_TISSUE_CLASSES.map((c) => c.id)
   )
 
-  // Sidebar state
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  // Sidebar state (persisted in localStorage)
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const stored = localStorage.getItem('pathcollab-sidebar-open')
+    return stored !== null ? stored === 'true' : true
+  })
+
+  // Persist sidebar state to localStorage
+  useEffect(() => {
+    localStorage.setItem('pathcollab-sidebar-open', String(sidebarOpen))
+  }, [sidebarOpen])
 
   // Get secrets from URL hash fragment (not sent to server)
   const hashParams = useMemo(() => {
