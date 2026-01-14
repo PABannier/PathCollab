@@ -1,0 +1,9 @@
+{
+  "slide_id": "demo-slide",
+  "name": "Demo Slide",
+  "width": 1024,
+  "height": 1024,
+  "tile_size": 256,
+  "num_levels": 3,
+  "format": "jpeg"
+}

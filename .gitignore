@@ -6,3 +6,7 @@ node_modules/
 
 # Rust (server)
 target/
+# Generated fixture images (regenerate with scripts/generate_fixtures.py)
+fixtures/**/*.ppm
+fixtures/**/*.jpeg
+fixtures/**/*.png
