@@ -290,9 +290,14 @@ export function Session() {
     applyLayerVisibility(session.layer_visibility)
   }, [applyLayerVisibility, session?.layer_visibility])
 
+  // Determine if we're waiting for a session to be created
+  // If autoCreateSlideId is set and session is not created yet, we should wait
+  // In solo mode, we never wait for session (there is no session)
+  const isWaitingForSession = connectionStatus !== 'solo' && !!autoCreateSlideId && !session
+
   // Get slide info from session or use demo slide
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
-  const slide = useMemo((): SlideInfo => {
+  const slide = useMemo((): SlideInfo | null => {
     if (session?.slide) {
       return {
         id: session.slide.id,
@@ -304,19 +309,23 @@ export function Session() {
         tileUrlTemplate: session.slide.tile_url_template,
       }
     }
+    // Don't use demo slide if we're waiting for session creation
+    if (isWaitingForSession) {
+      return null
+    }
     return {
       ...DEMO_SLIDE_BASE,
       tileUrlTemplate: `/api/slide/${DEMO_SLIDE_BASE.id}/tile/{level}/{x}/{y}`,
     }
-  }, [session?.slide])
+  }, [session?.slide, isWaitingForSession])
 
   // Presence tracking
   const { startTracking, stopTracking, updateCursorPosition, convertToSlideCoords } = usePresence({
-    enabled: !!session,
+    enabled: !!session && !!slide,
     cursorUpdateHz: 30,
     onCursorUpdate: updateCursor,
-    slideWidth: slide.width,
-    slideHeight: slide.height,
+    slideWidth: slide?.width ?? 0,
+    slideHeight: slide?.height ?? 0,
   })
 
   // Start cursor tracking when session is active
@@ -329,7 +338,7 @@ export function Session() {
 
   // Fetch overlay cells when viewport changes
   useEffect(() => {
-    if (!overlayId || !overlayEnabled || !viewerBounds) return
+    if (!overlayId || !overlayEnabled || !viewerBounds || !slide) return
 
     const fetchCells = async () => {
       // Calculate viewport bounds in slide coordinates (pixels)
@@ -524,8 +533,12 @@ export function Session() {
         )
       case 'disconnected':
         return <span className="h-2 w-2 rounded-full bg-red-500" title="Disconnected" />
+      case 'solo':
+        return <span className="h-2 w-2 rounded-full bg-purple-500" title="Solo Mode" />
     }
   }, [connectionStatus])
+
+  const isSoloMode = connectionStatus === 'solo'
 
   // Participant count
   const participantCount = session ? 1 + session.followers.length : 0
@@ -536,7 +549,15 @@ export function Session() {
       <header className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-4 py-2">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-semibold text-white">PathCollab</h1>
-          {session ? (
+          {isSoloMode ? (
+            <span className="flex items-center gap-2 text-sm text-gray-400">
+              {connectionIndicator}
+              <span className="rounded bg-purple-600 px-2 py-0.5 text-xs text-white">
+                Solo Mode
+              </span>
+              <span className="text-xs text-gray-500">Collaboration disabled</span>
+            </span>
+          ) : session ? (
             <>
               <span className="text-sm text-gray-400">Session: {session.id}</span>
               <span className="flex items-center gap-1 text-sm text-gray-400">
@@ -689,10 +710,25 @@ export function Session() {
         ref={viewerContainerRef}
         onMouseMove={handleMouseMove}
       >
-        <SlideViewer ref={viewerRef} slide={slide} onViewportChange={handleViewportChange} />
+        {/* Show loading state while waiting for session */}
+        {!slide && (
+          <div className="flex h-full items-center justify-center bg-gray-900">
+            <div className="text-center">
+              <div className="mb-4 h-12 w-12 mx-auto animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+              <p className="text-gray-400">
+                {connectionStatus === 'connecting' || connectionStatus === 'reconnecting'
+                  ? 'Connecting to server...'
+                  : isCreatingSession
+                    ? 'Creating session...'
+                    : 'Loading slide...'}
+              </p>
+            </div>
+          </div>
+        )}
+        {slide && <SlideViewer ref={viewerRef} slide={slide} onViewportChange={handleViewportChange} />}
 
         {/* Tissue heatmap overlay */}
-        {viewerBounds && (
+        {viewerBounds && slide && (
           <TissueHeatmapLayer
             overlayId={overlayId}
             viewerBounds={viewerBounds}
@@ -709,7 +745,7 @@ export function Session() {
         )}
 
         {/* Cell polygon overlay */}
-        {viewerBounds && (
+        {viewerBounds && slide && (
           <OverlayCanvas
             cells={overlayCells}
             viewerBounds={viewerBounds}
@@ -724,7 +760,7 @@ export function Session() {
         )}
 
         {/* Cell hover tooltip */}
-        {viewerBounds && overlayCells.length > 0 && (
+        {viewerBounds && slide && overlayCells.length > 0 && (
           <CellTooltip
             cells={overlayCells}
             cellClasses={DEFAULT_CELL_CLASSES}
@@ -737,7 +773,7 @@ export function Session() {
         )}
 
         {/* Cursor overlay */}
-        {session && viewerBounds && (
+        {session && viewerBounds && slide && (
           <CursorLayer
             cursors={cursors}
             viewerBounds={viewerBounds}
@@ -749,7 +785,7 @@ export function Session() {
         )}
 
         {/* Minimap overlay showing presenter viewport for followers */}
-        {session && !isPresenter && presenterViewport && (
+        {session && slide && !isPresenter && presenterViewport && (
           <div
             className="absolute"
             style={{

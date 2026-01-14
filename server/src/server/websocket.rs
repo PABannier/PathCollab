@@ -1,6 +1,7 @@
 use crate::overlay::routes::OverlayStore;
 use crate::protocol::{ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport};
 use crate::session::manager::{SessionError, SessionManager};
+use crate::slide::SlideService;
 use axum::{
     extract::{
         State,
@@ -41,6 +42,9 @@ pub struct AppState {
     pub session_manager: Arc<SessionManager>,
     pub session_broadcasters: SessionBroadcasters,
     pub overlay_store: OverlayStore,
+    pub slide_service: Option<Arc<dyn SlideService>>,
+    /// Public base URL for link generation (e.g., "https://pathcollab.example.com")
+    pub public_base_url: Option<String>,
 }
 
 impl AppState {
@@ -50,7 +54,19 @@ impl AppState {
             session_manager: Arc::new(SessionManager::new()),
             session_broadcasters: Arc::new(RwLock::new(HashMap::new())),
             overlay_store: crate::overlay::routes::new_overlay_store(),
+            slide_service: None,
+            public_base_url: None,
         }
+    }
+
+    pub fn with_slide_service(mut self, service: Arc<dyn SlideService>) -> Self {
+        self.slide_service = Some(service);
+        self
+    }
+
+    pub fn with_public_base_url(mut self, url: Option<String>) -> Self {
+        self.public_base_url = url;
+        self
     }
 
     /// Get or create a broadcast channel for a session
@@ -389,15 +405,54 @@ async fn handle_client_message(
                 connection_id, slide_id
             );
 
-            // Create a demo slide info (in production, fetch from WSIStreamer)
-            let slide = SlideInfo {
-                id: slide_id.clone(),
-                name: format!("Slide {}", slide_id),
-                width: 100000,
-                height: 100000,
-                tile_size: 256,
-                num_levels: 10,
-                tile_url_template: format!("/api/slide/{}/tile/{{level}}/{{x}}/{{y}}", slide_id),
+            // Fetch real slide metadata from slide service
+            let slide = if let Some(ref slide_service) = state.slide_service {
+                match slide_service.get_slide(&slide_id).await {
+                    Ok(metadata) => SlideInfo {
+                        id: metadata.id,
+                        name: metadata.name,
+                        width: metadata.width,
+                        height: metadata.height,
+                        tile_size: metadata.tile_size,
+                        num_levels: metadata.num_levels,
+                        tile_url_template: format!(
+                            "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
+                            slide_id
+                        ),
+                    },
+                    Err(e) => {
+                        error!("Failed to get slide metadata: {}", e);
+                        let _ = tx
+                            .send(ServerMessage::SessionError {
+                                code: crate::protocol::ErrorCode::InvalidSlide,
+                                message: format!("Slide not found: {}", e),
+                            })
+                            .await;
+                        let _ = tx
+                            .send(ServerMessage::Ack {
+                                ack_seq: seq,
+                                status: crate::protocol::AckStatus::Rejected,
+                                reason: Some(format!("Slide not found: {}", e)),
+                            })
+                            .await;
+                        return;
+                    }
+                }
+            } else {
+                // Fallback to demo slide info if no slide service configured
+                warn!("No slide service configured, using demo slide info");
+                SlideInfo {
+                    id: slide_id.clone(),
+                    name: format!("Slide {}", slide_id),
+                    width: 100000,
+                    height: 100000,
+                    tile_size: 256,
+                    num_levels: 10,
+                    tile_url_template: format!(
+                        "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
+                        slide_id
+                    ),
+                }
             };
 
             match state

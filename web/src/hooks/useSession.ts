@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWebSocket, type ConnectionStatus, type WebSocketMessage } from './useWebSocket'
 
+/** Solo mode flag - when true, skips WebSocket/session entirely for standalone viewer */
+const SOLO_MODE = import.meta.env.VITE_SOLO_MODE === 'true'
+
 export interface Participant {
   id: string
   name: string
@@ -97,6 +100,13 @@ interface UseSessionReturn {
   snapToPresenter: () => void
 }
 
+// Stub functions for solo mode (must be defined outside hook to avoid recreating on each render)
+const noopVoid = () => {}
+const noopString = (_slideId: string) => {}
+const noopXY = (_x: number, _y: number) => {}
+const noopXYZ = (_centerX: number, _centerY: number, _zoom: number) => {}
+const noopVisibility = (_visibility: LayerVisibility) => {}
+
 export function useSession({
   sessionId,
   joinSecret,
@@ -104,6 +114,27 @@ export function useSession({
   onError,
   onOverlayLoaded,
 }: UseSessionOptions): UseSessionReturn {
+  // In solo mode, return stubs immediately - no WebSocket, no session
+  if (SOLO_MODE) {
+    return {
+      session: null,
+      currentUser: null,
+      isPresenter: true, // Act as presenter in solo mode for full controls
+      isCreatingSession: false,
+      connectionStatus: 'solo',
+      cursors: [],
+      presenterViewport: null,
+      secrets: null,
+      createSession: noopString,
+      joinSession: noopVoid,
+      authenticatePresenter: noopVoid,
+      updateCursor: noopXY,
+      updateViewport: noopXYZ,
+      updateLayerVisibility: noopVisibility,
+      snapToPresenter: noopVoid,
+    }
+  }
+
   const [session, setSession] = useState<SessionState | null>(null)
   const [currentUser, setCurrentUser] = useState<Participant | null>(null)
   const [isPresenter, setIsPresenter] = useState(false)
@@ -115,7 +146,10 @@ export function useSession({
   const presenterAuthSessionRef = useRef<string | null>(null)
 
   // Build WebSocket URL
-  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+  // In development mode, connect directly to backend since Vite+Bun proxy has issues with WebSocket
+  const wsUrl = import.meta.env.DEV
+    ? 'ws://localhost:8080/ws'
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
 
   const handleMessage = useCallback(
     (message: WebSocketMessage) => {

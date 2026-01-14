@@ -37,7 +37,6 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const minimapRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadingProgress, setLoadingProgress] = useState(0)
@@ -98,10 +97,9 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
       showHomeControl: true,
       showFullPageControl: false,
       showRotationControl: false,
-      // Navigator (minimap)
+      // Navigator (minimap) - let OpenSeadragon manage its own element
       showNavigator: showMinimap,
       navigatorPosition: minimapPosition,
-      navigatorId: minimapRef.current ? minimapRef.current.id : undefined,
       navigatorSizeRatio: 0.15,
       navigatorMaintainSizeRatio: true,
       navigatorAutoFade: false,
@@ -265,21 +263,6 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full bg-gray-900" />
-
-      {/* Custom minimap container for styling */}
-      {showMinimap && (
-        <div
-          ref={minimapRef}
-          id="slide-navigator"
-          className="absolute rounded border-2 border-white/30 shadow-lg"
-          style={{
-            [minimapPosition.includes('BOTTOM') ? 'bottom' : 'top']: '16px',
-            [minimapPosition.includes('RIGHT') ? 'right' : 'left']: '16px',
-            width: '150px',
-            height: '150px',
-          }}
-        />
-      )}
 
       {/* Loading indicator */}
       {isLoading && (

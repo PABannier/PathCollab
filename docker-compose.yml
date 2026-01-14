@@ -1,5 +1,19 @@
+# =============================================================================
+# PathCollab Docker Compose Configuration
+# =============================================================================
+#
+# CANONICAL PORTS (do not change without updating all config files):
+#   - 3000: Frontend (web) - React app served by Nginx
+#   - 8080: Backend (server) - Rust Axum WebSocket/HTTP server
+#
+# SLIDE SOURCE: The server uses LocalSlideService with OpenSlide to read WSI
+# files directly from the mounted slides directory. No external tile server needed.
+#
+# See also: README.md, .env.example, server/src/config.rs, web/vite.config.ts
+# =============================================================================
+
 services:
-  # Frontend web application
+  # Frontend web application (port 3000)
   web:
     build:
       context: ./web
@@ -15,35 +29,26 @@ services:
       timeout: 3s
       retries: 3
 
-  # PathCollab backend server
+  # PathCollab backend server (port 8080)
+  # Serves tiles directly via OpenSlide (no external tile server needed)
   server:
     build:
       context: .
       dockerfile: server/Dockerfile
     ports:
       - "8080:8080"
+    volumes:
+      - ./data/slides:/slides:ro
     environment:
       - RUST_LOG=pathcollab=info,tower_http=info
-      - WSISTREAMER_URL=http://wsistreamer:3000
-    depends_on:
-      - wsistreamer
+      - SLIDE_SOURCE=local
+      - SLIDES_DIR=/slides
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 3s
       retries: 3
-
-  # WSI tile server
-  wsistreamer:
-    image: ghcr.io/wsistreamer/wsistreamer:latest
-    ports:
-      - "3001:3000"
-    volumes:
-      - ./data/slides:/slides:ro
-    environment:
-      - SLIDES_PATH=/slides
-    restart: unless-stopped
 
 volumes:
   slides:

@@ -1,5 +1,16 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+
+/** Solo mode flag - when true, collaboration features are disabled */
+const SOLO_MODE = import.meta.env.VITE_SOLO_MODE === 'true'
+
+interface SlideListItem {
+  id: string
+  name: string
+  width: number
+  height: number
+  format: string
+}
 
 // Feature card component
 function FeatureCard({
@@ -46,25 +57,58 @@ function StepCard({
 export function Home() {
   const navigate = useNavigate()
   const [showSlideModal, setShowSlideModal] = useState(false)
-  const [slideId, setSlideId] = useState('')
+  const [slides, setSlides] = useState<SlideListItem[]>([])
+  const [selectedSlideId, setSelectedSlideId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [loadingSlides, setLoadingSlides] = useState(false)
 
-  // Navigate to demo session
+  // Fetch available slides on mount
+  useEffect(() => {
+    setLoadingSlides(true)
+    fetch('/api/slides')
+      .then((res) => res.json())
+      .then((data: SlideListItem[]) => {
+        setSlides(data)
+        if (data.length > 0) {
+          setSelectedSlideId(data[0].id)
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch slides:', err)
+      })
+      .finally(() => {
+        setLoadingSlides(false)
+      })
+  }, [])
+
+  // Navigate to demo/first slide session
   const handleTryDemo = useCallback(() => {
-    navigate('/s/demo')
-  }, [navigate])
+    if (slides.length > 0) {
+      navigate(`/s/new?slide=${encodeURIComponent(slides[0].id)}`)
+    } else {
+      navigate('/s/demo')
+    }
+  }, [navigate, slides])
 
   // Create a new session with the specified slide
   const handleCreateSession = useCallback(() => {
-    if (slideId.trim()) {
+    if (selectedSlideId) {
       setIsLoading(true)
       // Navigate to a new session - the session page will handle creation
-      navigate(`/s/new?slide=${encodeURIComponent(slideId.trim())}`)
+      navigate(`/s/new?slide=${encodeURIComponent(selectedSlideId)}`)
     }
-  }, [navigate, slideId])
+  }, [navigate, selectedSlideId])
 
   return (
     <div className="min-h-screen bg-gray-900">
+      {/* Solo Mode Banner */}
+      {SOLO_MODE && (
+        <div className="bg-purple-800 px-4 py-2 text-center text-sm text-white">
+          <span className="font-semibold">Solo Mode:</span> Collaboration features are disabled.
+          Viewer works as standalone slide viewer.
+        </div>
+      )}
+
       {/* Hero Section */}
       <header className="border-b border-gray-800">
         <div className="mx-auto max-w-6xl px-4 py-4">
@@ -248,18 +292,28 @@ export function Home() {
             <h4 className="mb-4 text-lg font-semibold text-white">Create New Session</h4>
             <div className="mb-4">
               <label htmlFor="slideId" className="mb-2 block text-sm text-gray-400">
-                Slide ID
+                Select Slide
               </label>
-              <input
-                id="slideId"
-                type="text"
-                value={slideId}
-                onChange={(e) => setSlideId(e.target.value)}
-                placeholder="e.g., tcga-brca-001"
-                className="w-full rounded border border-gray-600 bg-gray-700 px-3 py-2 text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-              />
+              {loadingSlides ? (
+                <div className="text-gray-400">Loading slides...</div>
+              ) : slides.length === 0 ? (
+                <div className="text-yellow-400">No slides available. Check server configuration.</div>
+              ) : (
+                <select
+                  id="slideId"
+                  value={selectedSlideId}
+                  onChange={(e) => setSelectedSlideId(e.target.value)}
+                  className="w-full rounded border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                >
+                  {slides.map((slide) => (
+                    <option key={slide.id} value={slide.id}>
+                      {slide.name} ({slide.width}x{slide.height}, {slide.format})
+                    </option>
+                  ))}
+                </select>
+              )}
               <p className="mt-1 text-xs text-gray-500">
-                Enter the ID of a slide available in your WSIStreamer instance.
+                Select a slide from your WSI collection to start a collaborative session.
               </p>
             </div>
             <div className="flex justify-end gap-2">
@@ -271,7 +325,7 @@ export function Home() {
               </button>
               <button
                 onClick={handleCreateSession}
-                disabled={!slideId.trim() || isLoading}
+                disabled={!selectedSlideId || isLoading || slides.length === 0}
                 className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {isLoading ? 'Creating...' : 'Create Session'}

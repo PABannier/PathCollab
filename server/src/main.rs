@@ -1,17 +1,38 @@
 use axum::{Json, Router, extract::State, routing::get};
-use pathcollab_server::config::Config;
+use pathcollab_server::config::{Config, SlideSourceMode};
 use pathcollab_server::overlay::overlay_routes;
 use pathcollab_server::server::{AppState, ws_handler};
+use pathcollab_server::slide::{slide_routes, LocalSlideService, SlideAppState};
 use serde::Serialize;
 use std::net::SocketAddr;
+use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Application start time for uptime calculation
 static START_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+/// Ensure a directory exists, creating it if necessary.
+/// Returns true if directory exists and is empty.
+fn ensure_directory(path: &Path, name: &str) -> std::io::Result<bool> {
+    if !path.exists() {
+        std::fs::create_dir_all(path)?;
+        info!("Created {} directory: {:?}", name, path);
+        Ok(true) // newly created, so empty
+    } else if path.is_dir() {
+        let is_empty = path.read_dir()?.next().is_none();
+        Ok(is_empty)
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{} path {:?} exists but is not a directory", name, path),
+        ))
+    }
+}
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -71,12 +92,74 @@ async fn main() -> anyhow::Result<()> {
         "Loaded configuration: host={}, port={}",
         config.host, config.port
     );
+    if let Some(ref base_url) = config.public_base_url {
+        info!("Public base URL: {}", base_url);
+    }
     if config.demo.enabled {
         info!("Demo mode enabled: slide_id={:?}", config.demo.slide_id);
     }
 
-    // Create shared application state
-    let app_state = AppState::new();
+    // Ensure data directories exist (auto-create for dev-friendly startup)
+    let slides_dir = &config.slide.slides_dir;
+    match ensure_directory(slides_dir, "slides") {
+        Ok(is_empty) => {
+            if is_empty {
+                warn!(
+                    "Slides directory {:?} is empty - place WSI files here to serve them",
+                    slides_dir
+                );
+            }
+        }
+        Err(e) => {
+            warn!("Failed to create slides directory {:?}: {}", slides_dir, e);
+        }
+    }
+
+    let overlay_dir = Path::new(&config.overlay.cache_dir);
+    match ensure_directory(overlay_dir, "overlay cache") {
+        Ok(_) => {}
+        Err(e) => {
+            warn!(
+                "Failed to create overlay cache directory {:?}: {}",
+                overlay_dir, e
+            );
+        }
+    }
+
+    // Initialize slide service based on configuration
+    let slide_service: Arc<dyn pathcollab_server::SlideService> = match config.slide.source_mode {
+        SlideSourceMode::Local => {
+            info!(
+                "Using local slide source: {:?}",
+                config.slide.slides_dir
+            );
+            let service = LocalSlideService::new(&config.slide)
+                .expect("Failed to initialize local slide service");
+            Arc::new(service)
+        }
+        SlideSourceMode::WsiStreamer => {
+            info!(
+                "Using WSIStreamer at: {}",
+                config.wsistreamer_url
+            );
+            // For now, fall back to local if WsiStreamer is configured
+            // TODO: Implement WsiStreamerSlideService
+            info!("WsiStreamer mode not yet implemented, falling back to local");
+            let service = LocalSlideService::new(&config.slide)
+                .expect("Failed to initialize local slide service");
+            Arc::new(service)
+        }
+    };
+
+    // Create slide app state for HTTP routes
+    let slide_app_state = SlideAppState {
+        slide_service: slide_service.clone(),
+    };
+
+    // Create shared application state with slide service and public base URL
+    let app_state = AppState::new()
+        .with_slide_service(slide_service)
+        .with_public_base_url(config.public_base_url.clone());
 
     // Periodic cleanup for expired sessions
     let cleanup_state = app_state.clone();
@@ -94,15 +177,21 @@ async fn main() -> anyhow::Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build the router
+    // Build slide API routes (separate state, merged as nested service)
+    let slide_api = slide_routes(slide_app_state);
+
+    // Build the router with multiple state types
+    // The slide routes have their own state, so we nest them before adding AppState
     let app = Router::new()
         .route("/health", get(health))
         .route("/metrics", get(metrics))
         .route("/ws", get(ws_handler))
         .nest("/api/overlay", overlay_routes())
+        .with_state(app_state)
+        // Merge slide routes after setting AppState (slide routes have their own state)
+        .merge(Router::new().nest("/api", slide_api))
         .layer(TraceLayer::new_for_http())
-        .layer(cors)
-        .with_state(app_state);
+        .layer(cors);
 
     // Start the server
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;

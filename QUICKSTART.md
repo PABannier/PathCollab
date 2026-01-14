@@ -32,10 +32,16 @@ For testing without real slides, the demo mode will use placeholder tiles.
 docker-compose up -d
 ```
 
-This starts three services:
-- **web** (http://localhost:3000) - Frontend application
-- **server** (http://localhost:8080) - Backend API
-- **wsistreamer** (http://localhost:3001) - Tile server
+This starts two services with **canonical ports**:
+
+| Service | Port | Description |
+|---------|------|-------------|
+| **web** | 3000 | Frontend application |
+| **server** | 8080 | Backend API with integrated tile serving |
+
+The server reads WSI files directly using OpenSlide - no external tile server needed.
+
+> These ports are standardized across all config files. See `docker-compose.yml` for the canonical reference.
 
 ## Step 4: Access PathCollab
 
@@ -71,11 +77,20 @@ Open http://localhost:3000 in your browser.
 docker-compose down
 ```
 
+## Development (without Docker)
+
+If you prefer to run without Docker:
+
+```bash
+./scripts/dev-local.sh
+```
+
+This starts both backend and frontend with a single command. Requires Rust and Bun installed.
+
 ## Next Steps
 
 - Read the full [README.md](README.md) for configuration options
 - See [.env.example](.env.example) for environment variables
-- Check the [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for architecture details
 
 ## Troubleshooting
 
@@ -86,8 +101,9 @@ docker-compose logs -f
 
 **Tiles not loading:**
 - Ensure your slides are in `data/slides/`
-- Check WSIStreamer logs: `docker-compose logs wsistreamer`
+- Check server logs: `docker-compose logs server`
+- Test the slides API: `curl http://localhost:8080/api/slides`
 
 **WebSocket connection fails:**
 - Verify server is healthy: `curl http://localhost:8080/health`
-- Check for port conflicts on 3000, 8080, 3001
+- Check for port conflicts on 3000, 8080

@@ -1,8 +1,18 @@
 //! Server configuration
 //!
 //! Configuration is loaded from environment variables. See `.env.example` for documentation.
+//!
+//! # Canonical Ports
+//!
+//! PathCollab uses the following canonical ports (do not change without updating all config files):
+//! - **3000**: Frontend (Vite dev server / Nginx production)
+//! - **8080**: Backend (this Rust Axum server)
+//! - **3001**: WSIStreamer (DEPRECATED: will be replaced by LocalSlideService)
+//!
+//! See also: `docker-compose.yml`, `README.md`, `.env.example`, `web/vite.config.ts`
 
 use std::env;
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Main server configuration
@@ -31,6 +41,9 @@ pub struct Config {
 
     /// Demo configuration
     pub demo: DemoConfig,
+
+    /// Slide configuration
+    pub slide: SlideConfig,
 }
 
 /// Session-related configuration
@@ -83,6 +96,31 @@ pub struct DemoConfig {
     pub overlay_path: Option<String>,
 }
 
+/// Slide source mode
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum SlideSourceMode {
+    /// Use local OpenSlide to read slide files (recommended)
+    #[default]
+    Local,
+    /// Use external WSIStreamer service (DEPRECATED - falls back to Local)
+    WsiStreamer,
+}
+
+/// Slide-related configuration
+#[derive(Debug, Clone)]
+pub struct SlideConfig {
+    /// Slide source mode
+    pub source_mode: SlideSourceMode,
+    /// Directory containing slide files (for local mode)
+    pub slides_dir: PathBuf,
+    /// Tile size for serving
+    pub tile_size: u32,
+    /// JPEG quality for tile encoding (1-100)
+    pub jpeg_quality: u8,
+    /// Maximum number of cached slide handles
+    pub max_cached_slides: usize,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -95,6 +133,7 @@ impl Default for Config {
             overlay: OverlayConfig::default(),
             presence: PresenceConfig::default(),
             demo: DemoConfig::default(),
+            slide: SlideConfig::default(),
         }
     }
 }
@@ -115,7 +154,8 @@ impl Default for OverlayConfig {
         Self {
             max_upload_size: 500 * 1024 * 1024, // 500 MB
             upload_timeout: Duration::from_secs(300),
-            cache_dir: "/var/lib/pathcollab/overlays".to_string(),
+            // Use relative path for dev-friendly defaults (auto-created if missing)
+            cache_dir: "./data/overlays".to_string(),
             cache_max_size: 50 * 1024 * 1024 * 1024, // 50 GB
             tile_size: 256,
             max_jobs: 2,
@@ -128,6 +168,19 @@ impl Default for PresenceConfig {
         Self {
             cursor_broadcast_hz: 30,
             viewport_broadcast_hz: 10,
+        }
+    }
+}
+
+impl Default for SlideConfig {
+    fn default() -> Self {
+        Self {
+            source_mode: SlideSourceMode::default(),
+            // Use relative path for dev-friendly defaults (auto-created if missing)
+            slides_dir: PathBuf::from("./data/slides"),
+            tile_size: 256,
+            jpeg_quality: 85,
+            max_cached_slides: 10,
         }
     }
 }
@@ -237,6 +290,33 @@ impl Config {
         if let Ok(path) = env::var("DEMO_OVERLAY_PATH") {
             if !path.is_empty() {
                 config.demo.overlay_path = Some(path);
+            }
+        }
+
+        // Slide config
+        if let Ok(val) = env::var("SLIDE_SOURCE") {
+            config.slide.source_mode = match val.to_lowercase().as_str() {
+                "local" => SlideSourceMode::Local,
+                "wsistreamer" | "wsi_streamer" => SlideSourceMode::WsiStreamer,
+                _ => SlideSourceMode::WsiStreamer,
+            };
+        }
+        if let Ok(path) = env::var("SLIDES_DIR") {
+            config.slide.slides_dir = PathBuf::from(path);
+        }
+        if let Ok(val) = env::var("SLIDE_TILE_SIZE") {
+            if let Ok(size) = val.parse() {
+                config.slide.tile_size = size;
+            }
+        }
+        if let Ok(val) = env::var("SLIDE_JPEG_QUALITY") {
+            if let Ok(quality) = val.parse::<u8>() {
+                config.slide.jpeg_quality = quality.clamp(1, 100);
+            }
+        }
+        if let Ok(val) = env::var("SLIDE_CACHE_SIZE") {
+            if let Ok(size) = val.parse() {
+                config.slide.max_cached_slides = size;
             }
         }
 

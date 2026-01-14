@@ -31,6 +31,11 @@ prost-types.workspace = true
 rstar.workspace = true
 sha2 = "0.10"
 bytes = "1"
+async-trait = "0.1"
+
+# Slide reading (local OpenSlide mode)
+openslide-rs = { version = "2", features = ["image"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 [build-dependencies]
 prost-build = "0.13"

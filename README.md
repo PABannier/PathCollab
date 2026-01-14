@@ -41,10 +41,16 @@ A web-based collaborative viewer for digital pathology, enabling real-time multi
 
 4. Open your browser to http://localhost:3000
 
-The application consists of three services:
-- **web** (port 3000): React frontend served by nginx
-- **server** (port 8080): Rust WebSocket/HTTP backend
-- **wsistreamer** (port 3001): WSI tile server
+The application consists of two services with **canonical ports** (do not change without updating all config files):
+
+| Service | Port | Description |
+|---------|------|-------------|
+| **web** | 3000 | React frontend served by Nginx |
+| **server** | 8080 | Rust WebSocket/HTTP backend with integrated tile serving |
+
+The server reads WSI files directly using OpenSlide - no external tile server required.
+
+> **Note**: These ports are configured consistently across `docker-compose.yml`, `.env.example`, `server/src/config.rs`, and `web/vite.config.ts`.
 
 ### Stopping the Services
 
@@ -120,11 +126,26 @@ The protobuf schema is defined in `server/proto/overlay.proto`.
 
 ## Development
 
+### Quick Start
+
+The fastest way to start developing:
+
+```bash
+./scripts/dev-local.sh
+```
+
+This single command:
+- Checks for required dependencies (Rust, Bun)
+- Creates data directories (./data/slides, ./data/overlays)
+- Builds and starts the backend
+- Starts the frontend dev server
+
+No external services required. Open http://localhost:3000 when ready.
+
 ### Prerequisites
 
 - Rust 1.85+ with protobuf-compiler
-- Node.js 20+ or Bun 1.3+
-- WSIStreamer instance (or mock data)
+- Bun 1.3+ (or Node.js 20+)
 
 ### Backend Development
 
@@ -321,9 +342,10 @@ Connect to `/ws` for real-time communication. Messages are JSON-encoded.
 ### Common Issues
 
 **Tiles not loading**
-- Check that WSIStreamer is running: `curl http://localhost:3001/health`
 - Verify slide files are in `data/slides` directory
-- Check browser console for CORS errors
+- Check server logs: `docker-compose logs -f server`
+- Ensure OpenSlide is installed in the server container
+- Check browser console for errors
 
 **WebSocket connection fails**
 - Ensure server is running: `curl http://localhost:8080/health`
