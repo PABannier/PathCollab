@@ -30,7 +30,9 @@ export function OverlayUploader({
   const [progress, setProgress] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
+  const [lastError, setLastError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const lastFileRef = useRef<File | null>(null)
 
   const uploadFile = useCallback(
     async (file: File) => {
@@ -56,9 +58,12 @@ export function OverlayUploader({
         return
       }
 
+      // Store file for potential retry
+      lastFileRef.current = file
       setFileName(file.name)
       setUploadState('uploading')
       setProgress(0)
+      setLastError(null)
 
       try {
         // Read file as ArrayBuffer
@@ -111,17 +116,43 @@ export function OverlayUploader({
           setFileName(null)
         }, 2000)
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Upload failed'
+        // Categorize error for better guidance
+        const isNetworkError =
+          errorMessage.includes('network') ||
+          errorMessage.includes('fetch') ||
+          errorMessage.includes('Failed to fetch')
+        const friendlyMessage = isNetworkError
+          ? 'Connection lost during upload. Please try again.'
+          : errorMessage
         setUploadState('error')
-        onError(err instanceof Error ? err.message : 'Upload failed')
-        setTimeout(() => {
-          setUploadState('idle')
-          setProgress(0)
-          setFileName(null)
-        }, 3000)
+        setLastError(friendlyMessage)
+        onError(friendlyMessage)
+        // Don't auto-reset on error - let user retry
       }
     },
     [sessionId, presenterKey, onUploadComplete, onError]
   )
+
+  const handleRetry = useCallback(() => {
+    if (lastFileRef.current) {
+      uploadFile(lastFileRef.current)
+    } else {
+      // Reset to idle if no file to retry
+      setUploadState('idle')
+      setProgress(0)
+      setFileName(null)
+      setLastError(null)
+    }
+  }, [uploadFile])
+
+  const handleDismissError = useCallback(() => {
+    setUploadState('idle')
+    setProgress(0)
+    setFileName(null)
+    setLastError(null)
+    lastFileRef.current = null
+  }, [])
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -285,6 +316,31 @@ export function OverlayUploader({
       {fileName && isUploading && (
         <div className="absolute top-full mt-1 left-0 text-xs text-gray-400 truncate max-w-48">
           {fileName}
+        </div>
+      )}
+
+      {/* Error state with retry/dismiss */}
+      {uploadState === 'error' && (
+        <div className="absolute top-full mt-2 left-0 flex flex-col gap-1 text-xs">
+          {lastError && (
+            <span className="text-red-400 max-w-48 truncate" title={lastError}>
+              {lastError}
+            </span>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={handleRetry}
+              className="text-blue-400 hover:text-blue-300 hover:underline"
+            >
+              Retry
+            </button>
+            <button
+              onClick={handleDismissError}
+              className="text-gray-400 hover:text-gray-300 hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
     </div>
