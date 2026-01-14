@@ -10,3 +10,4 @@ export {
 } from './EmptyState'
 export { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 export { NetworkErrorBanner } from './NetworkErrorBanner'
+export { Toggle } from './Toggle'

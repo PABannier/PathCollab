@@ -89,6 +89,7 @@ interface UseSessionReturn {
   cursors: CursorWithParticipant[]
   presenterViewport: Viewport | null
   secrets: SessionSecrets | null
+  isFollowing: boolean
 
   // Actions
   createSession: (slideId: string) => void
@@ -98,6 +99,7 @@ interface UseSessionReturn {
   updateViewport: (centerX: number, centerY: number, zoom: number) => void
   updateLayerVisibility: (visibility: LayerVisibility) => void
   snapToPresenter: () => void
+  setIsFollowing: (following: boolean) => void
 }
 
 // Stub functions for solo mode (must be defined outside hook to avoid recreating on each render)
@@ -106,6 +108,7 @@ const noopString = (_slideId: string) => {}
 const noopXY = (_x: number, _y: number) => {}
 const noopXYZ = (_centerX: number, _centerY: number, _zoom: number) => {}
 const noopVisibility = (_visibility: LayerVisibility) => {}
+const noopBool = (_value: boolean) => {}
 
 export function useSession({
   sessionId,
@@ -125,6 +128,7 @@ export function useSession({
       cursors: [],
       presenterViewport: null,
       secrets: null,
+      isFollowing: false,
       createSession: noopString,
       joinSession: noopVoid,
       authenticatePresenter: noopVoid,
@@ -132,6 +136,7 @@ export function useSession({
       updateViewport: noopXYZ,
       updateLayerVisibility: noopVisibility,
       snapToPresenter: noopVoid,
+      setIsFollowing: noopBool,
     }
   }
 
@@ -142,6 +147,7 @@ export function useSession({
   const [cursors, setCursors] = useState<CursorWithParticipant[]>([])
   const [presenterViewport, setPresenterViewport] = useState<Viewport | null>(null)
   const [secrets, setSecrets] = useState<SessionSecrets | null>(null)
+  const [isFollowing, setIsFollowing] = useState(true) // Default to following when joining
   const pendingPresenterAuthSeqRef = useRef<number | null>(null)
   const presenterAuthSessionRef = useRef<string | null>(null)
 
@@ -400,6 +406,7 @@ export function useSession({
     cursors,
     presenterViewport,
     secrets,
+    isFollowing,
     createSession,
     joinSession,
     authenticatePresenter,
@@ -407,5 +414,6 @@ export function useSession({
     updateViewport,
     updateLayerVisibility,
     snapToPresenter,
+    setIsFollowing,
   }
 }

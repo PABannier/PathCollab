@@ -15,6 +15,7 @@ import {
   KeyboardShortcutsHelp,
   NetworkErrorBanner,
   PresetEmptyState,
+  Toggle,
 } from '../components/ui'
 import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
@@ -159,11 +160,13 @@ export function Session() {
     cursors,
     presenterViewport,
     secrets,
+    isFollowing,
     createSession,
     updateCursor,
     updateViewport,
     updateLayerVisibility,
     snapToPresenter,
+    setIsFollowing,
   } = useSession({
     sessionId,
     joinSecret,
@@ -545,6 +548,23 @@ export function Session() {
     pendingSnapRef.current = false
   }, [applyPresenterViewport, presenterViewport])
 
+  // Auto-follow presenter viewport when following is enabled
+  // This ref tracks the last applied viewport to avoid re-applying the same one
+  const lastAppliedViewportRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!isFollowing || isPresenter || !presenterViewport) return
+
+    // Create a unique key for this viewport to detect changes
+    const viewportKey = `${presenterViewport.center_x}-${presenterViewport.center_y}-${presenterViewport.zoom}-${presenterViewport.timestamp}`
+
+    // Only apply if this is a new viewport (avoid duplicate applications)
+    if (lastAppliedViewportRef.current === viewportKey) return
+    lastAppliedViewportRef.current = viewportKey
+
+    applyPresenterViewport(presenterViewport)
+  }, [isFollowing, isPresenter, presenterViewport, applyPresenterViewport])
+
   // Build share URL when session is created with secrets
   useEffect(() => {
     if (session && secrets) {
@@ -815,27 +835,48 @@ export function Session() {
                 </p>
               </div>
             ) : session ? (
-              <div className="space-y-2">
-                <p className="text-sm text-gray-300 font-mono truncate">{session.id}</p>
-                <div className="flex flex-wrap gap-1">
-                  <div className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs">
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: session.presenter.color }}
-                    />
-                    <span className="text-gray-300">{session.presenter.name}</span>
-                    <span className="text-gray-500">(host)</span>
-                  </div>
-                  {session.followers.map((f) => (
-                    <div
-                      key={f.id}
-                      className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"
-                    >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: f.color }} />
-                      <span className="text-gray-300">{f.name}</span>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm text-gray-300 font-mono truncate">{session.id}</p>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    <div className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: session.presenter.color }}
+                      />
+                      <span className="text-gray-300">{session.presenter.name}</span>
+                      <span className="text-gray-500">(host)</span>
                     </div>
-                  ))}
+                    {session.followers.map((f) => (
+                      <div
+                        key={f.id}
+                        className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"
+                      >
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: f.color }}
+                        />
+                        <span className="text-gray-300">{f.name}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+
+                {/* Follow presenter toggle (followers only) */}
+                {!isPresenter && (
+                  <div className="flex items-center justify-between py-2 border-t border-gray-700">
+                    <div>
+                      <span className="text-sm font-medium text-gray-300">Follow presenter</span>
+                      <p className="text-xs text-gray-500">Sync your view automatically</p>
+                    </div>
+                    <Toggle
+                      checked={isFollowing}
+                      onChange={setIsFollowing}
+                      aria-label="Follow presenter"
+                      size="sm"
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-sm">
