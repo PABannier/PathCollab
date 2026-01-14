@@ -297,7 +297,9 @@ export function Home() {
               {loadingSlides ? (
                 <div className="text-gray-400">Loading slides...</div>
               ) : slides.length === 0 ? (
-                <div className="text-yellow-400">No slides available. Check server configuration.</div>
+                <div className="text-yellow-400">
+                  No slides available. Check server configuration.
+                </div>
               ) : (
                 <select
                   id="slideId"

@@ -224,7 +224,9 @@ export function LayerPanel({
                 <label
                   key={cls.id}
                   className={`flex items-center gap-2 rounded px-1 py-0.5 ${
-                    disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-700/50'
+                    disabled
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'cursor-pointer hover:bg-gray-700/50'
                   }`}
                 >
                   <input
@@ -331,7 +333,9 @@ export function LayerPanel({
                 <label
                   key={cls.id}
                   className={`flex items-center gap-2 rounded px-1 py-0.5 ${
-                    disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-700/50'
+                    disabled
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'cursor-pointer hover:bg-gray-700/50'
                   }`}
                 >
                   <input

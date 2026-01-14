@@ -8,6 +8,9 @@ import { LayerPanel } from '../components/viewer/LayerPanel'
 import { MinimapOverlay } from '../components/viewer/MinimapOverlay'
 import { CellTooltip } from '../components/viewer/CellTooltip'
 import { OverlayUploader } from '../components/upload/OverlayUploader'
+import { Sidebar, SidebarSection } from '../components/layout'
+import { StatusBar, ConnectionBadge } from '../components/layout'
+import { Button } from '../components/ui'
 import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
@@ -106,6 +109,9 @@ export function Session() {
   const [visibleTissueClasses, setVisibleTissueClasses] = useState<number[]>(
     DEFAULT_TISSUE_CLASSES.map((c) => c.id)
   )
+
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   // Get secrets from URL hash fragment (not sent to server)
   const hashParams = useMemo(() => {
@@ -271,7 +277,9 @@ export function Session() {
         prev === visibility.tissue_heatmap_opacity ? prev : visibility.tissue_heatmap_opacity
       )
       setVisibleTissueClasses((prev) =>
-        arraysEqual(prev, visibility.tissue_classes_visible) ? prev : visibility.tissue_classes_visible
+        arraysEqual(prev, visibility.tissue_classes_visible)
+          ? prev
+          : visibility.tissue_classes_visible
       )
       setOverlayEnabled((prev) =>
         prev === visibility.cell_polygons_visible ? prev : visibility.cell_polygons_visible
@@ -545,23 +553,6 @@ export function Session() {
     }
   }, [shareUrl, session])
 
-  // Connection status indicator
-  const connectionIndicator = useMemo(() => {
-    switch (connectionStatus) {
-      case 'connected':
-        return <span className="h-2 w-2 rounded-full bg-green-500" title="Connected" />
-      case 'connecting':
-      case 'reconnecting':
-        return (
-          <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-500" title="Connecting" />
-        )
-      case 'disconnected':
-        return <span className="h-2 w-2 rounded-full bg-red-500" title="Disconnected" />
-      case 'solo':
-        return <span className="h-2 w-2 rounded-full bg-purple-500" title="Solo Mode" />
-    }
-  }, [connectionStatus])
-
   const isSoloMode = connectionStatus === 'solo'
 
   // Participant count
@@ -569,157 +560,65 @@ export function Session() {
 
   return (
     <div className="flex h-screen flex-col">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-4 py-2">
-        <div className="flex items-center gap-4">
-          <h1 className="text-lg font-semibold text-white">PathCollab</h1>
-          {isSoloMode ? (
-            <span className="flex items-center gap-2 text-sm text-gray-400">
-              {connectionIndicator}
-              <span className="rounded bg-purple-600 px-2 py-0.5 text-xs text-white">
-                Solo Mode
-              </span>
-              <span className="text-xs text-gray-500">Collaboration disabled</span>
-            </span>
-          ) : session ? (
-            <>
-              <span className="text-sm text-gray-400">Session: {session.id}</span>
-              <span className="flex items-center gap-1 text-sm text-gray-400">
-                {connectionIndicator}
-                {participantCount} viewer{participantCount !== 1 ? 's' : ''}
-              </span>
-              {isPresenter && (
-                <span className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white">
-                  Presenter
+      {/* Status Bar */}
+      <StatusBar
+        left={
+          <>
+            <h1 className="text-lg font-semibold text-white">PathCollab</h1>
+            {slide && (
+              <span className="text-sm text-gray-400 truncate max-w-[200px]">{slide.name}</span>
+            )}
+          </>
+        }
+        right={
+          <>
+            <ConnectionBadge status={connectionStatus} />
+            {isSoloMode && (
+              <span className="rounded bg-purple-600 px-2 py-0.5 text-xs text-white">Solo</span>
+            )}
+            {session && (
+              <>
+                <span className="text-sm text-gray-400">
+                  {participantCount} viewer{participantCount !== 1 ? 's' : ''}
                 </span>
-              )}
-            </>
-          ) : (
-            <span className="text-sm text-gray-400">
-              {sessionId ? `Session: ${sessionId}` : 'No session'}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Overlay controls */}
-          {overlayId && (
-            <div className="flex items-center gap-2 border-r border-gray-600 pr-2 mr-2">
-              {/* Tissue heatmap toggle */}
-              <button
-                onClick={() => handleTissueEnabledChange(!tissueEnabled)}
-                disabled={layerControlsDisabled}
-                className={`rounded px-2 py-1 text-xs ${
-                  tissueEnabled ? 'bg-amber-600 text-white' : 'bg-gray-600 text-gray-300'
-                } ${layerControlsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title="Toggle tissue heatmap"
-              >
-                Tissue
-              </button>
-              {tissueEnabled && (
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={tissueOpacity * 100}
-                  onChange={(e) => handleTissueOpacityChange(Number(e.target.value) / 100)}
-                  className="w-12 h-1"
-                  disabled={layerControlsDisabled}
-                  title={`Tissue opacity: ${Math.round(tissueOpacity * 100)}%`}
-                />
-              )}
-              {/* Cell overlay toggle */}
-              <button
-                onClick={() => handleCellsEnabledChange(!overlayEnabled)}
-                disabled={layerControlsDisabled}
-                className={`rounded px-2 py-1 text-xs ${
-                  overlayEnabled ? 'bg-indigo-600 text-white' : 'bg-gray-600 text-gray-300'
-                } ${layerControlsDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title="Toggle cell overlay"
-              >
-                Cells
-              </button>
-              {overlayEnabled && (
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={overlayOpacity * 100}
-                  onChange={(e) => handleCellsOpacityChange(Number(e.target.value) / 100)}
-                  className="w-12 h-1"
-                  disabled={layerControlsDisabled}
-                  title={`Cell opacity: ${Math.round(overlayOpacity * 100)}%`}
-                />
-              )}
-            </div>
-          )}
-          {!session && connectionStatus === 'connected' && (
-            <button
-              onClick={handleCreateSession}
-              disabled={isCreatingSession}
-              className={`flex items-center gap-2 rounded px-3 py-1 text-sm text-white transition ${
-                isCreatingSession
-                  ? 'bg-green-700 cursor-wait'
-                  : 'bg-green-600 hover:bg-green-700'
-              }`}
-            >
-              {isCreatingSession && (
-                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                  />
-                </svg>
-              )}
-              {isCreatingSession ? 'Creating...' : 'Create Session'}
-            </button>
-          )}
-          {session && !isPresenter && presenterViewport && (
-            <button
-              onClick={handleSnapToPresenter}
-              className="rounded bg-purple-600 px-3 py-1 text-sm text-white hover:bg-purple-700"
-            >
-              Follow Presenter
-            </button>
-          )}
-          {session && isPresenter && !overlayId && (
-            <OverlayUploader
-              sessionId={session.id}
-              presenterKey={secrets?.presenterKey ?? presenterKey}
-              onUploadComplete={(id) => {
-                setOverlayId(id)
-                setNotification('Overlay uploaded successfully!')
-                setTimeout(() => setNotification(null), 3000)
-              }}
-              onError={setError}
-            />
-          )}
-          {session && (
-            <button
-              onClick={handleShare}
-              className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
-            >
-              Share
-            </button>
-          )}
-        </div>
-      </header>
+                {isPresenter && (
+                  <span className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white">
+                    Presenter
+                  </span>
+                )}
+              </>
+            )}
+            {!session && connectionStatus === 'connected' && (
+              <Button size="sm" onClick={handleCreateSession} loading={isCreatingSession}>
+                {isCreatingSession ? 'Creating...' : 'Start Session'}
+              </Button>
+            )}
+            {session && !isPresenter && presenterViewport && (
+              <Button size="sm" variant="secondary" onClick={handleSnapToPresenter}>
+                Follow
+              </Button>
+            )}
+            {session && (
+              <Button size="sm" onClick={handleShare}>
+                Share
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Error banner */}
       {error && (
-        <div className="bg-red-600 px-4 py-2 text-sm text-white">
-          {error}
-          <button onClick={() => setError(null)} className="ml-2 underline">
+        <div className="bg-red-600 px-4 py-2 text-sm text-white flex items-center justify-between">
+          <span>{error}</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setError(null)}
+            className="text-white hover:bg-red-700"
+          >
             Dismiss
-          </button>
+          </Button>
         </div>
       )}
 
@@ -728,179 +627,313 @@ export function Session() {
         <div className="bg-green-600 px-4 py-2 text-sm text-white">{notification}</div>
       )}
 
-      {/* Main viewer area */}
-      <main
-        className="relative flex-1 overflow-hidden"
-        ref={viewerContainerRef}
-        onMouseMove={handleMouseMove}
-      >
-        {/* Show loading state while waiting for slide */}
-        {!slide && (
-          <div className="flex h-full items-center justify-center bg-gray-900">
-            <div className="text-center max-w-md px-4">
-              {isLoadingDefaultSlide || isCreatingSession || connectionStatus === 'connecting' || connectionStatus === 'reconnecting' ? (
-                <>
-                  <div className="mb-4 h-12 w-12 mx-auto animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-                  <p className="text-gray-400">
-                    {connectionStatus === 'connecting' || connectionStatus === 'reconnecting'
-                      ? 'Connecting to server...'
-                      : isCreatingSession
-                        ? 'Creating session...'
-                        : 'Loading slide...'}
+      {/* Two-pane layout: Sidebar + Viewer */}
+      <div className="flex flex-1 overflow-hidden relative">
+        <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)}>
+          {/* Session info */}
+          <SidebarSection title="Session">
+            {isSoloMode ? (
+              <p className="text-sm text-gray-400">Solo mode - collaboration disabled</p>
+            ) : session ? (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-300 font-mono truncate">{session.id}</p>
+                <div className="flex flex-wrap gap-1">
+                  <div className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: session.presenter.color }}
+                    />
+                    <span className="text-gray-300">{session.presenter.name}</span>
+                    <span className="text-gray-500">(host)</span>
+                  </div>
+                  {session.followers.map((f) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"
+                    >
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: f.color }} />
+                      <span className="text-gray-300">{f.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">No active session</p>
+            )}
+          </SidebarSection>
+
+          {/* Overlay upload (presenter only) */}
+          {session && isPresenter && !overlayId && (
+            <SidebarSection title="Overlay">
+              <OverlayUploader
+                sessionId={session.id}
+                presenterKey={secrets?.presenterKey ?? presenterKey}
+                onUploadComplete={(id) => {
+                  setOverlayId(id)
+                  setNotification('Overlay uploaded successfully!')
+                  setTimeout(() => setNotification(null), 3000)
+                }}
+                onError={setError}
+              />
+            </SidebarSection>
+          )}
+
+          {/* Layer controls (when overlay is loaded) */}
+          {overlayId && (
+            <SidebarSection title="Layers">
+              <div className="space-y-3">
+                {/* Tissue heatmap controls */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-sm text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={tissueEnabled}
+                        onChange={(e) => handleTissueEnabledChange(e.target.checked)}
+                        disabled={layerControlsDisabled}
+                        className="rounded"
+                      />
+                      Tissue Heatmap
+                    </label>
+                    {tissueEnabled && (
+                      <span className="text-xs text-gray-500">
+                        {Math.round(tissueOpacity * 100)}%
+                      </span>
+                    )}
+                  </div>
+                  {tissueEnabled && (
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={tissueOpacity * 100}
+                      onChange={(e) => handleTissueOpacityChange(Number(e.target.value) / 100)}
+                      className="w-full h-1"
+                      disabled={layerControlsDisabled}
+                    />
+                  )}
+                </div>
+                {/* Cell overlay controls */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-sm text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={overlayEnabled}
+                        onChange={(e) => handleCellsEnabledChange(e.target.checked)}
+                        disabled={layerControlsDisabled}
+                        className="rounded"
+                      />
+                      Cell Polygons
+                    </label>
+                    {overlayEnabled && (
+                      <span className="text-xs text-gray-500">
+                        {Math.round(overlayOpacity * 100)}%
+                      </span>
+                    )}
+                  </div>
+                  {overlayEnabled && (
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={overlayOpacity * 100}
+                      onChange={(e) => handleCellsOpacityChange(Number(e.target.value) / 100)}
+                      className="w-full h-1"
+                      disabled={layerControlsDisabled}
+                    />
+                  )}
+                </div>
+                {/* Cell hover toggle */}
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={cellHoverEnabled}
+                    onChange={(e) => handleCellHoverEnabledChange(e.target.checked)}
+                    disabled={layerControlsDisabled}
+                    className="rounded"
+                  />
+                  Show cell info on hover
+                </label>
+                {layerControlsDisabled && (
+                  <p className="text-xs text-gray-500 italic">
+                    Layer controls managed by presenter
                   </p>
-                </>
-              ) : (
-                <>
-                  <div className="mb-4 text-5xl">🔬</div>
-                  <h2 className="text-xl font-semibold text-white mb-2">No Slides Available</h2>
-                  <p className="text-gray-400 mb-4">
-                    Place whole-slide images (.svs, .ndpi, .tiff) in the slides directory to get started.
-                  </p>
-                  <p className="text-gray-500 text-sm">
-                    See the <a href="https://github.com/PABannier/PathCollab#quick-start" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Quick Start guide</a> for setup instructions.
-                  </p>
-                </>
-              )}
+                )}
+              </div>
+            </SidebarSection>
+          )}
+        </Sidebar>
+
+        {/* Main viewer area */}
+        <main
+          className="relative flex-1 overflow-hidden"
+          ref={viewerContainerRef}
+          onMouseMove={handleMouseMove}
+        >
+          {/* Show loading state while waiting for slide */}
+          {!slide && (
+            <div className="flex h-full items-center justify-center bg-gray-900">
+              <div className="text-center max-w-md px-4">
+                {isLoadingDefaultSlide ||
+                isCreatingSession ||
+                connectionStatus === 'connecting' ||
+                connectionStatus === 'reconnecting' ? (
+                  <>
+                    <div className="mb-4 h-12 w-12 mx-auto animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                    <p className="text-gray-400">
+                      {connectionStatus === 'connecting' || connectionStatus === 'reconnecting'
+                        ? 'Connecting to server...'
+                        : isCreatingSession
+                          ? 'Creating session...'
+                          : 'Loading slide...'}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="mb-4 text-5xl">🔬</div>
+                    <h2 className="text-xl font-semibold text-white mb-2">No Slides Available</h2>
+                    <p className="text-gray-400 mb-4">
+                      Place whole-slide images (.svs, .ndpi, .tiff) in the slides directory to get
+                      started.
+                    </p>
+                    <p className="text-gray-500 text-sm">
+                      See the{' '}
+                      <a
+                        href="https://github.com/PABannier/PathCollab#quick-start"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:underline"
+                      >
+                        Quick Start guide
+                      </a>{' '}
+                      for setup instructions.
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        )}
-        {slide && <SlideViewer ref={viewerRef} slide={slide} onViewportChange={handleViewportChange} />}
+          )}
+          {slide && (
+            <SlideViewer ref={viewerRef} slide={slide} onViewportChange={handleViewportChange} />
+          )}
 
-        {/* Tissue heatmap overlay */}
-        {viewerBounds && slide && (
-          <TissueHeatmapLayer
-            overlayId={overlayId}
-            viewerBounds={viewerBounds}
-            viewport={currentViewport}
-            slideWidth={slide.width}
-            slideHeight={slide.height}
-            tileSize={overlayManifest?.tile_size ?? 256}
-            levels={overlayManifest?.levels ?? 1}
-            tissueClasses={DEFAULT_TISSUE_CLASSES}
-            visibleClasses={visibleTissueClasses}
-            opacity={tissueOpacity}
-            enabled={tissueEnabled}
-          />
-        )}
+          {/* Tissue heatmap overlay */}
+          {viewerBounds && slide && (
+            <TissueHeatmapLayer
+              overlayId={overlayId}
+              viewerBounds={viewerBounds}
+              viewport={currentViewport}
+              slideWidth={slide.width}
+              slideHeight={slide.height}
+              tileSize={overlayManifest?.tile_size ?? 256}
+              levels={overlayManifest?.levels ?? 1}
+              tissueClasses={DEFAULT_TISSUE_CLASSES}
+              visibleClasses={visibleTissueClasses}
+              opacity={tissueOpacity}
+              enabled={tissueEnabled}
+            />
+          )}
 
-        {/* Cell polygon overlay */}
-        {viewerBounds && slide && (
-          <OverlayCanvas
-            cells={overlayCells}
-            viewerBounds={viewerBounds}
-            viewport={currentViewport}
-            slideWidth={slide.width}
-            slideHeight={slide.height}
-            cellClasses={DEFAULT_CELL_CLASSES}
-            visibleClasses={visibleCellClasses}
-            opacity={overlayOpacity}
-            enabled={overlayEnabled && overlayCells.length > 0}
-          />
-        )}
+          {/* Cell polygon overlay */}
+          {viewerBounds && slide && (
+            <OverlayCanvas
+              cells={overlayCells}
+              viewerBounds={viewerBounds}
+              viewport={currentViewport}
+              slideWidth={slide.width}
+              slideHeight={slide.height}
+              cellClasses={DEFAULT_CELL_CLASSES}
+              visibleClasses={visibleCellClasses}
+              opacity={overlayOpacity}
+              enabled={overlayEnabled && overlayCells.length > 0}
+            />
+          )}
 
-        {/* Cell hover tooltip */}
-        {viewerBounds && slide && overlayCells.length > 0 && (
-          <CellTooltip
-            cells={overlayCells}
-            cellClasses={DEFAULT_CELL_CLASSES}
-            viewerBounds={viewerBounds}
-            viewport={currentViewport}
-            slideWidth={slide.width}
-            slideHeight={slide.height}
-            enabled={overlayEnabled && cellHoverEnabled}
-          />
-        )}
+          {/* Cell hover tooltip */}
+          {viewerBounds && slide && overlayCells.length > 0 && (
+            <CellTooltip
+              cells={overlayCells}
+              cellClasses={DEFAULT_CELL_CLASSES}
+              viewerBounds={viewerBounds}
+              viewport={currentViewport}
+              slideWidth={slide.width}
+              slideHeight={slide.height}
+              enabled={overlayEnabled && cellHoverEnabled}
+            />
+          )}
 
-        {/* Cursor overlay */}
-        {session && viewerBounds && slide && (
-          <CursorLayer
-            cursors={cursors}
-            viewerBounds={viewerBounds}
-            viewport={currentViewport}
-            slideWidth={slide.width}
-            slideHeight={slide.height}
-            currentUserId={currentUser?.id}
-          />
-        )}
-
-        {/* Minimap overlay showing presenter viewport for followers */}
-        {session && slide && !isPresenter && presenterViewport && (
-          <div
-            className="absolute"
-            style={{
-              bottom: 16,
-              right: 16,
-              width: 150,
-              height: 150,
-            }}
-          >
-            <MinimapOverlay
-              presenterViewport={{
-                centerX: presenterViewport.center_x,
-                centerY: presenterViewport.center_y,
-                zoom: presenterViewport.zoom,
-              }}
-              presenterInfo={session.presenter}
-              currentViewport={currentViewport}
-              minimapWidth={150}
-              minimapHeight={150}
-              slideAspectRatio={slide.width / slide.height}
-              isPresenter={isPresenter}
-              cursors={cursors.map((c) => ({
-                participant_id: c.participant_id,
-                name: c.name,
-                color: c.color,
-                x: c.x / slide.width,
-                y: c.y / slide.height,
-              }))}
+          {/* Cursor overlay */}
+          {session && viewerBounds && slide && (
+            <CursorLayer
+              cursors={cursors}
+              viewerBounds={viewerBounds}
+              viewport={currentViewport}
+              slideWidth={slide.width}
+              slideHeight={slide.height}
               currentUserId={currentUser?.id}
             />
-          </div>
-        )}
+          )}
 
-        {/* Participant list (inside main for proper positioning) */}
-        {session && session.followers.length > 0 && (
-          <div className="absolute bottom-4 left-4 rounded bg-black/70 p-2 text-xs text-white">
-            <div className="mb-1 font-semibold">Participants:</div>
-            <div className="flex items-center gap-1">
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{ backgroundColor: session.presenter.color }}
+          {/* Minimap overlay showing presenter viewport for followers */}
+          {session && slide && !isPresenter && presenterViewport && (
+            <div
+              className="absolute"
+              style={{
+                bottom: 16,
+                right: 16,
+                width: 150,
+                height: 150,
+              }}
+            >
+              <MinimapOverlay
+                presenterViewport={{
+                  centerX: presenterViewport.center_x,
+                  centerY: presenterViewport.center_y,
+                  zoom: presenterViewport.zoom,
+                }}
+                presenterInfo={session.presenter}
+                currentViewport={currentViewport}
+                minimapWidth={150}
+                minimapHeight={150}
+                slideAspectRatio={slide.width / slide.height}
+                isPresenter={isPresenter}
+                cursors={cursors.map((c) => ({
+                  participant_id: c.participant_id,
+                  name: c.name,
+                  color: c.color,
+                  x: c.x / slide.width,
+                  y: c.y / slide.height,
+                }))}
+                currentUserId={currentUser?.id}
               />
-              <span>{session.presenter.name} (Presenter)</span>
             </div>
-            {session.followers.map((f) => (
-              <div key={f.id} className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: f.color }} />
-                <span>{f.name}</span>
-              </div>
-            ))}
-          </div>
-        )}
+          )}
 
-        {/* Layer control panel */}
-        {overlayId && (
-          <LayerPanel
-            tissueEnabled={tissueEnabled}
-            onTissueEnabledChange={handleTissueEnabledChange}
-            tissueOpacity={tissueOpacity}
-            onTissueOpacityChange={handleTissueOpacityChange}
-            tissueClasses={DEFAULT_TISSUE_CLASSES}
-            visibleTissueClasses={visibleTissueClasses}
-            onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
-            cellsEnabled={overlayEnabled}
-            onCellsEnabledChange={handleCellsEnabledChange}
-            cellsOpacity={overlayOpacity}
-            onCellsOpacityChange={handleCellsOpacityChange}
-            cellClasses={DEFAULT_CELL_CLASSES}
-            visibleCellClasses={visibleCellClasses}
-            onVisibleCellClassesChange={handleVisibleCellClassesChange}
-            cellHoverEnabled={cellHoverEnabled}
-            onCellHoverEnabledChange={handleCellHoverEnabledChange}
-            disabled={layerControlsDisabled}
-          />
-        )}
-      </main>
+          {/* Layer control panel (detailed class toggles) */}
+          {overlayId && (
+            <LayerPanel
+              tissueEnabled={tissueEnabled}
+              onTissueEnabledChange={handleTissueEnabledChange}
+              tissueOpacity={tissueOpacity}
+              onTissueOpacityChange={handleTissueOpacityChange}
+              tissueClasses={DEFAULT_TISSUE_CLASSES}
+              visibleTissueClasses={visibleTissueClasses}
+              onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
+              cellsEnabled={overlayEnabled}
+              onCellsEnabledChange={handleCellsEnabledChange}
+              cellsOpacity={overlayOpacity}
+              onCellsOpacityChange={handleCellsOpacityChange}
+              cellClasses={DEFAULT_CELL_CLASSES}
+              visibleCellClasses={visibleCellClasses}
+              onVisibleCellClassesChange={handleVisibleCellClassesChange}
+              cellHoverEnabled={cellHoverEnabled}
+              onCellHoverEnabledChange={handleCellHoverEnabledChange}
+              disabled={layerControlsDisabled}
+            />
+          )}
+        </main>
+      </div>
     </div>
   )
 }

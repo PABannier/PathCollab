@@ -377,7 +377,8 @@ export function TissueHeatmapLayer({
     const maxTilesPerAxis = 5
     const maxLevel = Math.max(0, levels - 1)
     const tilesAcross = (viewportWidth * slideWidth) / (tileSize * maxTilesPerAxis)
-    const desiredLevel = Number.isFinite(tilesAcross) && tilesAcross > 0 ? Math.ceil(Math.log2(tilesAcross)) : 0
+    const desiredLevel =
+      Number.isFinite(tilesAcross) && tilesAcross > 0 ? Math.ceil(Math.log2(tilesAcross)) : 0
     const level = Math.max(0, Math.min(maxLevel, desiredLevel))
     const scale = Math.pow(2, level)
 
