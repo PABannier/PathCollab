@@ -4,6 +4,7 @@ export {
   PresetEmptyState,
   type EmptyStateProps,
   type EmptyStateAction,
+  type EmptyStateLink,
   type EmptyStatePreset,
   type PresetEmptyStateProps,
 } from './EmptyState'

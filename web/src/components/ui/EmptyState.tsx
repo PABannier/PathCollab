@@ -5,6 +5,11 @@ export interface EmptyStateAction {
   onClick: () => void
 }
 
+export interface EmptyStateLink {
+  label: string
+  href: string
+}
+
 export interface EmptyStateProps {
   /** Icon or illustration to display */
   icon?: React.ReactNode
@@ -14,6 +19,8 @@ export interface EmptyStateProps {
   description: string
   /** Primary action button */
   action?: EmptyStateAction
+  /** Secondary action - link to docs or help */
+  secondary?: EmptyStateLink
   /** Additional CSS classes */
   className?: string
 }
@@ -22,7 +29,14 @@ export interface EmptyStateProps {
  * Premium empty state component with helpful guidance.
  * Used when there's no data to display or an error occurred.
  */
-export function EmptyState({ icon, title, description, action, className = '' }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  secondary,
+  className = '',
+}: EmptyStateProps) {
   return (
     <div
       className={`flex flex-col items-center justify-center p-8 text-center ${className}`}
@@ -32,10 +46,24 @@ export function EmptyState({ icon, title, description, action, className = '' }:
       {icon && <div className="mb-4 text-gray-400">{icon}</div>}
       <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
       <p className="text-gray-400 max-w-sm mb-4">{description}</p>
-      {action && (
-        <Button onClick={action.onClick} variant="primary" size="md">
-          {action.label}
-        </Button>
+      {(action || secondary) && (
+        <div className="flex flex-col items-center gap-3">
+          {action && (
+            <Button onClick={action.onClick} variant="primary" size="md">
+              {action.label}
+            </Button>
+          )}
+          {secondary && (
+            <a
+              href={secondary.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-blue-400 hover:text-blue-300 hover:underline"
+            >
+              {secondary.label}
+            </a>
+          )}
+        </div>
       )}
     </div>
   )
@@ -154,6 +182,8 @@ export interface PresetEmptyStateProps {
   preset: EmptyStatePreset
   /** Optional action override */
   action?: EmptyStateAction
+  /** Optional secondary link override */
+  secondary?: EmptyStateLink
   /** Additional CSS classes */
   className?: string
 }
@@ -164,6 +194,10 @@ const presetConfigs: Record<EmptyStatePreset, Omit<EmptyStateProps, 'action' | '
     title: 'No Slides Available',
     description:
       'Place whole-slide images (.svs, .ndpi, .tiff) in the slides directory to get started.',
+    secondary: {
+      label: 'View setup guide',
+      href: 'https://github.com/PABannier/PathCollab#quick-start',
+    },
   },
   'solo-mode': {
     icon: Icons.solo,
@@ -175,6 +209,10 @@ const presetConfigs: Record<EmptyStatePreset, Omit<EmptyStateProps, 'action' | '
     title: 'No Overlay Loaded',
     description:
       'Upload an overlay to visualize cell segmentation and tissue classification results.',
+    secondary: {
+      label: 'Learn about overlays',
+      href: 'https://github.com/PABannier/PathCollab#overlays',
+    },
   },
   'session-expired': {
     icon: Icons.expired,
@@ -185,6 +223,10 @@ const presetConfigs: Record<EmptyStatePreset, Omit<EmptyStateProps, 'action' | '
     icon: Icons.offline,
     title: 'Connection Lost',
     description: 'Check your internet connection and try again.',
+    secondary: {
+      label: 'Troubleshooting',
+      href: 'https://github.com/PABannier/PathCollab#troubleshooting',
+    },
   },
   'session-not-found': {
     icon: Icons.notFound,
@@ -206,8 +248,16 @@ const presetConfigs: Record<EmptyStatePreset, Omit<EmptyStateProps, 'action' | '
 
 /**
  * Convenience wrapper for common empty state scenarios.
+ * Pass action or secondary to override the preset defaults.
  */
-export function PresetEmptyState({ preset, action, className }: PresetEmptyStateProps) {
+export function PresetEmptyState({ preset, action, secondary, className }: PresetEmptyStateProps) {
   const config = presetConfigs[preset]
-  return <EmptyState {...config} action={action} className={className} />
+  return (
+    <EmptyState
+      {...config}
+      action={action}
+      secondary={secondary ?? config.secondary}
+      className={className}
+    />
+  )
 }
