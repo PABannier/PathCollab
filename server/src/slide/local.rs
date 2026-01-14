@@ -171,7 +171,8 @@ impl LocalSlideService {
 
     /// Convert DZI level and tile coordinates to OpenSlide read parameters
     ///
-    /// Returns: (openslide_level, x_level0, y_level0, read_width, read_height, scale_factor)
+    /// Returns: (openslide_level, x_level0, y_level0, read_width, read_height, scale_factor, target_tile_width, target_tile_height)
+    #[allow(clippy::type_complexity)]
     fn dzi_to_openslide_params(
         &self,
         slide: &OpenSlide,
@@ -179,7 +180,7 @@ impl LocalSlideService {
         dzi_level: u32,
         tile_x: u32,
         tile_y: u32,
-    ) -> Result<(u32, u32, u32, u32, u32, f64), SlideError> {
+    ) -> Result<(u32, u32, u32, u32, u32, f64, u32, u32), SlideError> {
         let dzi_max_level = metadata.num_levels - 1;
 
         if dzi_level > dzi_max_level {
@@ -201,7 +202,7 @@ impl LocalSlideService {
         let tile_x_start = tile_x * self.tile_size;
         let tile_y_start = tile_y * self.tile_size;
 
-        // Validate tile coordinates
+        // Validate tile coordinates - return error for out-of-bounds requests
         if tile_x_start >= level_width || tile_y_start >= level_height {
             return Err(SlideError::InvalidTileCoordinates {
                 level: dzi_level,
@@ -245,6 +246,8 @@ impl LocalSlideService {
             read_width,
             read_height,
             os_to_dzi_scale,
+            actual_tile_width,
+            actual_tile_height,
         ))
     }
 
@@ -257,12 +260,12 @@ impl LocalSlideService {
         x: u32,
         y: u32,
     ) -> Result<Vec<u8>, SlideError> {
-        let (os_level, x_l0, y_l0, read_w, read_h, scale_factor) =
+        let (os_level, x_l0, y_l0, read_w, read_h, scale_factor, target_w, target_h) =
             self.dzi_to_openslide_params(slide, metadata, level, x, y)?;
 
         debug!(
-            "Reading tile: level={}, x={}, y={} -> os_level={}, pos=({},{}), size={}x{}, scale={}",
-            level, x, y, os_level, x_l0, y_l0, read_w, read_h, scale_factor
+            "Reading tile: level={}, x={}, y={} -> os_level={}, pos=({},{}), read={}x{}, target={}x{}, scale={}",
+            level, x, y, os_level, x_l0, y_l0, read_w, read_h, target_w, target_h, scale_factor
         );
 
         // Read the region from OpenSlide
@@ -284,24 +287,10 @@ impl LocalSlideService {
 
         // Resize if we need to scale down
         let final_image = if scale_factor > 1.001 {
-            // Need to resize down
-            let dzi_max_level = metadata.num_levels - 1;
-            let levels_from_max = dzi_max_level - level;
-            let dzi_scale = 2.0_f64.powi(levels_from_max as i32);
-
-            let level_width = (metadata.width as f64 / dzi_scale).ceil() as u32;
-            let level_height = (metadata.height as f64 / dzi_scale).ceil() as u32;
-
-            let tile_x_start = x * self.tile_size;
-            let tile_y_start = y * self.tile_size;
-
-            let target_width = std::cmp::min(self.tile_size, level_width - tile_x_start);
-            let target_height = std::cmp::min(self.tile_size, level_height - tile_y_start);
-
             image::imageops::resize(
                 &rgba_image,
-                target_width,
-                target_height,
+                target_w,
+                target_h,
                 image::imageops::FilterType::Lanczos3,
             )
         } else {

@@ -67,21 +67,37 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
     []
   )
 
-  // Create custom tile source for WSIStreamer
+  // Create a custom tile source for our server's DZI-compatible tile API
   const createTileSource = useCallback((slideInfo: SlideInfo): OpenSeadragon.TileSource => {
-    return new OpenSeadragon.TileSource({
+    // Calculate maxLevel the same way as the server (DZI convention)
+    // DZI: level 0 = 1x1 pixel, level maxLevel = full resolution
+    const maxDim = Math.max(slideInfo.width, slideInfo.height)
+    const maxLevel = Math.ceil(Math.log2(maxDim))
+
+    // Calculate minLevel - the level where the entire image fits in one tile
+    // At minLevel: max(width, height) * scale <= tileSize
+    // scale = 2^(level - maxLevel), so: maxDim * 2^(minLevel - maxLevel) <= tileSize
+    // minLevel >= maxLevel + log2(tileSize / maxDim)
+    const minLevel = Math.max(0, Math.ceil(maxLevel + Math.log2(slideInfo.tileSize / maxDim)))
+
+    // Create a TileSource configuration object
+    // We use OpenSeadragon's native TileSource with custom getTileUrl
+    const tileSource = {
       width: slideInfo.width,
       height: slideInfo.height,
       tileSize: slideInfo.tileSize,
-      maxLevel: slideInfo.numLevels - 1,
-      minLevel: 0,
-      getTileUrl: (level: number, x: number, y: number) => {
+      tileOverlap: 0,
+      minLevel: minLevel,
+      maxLevel: maxLevel,
+      getTileUrl: function (level: number, x: number, y: number): string {
         return slideInfo.tileUrlTemplate
           .replace('{level}', String(level))
           .replace('{x}', String(x))
           .replace('{y}', String(y))
       },
-    })
+    }
+
+    return new OpenSeadragon.TileSource(tileSource)
   }, [])
 
   useEffect(() => {

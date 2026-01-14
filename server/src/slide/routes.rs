@@ -97,6 +97,40 @@ pub async fn get_slide(
     Ok(Json(metadata))
 }
 
+/// GET /api/slide/:id/dzi - Get DZI XML descriptor for OpenSeadragon
+pub async fn get_dzi_descriptor(
+    State(state): State<SlideAppState>,
+    Path(id): Path<String>,
+) -> Result<Response, SlideErrorResponse> {
+    let metadata = state.slide_service.get_slide(&id).await.map_err(|e| {
+        tracing::warn!("Failed to get slide {} for DZI: {}", id, e);
+        SlideErrorResponse::from(e)
+    })?;
+
+    // Generate DZI XML descriptor
+    // DZI format: https://docs.microsoft.com/en-us/previous-versions/windows/silverlight/dotnet-windows-silverlight/cc645077(v=vs.95)
+    let dzi_xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Image xmlns="http://schemas.microsoft.com/deepzoom/2008"
+       Format="jpeg"
+       Overlap="0"
+       TileSize="{}">
+    <Size Width="{}" Height="{}"/>
+</Image>"#,
+        metadata.tile_size, metadata.width, metadata.height
+    );
+
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/xml"),
+            (header::CACHE_CONTROL, "public, max-age=3600"),
+        ],
+        dzi_xml,
+    )
+        .into_response())
+}
+
 /// GET /api/slide/:id/tile/:level/:x/:y - Get a tile as JPEG
 pub async fn get_tile(
     State(state): State<SlideAppState>,
@@ -201,6 +235,7 @@ pub fn slide_routes(state: SlideAppState) -> Router {
         .route("/slides", get(list_slides))
         .route("/slides/default", get(get_default_slide))
         .route("/slide/:id", get(get_slide))
+        .route("/slide/:id/dzi", get(get_dzi_descriptor))
         .route("/slide/:id/tile/:level/:x/:y", get(get_tile))
         .with_state(state)
 }

@@ -151,11 +151,8 @@ export function useSession({
   const pendingPresenterAuthSeqRef = useRef<number | null>(null)
   const presenterAuthSessionRef = useRef<string | null>(null)
 
-  // Build WebSocket URL
-  // In development mode, connect directly to backend since Vite+Bun proxy has issues with WebSocket
-  const wsUrl = import.meta.env.DEV
-    ? 'ws://localhost:8080/ws'
-    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+  // Build WebSocket URL - always use relative path to go through proxy/same origin
+  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
 
   const handleMessage = useCallback(
     (message: WebSocketMessage) => {
