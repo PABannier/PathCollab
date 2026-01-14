@@ -10,6 +10,7 @@ import { CellTooltip } from '../components/viewer/CellTooltip'
 import { OverlayUploader } from '../components/upload/OverlayUploader'
 import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
+import { useDefaultSlide } from '../hooks/useDefaultSlide'
 
 // Cell polygon data for rendering
 interface CellPolygon {
@@ -114,6 +115,9 @@ export function Session() {
   const joinSecret = hashParams.get('join') || searchParams.get('join') || undefined
   const presenterKey = hashParams.get('presenter') || searchParams.get('presenter') || undefined
   const slideParam = searchParams.get('slide')?.trim() || undefined
+
+  // Fetch default slide for standalone viewer mode (when no sessionId)
+  const { slide: defaultSlide, isLoading: isLoadingDefaultSlide } = useDefaultSlide()
 
   // Handle overlay loaded
   const handleOverlayLoaded = useCallback((id: string, manifest: OverlayManifest) => {
@@ -295,9 +299,10 @@ export function Session() {
   // In solo mode, we never wait for session (there is no session)
   const isWaitingForSession = connectionStatus !== 'solo' && !!autoCreateSlideId && !session
 
-  // Get slide info from session or use demo slide
+  // Get slide info from session or use default slide from API
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const slide = useMemo((): SlideInfo | null => {
+    // 1. Use session slide if available
     if (session?.slide) {
       return {
         id: session.slide.id,
@@ -309,15 +314,34 @@ export function Session() {
         tileUrlTemplate: session.slide.tile_url_template,
       }
     }
-    // Don't use demo slide if we're waiting for session creation
+    // 2. Don't show anything if we're waiting for session creation
     if (isWaitingForSession) {
       return null
+    }
+    // 3. Use default slide from API (for standalone viewer mode)
+    if (defaultSlide) {
+      // Calculate numLevels from slide dimensions (DZI formula)
+      const maxDim = Math.max(defaultSlide.width, defaultSlide.height)
+      const numLevels = Math.ceil(Math.log2(maxDim / 256)) + 1
+      return {
+        id: defaultSlide.slide_id,
+        name: defaultSlide.name,
+        width: defaultSlide.width,
+        height: defaultSlide.height,
+        tileSize: 256,
+        numLevels,
+        tileUrlTemplate: `/api/slide/${defaultSlide.slide_id}/tile/{level}/{x}/{y}`,
+      }
+    }
+    // 4. Fallback to demo slide while loading or if no slides available
+    if (isLoadingDefaultSlide) {
+      return null // Show loading state
     }
     return {
       ...DEMO_SLIDE_BASE,
       tileUrlTemplate: `/api/slide/${DEMO_SLIDE_BASE.id}/tile/{level}/{x}/{y}`,
     }
-  }, [session?.slide, isWaitingForSession])
+  }, [session?.slide, isWaitingForSession, defaultSlide, isLoadingDefaultSlide])
 
   // Presence tracking
   const { startTracking, stopTracking, updateCursorPosition, convertToSlideCoords } = usePresence({
@@ -710,18 +734,33 @@ export function Session() {
         ref={viewerContainerRef}
         onMouseMove={handleMouseMove}
       >
-        {/* Show loading state while waiting for session */}
+        {/* Show loading state while waiting for slide */}
         {!slide && (
           <div className="flex h-full items-center justify-center bg-gray-900">
-            <div className="text-center">
-              <div className="mb-4 h-12 w-12 mx-auto animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
-              <p className="text-gray-400">
-                {connectionStatus === 'connecting' || connectionStatus === 'reconnecting'
-                  ? 'Connecting to server...'
-                  : isCreatingSession
-                    ? 'Creating session...'
-                    : 'Loading slide...'}
-              </p>
+            <div className="text-center max-w-md px-4">
+              {isLoadingDefaultSlide || isCreatingSession || connectionStatus === 'connecting' || connectionStatus === 'reconnecting' ? (
+                <>
+                  <div className="mb-4 h-12 w-12 mx-auto animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                  <p className="text-gray-400">
+                    {connectionStatus === 'connecting' || connectionStatus === 'reconnecting'
+                      ? 'Connecting to server...'
+                      : isCreatingSession
+                        ? 'Creating session...'
+                        : 'Loading slide...'}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="mb-4 text-5xl">🔬</div>
+                  <h2 className="text-xl font-semibold text-white mb-2">No Slides Available</h2>
+                  <p className="text-gray-400 mb-4">
+                    Place whole-slide images (.svs, .ndpi, .tiff) in the slides directory to get started.
+                  </p>
+                  <p className="text-gray-500 text-sm">
+                    See the <a href="https://github.com/PABannier/PathCollab#quick-start" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Quick Start guide</a> for setup instructions.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         )}

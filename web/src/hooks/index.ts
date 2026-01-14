@@ -8,3 +8,4 @@ export {
   type SessionState,
 } from './useSession'
 export { usePresence } from './usePresence'
+export { useDefaultSlide, type DefaultSlide } from './useDefaultSlide'
