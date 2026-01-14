@@ -10,7 +10,7 @@ import { CellTooltip } from '../components/viewer/CellTooltip'
 import { OverlayUploader } from '../components/upload/OverlayUploader'
 import { Sidebar, SidebarSection } from '../components/layout'
 import { StatusBar, ConnectionBadge } from '../components/layout'
-import { Button, KeyboardShortcutsHelp } from '../components/ui'
+import { Button, KeyboardShortcutsHelp, NetworkErrorBanner } from '../components/ui'
 import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
@@ -706,6 +706,9 @@ export function Session() {
           </>
         }
       />
+
+      {/* Network error banner (fixed position) */}
+      <NetworkErrorBanner connectionStatus={connectionStatus} />
 
       {/* Error banner */}
       {error && (
