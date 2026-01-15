@@ -1,31 +1,17 @@
 import { useState, useEffect } from 'react'
 
-export interface NetworkStatus {
-  /** Whether the browser reports being online */
-  isOnline: boolean
-  /** Whether offline mode was detected at least once */
-  wasOffline: boolean
-}
-
 /**
  * Hook to track browser online/offline status.
  * Uses the browser's navigator.onLine API and online/offline events.
  */
-export function useNetworkStatus(): NetworkStatus {
+export function useNetworkStatus(): { isOnline: boolean } {
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   )
-  const [wasOffline, setWasOffline] = useState(false)
 
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true)
-    }
-
-    const handleOffline = () => {
-      setIsOnline(false)
-      setWasOffline(true)
-    }
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
 
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
@@ -36,5 +22,5 @@ export function useNetworkStatus(): NetworkStatus {
     }
   }, [])
 
-  return { isOnline, wasOffline }
+  return { isOnline }
 }
