@@ -82,18 +82,19 @@ impl LocalSlideService {
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_lowercase());
 
-            if let Some(ext) = ext
-                && SLIDE_EXTENSIONS.contains(&ext.as_str())
-            {
-                // Generate ID from filename (without extension)
-                let id = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(sanitize_id)
-                    .unwrap_or_else(|| format!("slide_{}", slides.len()));
+            #[allow(clippy::collapsible_if)]
+            if let Some(ext) = ext {
+                if SLIDE_EXTENSIONS.contains(&ext.as_str()) {
+                    // Generate ID from filename (without extension)
+                    let id = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(sanitize_id)
+                        .unwrap_or_else(|| format!("slide_{}", slides.len()));
 
-                debug!("Found slide: {} at {:?}", id, path);
-                slides.push((id, path));
+                    debug!("Found slide: {} at {:?}", id, path);
+                    slides.push((id, path));
+                }
             }
         }
 
