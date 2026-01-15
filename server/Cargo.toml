@@ -37,5 +37,8 @@ async-trait = "0.1"
 openslide-rs = { version = "2", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
+[dev-dependencies]
+tokio-tungstenite = "0.26"
+
 [build-dependencies]
 prost-build = "0.13"
