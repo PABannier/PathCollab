@@ -717,74 +717,15 @@ export function Session() {
     <div className="flex h-screen flex-col">
       {/* Status Bar */}
       <StatusBar
-        left={
-          <>
-            <h1 className="text-lg font-semibold text-white">PathCollab</h1>
-            <ConnectionBadge status={connectionStatus} />
-          </>
-        }
         center={
           slide && (
-            <span className="text-sm text-gray-200 truncate max-w-[400px]" title={slide.name}>
+            <span className="text-sm text-gray-200 truncate max-w-[600px]" title={slide.name}>
               {slide.name}
             </span>
           )
         }
         right={
-          <>
-            {isSoloMode && (
-              <span className="rounded bg-purple-600 px-2 py-0.5 text-xs text-white">Solo</span>
-            )}
-            {session && (
-              <>
-                <span className="text-sm text-gray-400">
-                  {participantCount} viewer{participantCount !== 1 ? 's' : ''}
-                </span>
-                {isPresenter && (
-                  <span className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white">
-                    Presenter
-                  </span>
-                )}
-              </>
-            )}
-            {session && !isPresenter && presenterViewport && (
-              <Button size="sm" variant="secondary" onClick={handleSnapToPresenter}>
-                Follow
-              </Button>
-            )}
-            {shareUrl && (
-              <div className="flex items-center gap-0">
-                <div className="relative">
-                  <input
-                    type="text"
-                    readOnly
-                    value={shareUrl}
-                    className="w-48 bg-gray-700 text-gray-200 text-xs rounded-l px-2 py-1.5 pr-16 border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
-                    onClick={(e) => (e.target as HTMLInputElement).select()}
-                    title={shareUrl}
-                  />
-                  <button
-                    onClick={handleShare}
-                    disabled={copyState === 'success'}
-                    className={`absolute right-0 top-0 bottom-0 px-2 text-xs font-medium rounded-r border-l border-gray-600 transition-colors ${
-                      copyState === 'success'
-                        ? 'bg-green-600 text-white'
-                        : copyState === 'error'
-                          ? 'bg-red-600 text-white hover:bg-red-700'
-                          : 'bg-gray-600 text-gray-200 hover:bg-gray-500'
-                    }`}
-                  >
-                    {copyState === 'success' ? 'Copied!' : copyState === 'error' ? 'Retry' : 'Copy'}
-                  </button>
-                </div>
-              </div>
-            )}
-            {!shareUrl && session && (
-              <Button size="sm" onClick={handleShare} loading={isCreatingSession}>
-                Share
-              </Button>
-            )}
-          </>
+          <ConnectionBadge status={connectionStatus} />
         }
       />
 

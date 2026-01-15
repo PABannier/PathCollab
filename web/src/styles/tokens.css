@@ -182,13 +182,13 @@
    * ============================================ */
 
   /* Status Bar */
-  --statusbar-height: 3rem; /* 48px */
-  --statusbar-bg: var(--color-gray-800);
+  --statusbar-height: 1.5rem; /* 24px */
+  --statusbar-bg: #333333;
   --statusbar-border: var(--color-gray-700);
 
   /* Sidebar */
   --sidebar-width: 280px;
-  --sidebar-bg: var(--color-gray-800);
+  --sidebar-bg: #252526;
   --sidebar-border: var(--color-gray-700);
 
   /* Viewer */

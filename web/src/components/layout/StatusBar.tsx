@@ -20,7 +20,6 @@ export function StatusBar({ left, center, right }: StatusBarProps) {
       style={{
         height: 'var(--statusbar-height)',
         backgroundColor: 'var(--statusbar-bg)',
-        borderBottom: '1px solid var(--statusbar-border)',
       }}
     >
       <div className="flex items-center gap-4">{left}</div>

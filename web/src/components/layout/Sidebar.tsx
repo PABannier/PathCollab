@@ -18,7 +18,6 @@ export function Sidebar({ children }: SidebarProps) {
       style={{
         width: 'var(--sidebar-width)',
         backgroundColor: 'var(--sidebar-bg)',
-        borderRight: '1px solid var(--sidebar-border)',
       }}
       role="complementary"
       aria-label="Session sidebar"
