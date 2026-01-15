@@ -15,7 +15,7 @@ use std::time::Duration;
 async fn test_connection() {
     use load_tests::client::LoadTestClient;
 
-    let url = "ws://127.0.0.1:9090/ws";
+    let url = "ws://127.0.0.1:8080/ws";
     let client: LoadTestClient = LoadTestClient::connect(url)
         .await
         .expect("Should connect to server");
@@ -30,7 +30,7 @@ async fn test_connection() {
 async fn test_create_session() {
     use load_tests::client::LoadTestClient;
 
-    let url = "ws://127.0.0.1:9090/ws";
+    let url = "ws://127.0.0.1:8080/ws";
     let mut client: LoadTestClient = LoadTestClient::connect(url)
         .await
         .expect("Should connect to server");
@@ -58,7 +58,7 @@ async fn test_fanout_minimal() {
         cursor_hz: 10,
         viewport_hz: 5,
         duration: Duration::from_secs(3),
-        ws_url: "ws://127.0.0.1:9090/ws".to_string(),
+        ws_url: "ws://127.0.0.1:8080/ws".to_string(),
     };
 
     let scenario = FanOutScenario::new(config);
@@ -78,7 +78,7 @@ async fn test_fanout_standard() {
         cursor_hz: 30,
         viewport_hz: 10,
         duration: Duration::from_secs(30),
-        ws_url: "ws://127.0.0.1:9090/ws".to_string(),
+        ws_url: "ws://127.0.0.1:8080/ws".to_string(),
     };
 
     let scenario = FanOutScenario::new(config);
@@ -107,7 +107,7 @@ async fn test_fanout_extended() {
         cursor_hz: 30,
         viewport_hz: 10,
         duration: Duration::from_secs(300), // 5 minutes
-        ws_url: "ws://127.0.0.1:9090/ws".to_string(),
+        ws_url: "ws://127.0.0.1:8080/ws".to_string(),
     };
 
     let scenario = FanOutScenario::new(config);

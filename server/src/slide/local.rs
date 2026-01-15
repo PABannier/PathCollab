@@ -388,15 +388,42 @@ impl SlideService for LocalSlideService {
         let start = Instant::now();
         counter!("pathcollab_tile_requests_total").increment(1);
 
+        // Helper to record metrics on all exit paths
+        let record_metrics = |result: &Result<Vec<u8>, SlideError>, start: Instant| {
+            histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
+            if result.is_err() {
+                counter!("pathcollab_tile_errors_total").increment(1);
+            }
+        };
+
         // Get metadata (will open slide if needed)
-        let metadata = self.get_slide(&request.slide_id).await?;
+        let metadata = match self.get_slide(&request.slide_id).await {
+            Ok(m) => m,
+            Err(e) => {
+                let result = Err(e);
+                record_metrics(&result, start);
+                return result;
+            }
+        };
 
         // Find path and get slide handle
-        let path = self
-            .find_slide_path(&request.slide_id)
-            .ok_or_else(|| SlideError::NotFound(request.slide_id.clone()))?;
+        let path = match self.find_slide_path(&request.slide_id) {
+            Some(p) => p,
+            None => {
+                let result = Err(SlideError::NotFound(request.slide_id.clone()));
+                record_metrics(&result, start);
+                return result;
+            }
+        };
 
-        let slide = self.cache.get_or_open(&request.slide_id, &path).await?;
+        let slide = match self.cache.get_or_open(&request.slide_id, &path).await {
+            Ok(s) => s,
+            Err(e) => {
+                let result = Err(e);
+                record_metrics(&result, start);
+                return result;
+            }
+        };
 
         // Read and encode the tile
         let result = self
@@ -404,11 +431,7 @@ impl SlideService for LocalSlideService {
             .await;
 
         // Record overall tile latency
-        histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
-
-        if result.is_err() {
-            counter!("pathcollab_tile_errors_total").increment(1);
-        }
+        record_metrics(&result, start);
 
         result
     }

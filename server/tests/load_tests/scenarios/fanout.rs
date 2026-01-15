@@ -154,11 +154,12 @@ impl FanOutScenario {
         while collect_start.elapsed() < collect_duration {
             match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    ClientEvent::MessageSent { seq: _, msg_type } => {
+                    ClientEvent::MessageSent { seq: _, msg_type: _ } => {
                         messages_sent.fetch_add(1, Ordering::SeqCst);
                     }
                     ClientEvent::MessageReceived { latency, msg_type } => {
-                        messages_received.fetch_add(1, Ordering::SeqCst);
+                        // Note: messages_received is already incremented in the follower tasks
+                        // via recv_count, so we don't increment here to avoid double-counting
                         if let Some(lat) = latency {
                             match msg_type {
                                 "presence" | "cursor" => cursor_latencies.record(lat),
@@ -197,7 +198,7 @@ mod tests {
     use super::*;
 
     // Note: These tests require a running server
-    // Run with: cargo test --test load_test -- --ignored
+    // Run with: cargo test --test perf_tests -- --ignored
 
     #[tokio::test]
     #[ignore = "requires running server"]
@@ -208,7 +209,7 @@ mod tests {
             cursor_hz: 10,
             viewport_hz: 5,
             duration: Duration::from_secs(5),
-            ws_url: "ws://127.0.0.1:9090/ws".to_string(),
+            ws_url: "ws://127.0.0.1:8080/ws".to_string(),
         };
 
         let scenario = FanOutScenario::new(config);
@@ -228,7 +229,7 @@ mod tests {
             cursor_hz: 30,
             viewport_hz: 10,
             duration: Duration::from_secs(60),
-            ws_url: "ws://127.0.0.1:9090/ws".to_string(),
+            ws_url: "ws://127.0.0.1:8080/ws".to_string(),
         };
 
         let scenario = FanOutScenario::new(config);

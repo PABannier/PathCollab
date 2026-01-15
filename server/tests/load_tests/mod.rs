@@ -51,7 +51,7 @@ impl Default for LoadTestConfig {
             cursor_hz: 30,
             viewport_hz: 10,
             duration: Duration::from_secs(60),
-            ws_url: "ws://127.0.0.1:9090/ws".to_string(),
+            ws_url: "ws://127.0.0.1:8080/ws".to_string(),
         }
     }
 }

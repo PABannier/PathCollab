@@ -396,6 +396,19 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     info!("WebSocket connection closed: {}", connection_id);
 }
 
+/// Scope guard that records message handling latency on drop
+struct MessageMetricsGuard {
+    start: Instant,
+    msg_type: &'static str,
+}
+
+impl Drop for MessageMetricsGuard {
+    fn drop(&mut self) {
+        histogram!("pathcollab_ws_message_duration_seconds", "type" => self.msg_type)
+            .record(self.start.elapsed());
+    }
+}
+
 /// Handle a parsed client message
 async fn handle_client_message(
     msg: ClientMessage,
@@ -403,8 +416,13 @@ async fn handle_client_message(
     state: &AppState,
     tx: &mpsc::Sender<ServerMessage>,
 ) {
-    let start = Instant::now();
     let msg_type = msg.message_type();
+
+    // This guard will record the histogram on all exit paths (including early returns)
+    let _metrics_guard = MessageMetricsGuard {
+        start: Instant::now(),
+        msg_type,
+    };
 
     // Record message received
     counter!("pathcollab_ws_messages_total", "type" => msg_type, "direction" => "in").increment(1);
@@ -442,21 +460,42 @@ async fn handle_client_message(
                         ),
                     },
                     Err(e) => {
-                        error!("Failed to get slide metadata: {}", e);
-                        let _ = tx
-                            .send(ServerMessage::SessionError {
-                                code: crate::protocol::ErrorCode::InvalidSlide,
-                                message: format!("Slide not found: {}", e),
-                            })
-                            .await;
-                        let _ = tx
-                            .send(ServerMessage::Ack {
-                                ack_seq: seq,
-                                status: crate::protocol::AckStatus::Rejected,
-                                reason: Some(format!("Slide not found: {}", e)),
-                            })
-                            .await;
-                        return;
+                        // Check if demo mode allows fallback to virtual slide
+                        let demo_enabled = std::env::var("DEMO_ENABLED")
+                            .map(|v| v == "true" || v == "1")
+                            .unwrap_or(false);
+
+                        if demo_enabled {
+                            warn!("Slide {} not found, using demo slide (DEMO_ENABLED=true)", slide_id);
+                            SlideInfo {
+                                id: slide_id.clone(),
+                                name: format!("Demo: {}", slide_id),
+                                width: 100000,
+                                height: 100000,
+                                tile_size: 256,
+                                num_levels: 10,
+                                tile_url_template: format!(
+                                    "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
+                                    slide_id
+                                ),
+                            }
+                        } else {
+                            error!("Failed to get slide metadata: {}", e);
+                            let _ = tx
+                                .send(ServerMessage::SessionError {
+                                    code: crate::protocol::ErrorCode::InvalidSlide,
+                                    message: format!("Slide not found: {}", e),
+                                })
+                                .await;
+                            let _ = tx
+                                .send(ServerMessage::Ack {
+                                    ack_seq: seq,
+                                    status: crate::protocol::AckStatus::Rejected,
+                                    reason: Some(format!("Slide not found: {}", e)),
+                                })
+                                .await;
+                            return;
+                        }
                     }
                 }
             } else {
@@ -964,8 +1003,5 @@ async fn handle_client_message(
             }
         }
     }
-
-    // Record message handling latency
-    histogram!("pathcollab_ws_message_duration_seconds", "type" => msg_type)
-        .record(start.elapsed());
+    // Note: The MessageMetricsGuard will record latency metrics when it's dropped here
 }

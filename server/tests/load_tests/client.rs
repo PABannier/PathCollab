@@ -17,7 +17,13 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungsten
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
     CreateSession { slide_id: String, seq: u64 },
-    JoinSession { session_id: String, join_secret: String, seq: u64 },
+    JoinSession {
+        session_id: String,
+        join_secret: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        last_seen_rev: Option<u64>,
+        seq: u64,
+    },
     PresenterAuth { presenter_key: String, seq: u64 },
     CursorUpdate { x: f64, y: f64, seq: u64 },
     ViewportUpdate { center_x: f64, center_y: f64, zoom: f64, seq: u64 },
@@ -159,6 +165,7 @@ impl LoadTestClient {
         let msg = ClientMessage::JoinSession {
             session_id: session_id.to_string(),
             join_secret: join_secret.to_string(),
+            last_seen_rev: None,
             seq,
         };
         self.send(msg).await?;
