@@ -20,6 +20,7 @@ import {
 import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
+import { useAvailableSlides } from '../hooks/useAvailableSlides'
 import { useKeyboardShortcuts, type KeyboardShortcut } from '../hooks/useKeyboardShortcuts'
 
 // Cell polygon data for rendering
@@ -130,6 +131,9 @@ export function Session() {
 
   // Fetch default slide for standalone viewer mode (when no sessionId)
   const { slide: defaultSlide, isLoading: isLoadingDefaultSlide } = useDefaultSlide()
+
+  // Fetch all available slides for the slide selector
+  const { slides: availableSlides } = useAvailableSlides()
 
   // Handle overlay loaded
   const handleOverlayLoaded = useCallback((id: string, manifest: OverlayManifest) => {
@@ -636,6 +640,20 @@ export function Session() {
       })
   }, [shareUrl])
 
+  // Handle slide change - creates a new session with the selected slide
+  const handleSlideChange = useCallback(
+    (newSlideId: string) => {
+      if (!newSlideId || newSlideId === slide?.id) return
+
+      // Navigate to create a new session with the selected slide
+      // Include presenter key in hash if available
+      const presenterSecret = secrets?.presenterKey ?? presenterKey
+      const hash = presenterSecret ? `#presenter=${presenterSecret}` : ''
+      window.location.href = `/s/new?slide=${newSlideId}${hash}`
+    },
+    [slide?.id, secrets?.presenterKey, presenterKey]
+  )
+
   // Handle zoom reset
   const handleZoomReset = useCallback(() => {
     viewerRef.current?.setViewport({ centerX: 0.5, centerY: 0.5, zoom: 1 })
@@ -779,6 +797,27 @@ export function Session() {
                       ? 'Reconnecting...'
                       : 'Disconnected'}
               </span>
+            </div>
+          )}
+
+          {/* Slide selector (presenter only) */}
+          {isPresenter && availableSlides.length > 1 && (
+            <div className="mb-4">
+              <p className="font-bold text-gray-300 mb-2" style={{ fontSize: '1rem' }}>
+                Choose Slide
+              </p>
+              <select
+                value={slide?.id || ''}
+                onChange={(e) => handleSlideChange(e.target.value)}
+                className="w-full text-gray-300 text-sm rounded px-2 py-1.5 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                style={{ backgroundColor: '#3C3C3C' }}
+              >
+                {availableSlides.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

@@ -9,5 +9,6 @@ export {
 } from './useSession'
 export { usePresence } from './usePresence'
 export { useDefaultSlide, type DefaultSlide } from './useDefaultSlide'
+export { useAvailableSlides, type SlideListItem } from './useAvailableSlides'
 export { useKeyboardShortcuts, formatShortcut, type KeyboardShortcut } from './useKeyboardShortcuts'
 export { useNetworkStatus, type NetworkStatus } from './useNetworkStatus'
