@@ -10,52 +10,49 @@ A web-based collaborative viewer for digital pathology, enabling real-time multi
 - **AI Overlay Support**: Upload and visualize cell segmentation and tissue classification from protobuf files
 - **WebGL2 Rendering**: High-performance rendering of millions of polygons
 - **Zero-Auth Sessions**: Ephemeral shareable links with no account required
-- **Docker-Native**: Single `docker-compose up` to start everything
+- **Docker-Native**: Single `docker run` command to start everything
 
 ## Quick Start
 
 ### Prerequisites
 
 - Docker 20.10+
-- Docker Compose 2.0+
 - 4GB RAM minimum (8GB recommended for large overlays)
 
-### Running with Docker Compose
+### Single Command Deployment (Recommended)
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/PABannier/PathCollab.git
-   cd pathcollab
-   ```
-
-2. Create a slides directory with your WSI files:
-   ```bash
-   mkdir -p data/slides
-   # Copy your .svs, .ndpi, or other supported WSI files here
-   ```
-
-3. Start all services:
-   ```bash
-   docker-compose up -d
-   ```
-
-4. Open your browser to http://localhost:3000
-
-The application consists of two services with **canonical ports** (do not change without updating all config files):
-
-| Service | Port | Description |
-|---------|------|-------------|
-| **web** | 3000 | React frontend served by Nginx |
-| **server** | 8080 | Rust WebSocket/HTTP backend with integrated tile serving |
-
-The server reads WSI files directly using OpenSlide - no external tile server required.
-
-> **Note**: These ports are configured consistently across `docker-compose.yml`, `.env.example`, `server/src/config.rs`, and `web/vite.config.ts`.
-
-### Stopping the Services
+The simplest way to run PathCollab - a single Docker image with everything included:
 
 ```bash
-docker-compose down
+# Run PathCollab with your slides directory
+docker run -p 8080:8080 -v /path/to/your/slides:/slides ghcr.io/pabannier/pathcollab:latest
+```
+
+Open your browser to **http://localhost:8080** - that's it!
+
+The unified image (~150MB) contains both the React frontend and Rust backend. No nginx, no docker-compose, no configuration required.
+
+#### Options
+
+```bash
+# With persistent overlay cache
+docker run -p 8080:8080 \
+  -v /path/to/slides:/slides:ro \
+  -v pathcollab-cache:/data \
+  ghcr.io/pabannier/pathcollab:latest
+
+# With custom configuration
+docker run -p 8080:8080 \
+  -v /path/to/slides:/slides:ro \
+  -e MAX_FOLLOWERS=50 \
+  -e SESSION_MAX_DURATION_HOURS=8 \
+  ghcr.io/pabannier/pathcollab:latest
+```
+
+### Stopping the Server
+
+```bash
+docker stop <container-id>
 ```
 
 ## Configuration
@@ -73,9 +70,10 @@ cp .env.example .env
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RUST_LOG` | `pathcollab=info,tower_http=info` | Log level configuration |
-| `WSISTREAMER_URL` | `http://wsistreamer:3000` | URL of the WSI tile server |
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `8080` | Server port |
+| `SLIDES_DIR` | `/slides` | Directory containing WSI files |
+| `STATIC_FILES_DIR` | `/app/static` (Docker) | Frontend static files directory (unified image only) |
 
 #### Session Configuration
 

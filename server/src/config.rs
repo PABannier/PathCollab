@@ -44,6 +44,9 @@ pub struct Config {
 
     /// Slide configuration
     pub slide: SlideConfig,
+
+    /// Static file serving configuration
+    pub static_files: StaticFilesConfig,
 }
 
 /// Session-related configuration
@@ -106,6 +109,28 @@ pub enum SlideSourceMode {
     WsiStreamer,
 }
 
+/// Static file serving configuration
+#[derive(Debug, Clone)]
+pub struct StaticFilesConfig {
+    /// Directory containing static files (frontend build)
+    /// If None, static file serving is disabled
+    pub dir: Option<PathBuf>,
+    /// Enable gzip compression for static files
+    pub compression: bool,
+    /// Cache duration for immutable assets (hashed files) in seconds
+    pub cache_max_age: u64,
+}
+
+impl Default for StaticFilesConfig {
+    fn default() -> Self {
+        Self {
+            dir: None, // Disabled by default in dev mode
+            compression: true,
+            cache_max_age: 31536000, // 1 year for hashed assets
+        }
+    }
+}
+
 /// Slide-related configuration
 #[derive(Debug, Clone)]
 pub struct SlideConfig {
@@ -134,6 +159,7 @@ impl Default for Config {
             presence: PresenceConfig::default(),
             demo: DemoConfig::default(),
             slide: SlideConfig::default(),
+            static_files: StaticFilesConfig::default(),
         }
     }
 }
@@ -318,6 +344,16 @@ impl Config {
             if let Ok(size) = val.parse() {
                 config.slide.max_cached_slides = size;
             }
+        }
+
+        // Static files config
+        if let Ok(path) = env::var("STATIC_FILES_DIR") {
+            if !path.is_empty() {
+                config.static_files.dir = Some(PathBuf::from(path));
+            }
+        }
+        if let Ok(val) = env::var("STATIC_FILES_COMPRESSION") {
+            config.static_files.compression = val.to_lowercase() == "true" || val == "1";
         }
 
         config

@@ -9,7 +9,10 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tower::ServiceBuilder;
+use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -259,6 +262,34 @@ async fn main() -> anyhow::Result<()> {
         .merge(Router::new().nest("/api", slide_api))
         .layer(TraceLayer::new_for_http())
         .layer(cors);
+
+    // Add static file serving if configured (for unified Docker image)
+    let app = if let Some(ref static_dir) = config.static_files.dir {
+        if static_dir.exists() {
+            info!("Serving static files from: {:?}", static_dir);
+
+            // ServeDir with SPA fallback: serve index.html for any unmatched routes
+            let index_path = static_dir.join("index.html");
+            let serve_dir = ServeDir::new(static_dir)
+                .not_found_service(ServeFile::new(&index_path));
+
+            // Add compression layer for static files (gzip)
+            let static_service = ServiceBuilder::new()
+                .layer(CompressionLayer::new())
+                .service(serve_dir);
+
+            app.fallback_service(static_service)
+        } else {
+            warn!(
+                "Static files directory not found: {:?} - static file serving disabled",
+                static_dir
+            );
+            app
+        }
+    } else {
+        info!("Static file serving disabled (STATIC_FILES_DIR not set)");
+        app
+    };
 
     // Start the server
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
