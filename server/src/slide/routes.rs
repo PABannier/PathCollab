@@ -183,23 +183,23 @@ pub async fn get_default_slide(
     State(state): State<SlideAppState>,
 ) -> Result<Json<DefaultSlideResponse>, SlideErrorResponse> {
     // Try configured demo slide first
-    if let Ok(demo_id) = env::var("DEMO_SLIDE_ID") {
-        if !demo_id.is_empty() {
-            if let Ok(metadata) = state.slide_service.get_slide(&demo_id).await {
-                tracing::info!("Default slide selected from DEMO_SLIDE_ID: {}", demo_id);
-                return Ok(Json(DefaultSlideResponse {
-                    slide_id: demo_id,
-                    source: "demo".to_string(),
-                    name: metadata.name,
-                    width: metadata.width,
-                    height: metadata.height,
-                }));
-            }
-            tracing::warn!(
-                "DEMO_SLIDE_ID '{}' configured but slide not found, falling back",
-                demo_id
-            );
+    if let Ok(demo_id) = env::var("DEMO_SLIDE_ID")
+        && !demo_id.is_empty()
+    {
+        if let Ok(metadata) = state.slide_service.get_slide(&demo_id).await {
+            tracing::info!("Default slide selected from DEMO_SLIDE_ID: {}", demo_id);
+            return Ok(Json(DefaultSlideResponse {
+                slide_id: demo_id,
+                source: "demo".to_string(),
+                name: metadata.name,
+                width: metadata.width,
+                height: metadata.height,
+            }));
         }
+        tracing::warn!(
+            "DEMO_SLIDE_ID '{}' configured but slide not found, falling back",
+            demo_id
+        );
     }
 
     // Fall back to first available slide

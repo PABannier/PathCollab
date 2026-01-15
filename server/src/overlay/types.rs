@@ -125,8 +125,6 @@ pub mod limits {
     pub const TISSUE_CLASS_MAX: u32 = 7;
 }
 
-/// Helper functions for overlay processing
-
 /// Compute bounding box from a list of (x, y) coordinates
 pub fn compute_bbox(coords: &[(f32, f32)]) -> (f32, f32, f32, f32) {
     if coords.is_empty() {

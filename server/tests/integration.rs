@@ -3,6 +3,11 @@
 //! These tests verify the full flow of WebSocket and HTTP endpoints,
 //! testing the system as a whole rather than individual units.
 
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::collapsible_match)]
+#![allow(clippy::useless_vec)]
+#![allow(clippy::single_match)]
+
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -1337,7 +1342,6 @@ mod protocol {
 // ============================================================================
 
 mod phase2_presence {
-    use super::*;
     use axum::{Router, routing::get};
     use pathcollab_server::protocol::{ClientMessage, ServerMessage};
     use pathcollab_server::server::AppState;
@@ -2148,7 +2152,6 @@ mod phase2_participants {
 }
 
 mod phase2_robustness {
-    use super::*;
     use axum::{Router, routing::get};
     use pathcollab_server::protocol::{ClientMessage, ServerMessage};
     use pathcollab_server::server::AppState;

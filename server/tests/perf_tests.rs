@@ -3,10 +3,13 @@
 //! Run with: cargo test --test perf_tests -- --ignored --nocapture
 //! Or for quick test: cargo test --test perf_tests test_connection -- --ignored --nocapture
 
+#![allow(dead_code)]
+#![allow(clippy::collapsible_if)]
+
 mod load_tests;
 
-use load_tests::{LoadTestConfig, LoadTestResults};
 use load_tests::scenarios::FanOutScenario;
+use load_tests::{LoadTestConfig, LoadTestResults};
 use std::time::Duration;
 
 /// Quick connectivity test
@@ -88,7 +91,10 @@ async fn test_fanout_standard() {
 
     // Verify basic functionality
     assert!(results.messages_sent > 0, "Should have sent messages");
-    assert!(results.messages_received > 0, "Should have received messages");
+    assert!(
+        results.messages_received > 0,
+        "Should have received messages"
+    );
 
     // Check performance budgets
     if !results.meets_budgets() {

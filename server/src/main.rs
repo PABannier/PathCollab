@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::State, routing::get, response::IntoResponse};
+use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use pathcollab_server::config::{Config, SlideSourceMode};
 use pathcollab_server::overlay::overlay_routes;
@@ -111,7 +111,9 @@ fn setup_prometheus_metrics() -> PrometheusHandle {
 
 /// Endpoint to expose metrics in Prometheus format
 async fn prometheus_metrics() -> impl IntoResponse {
-    let handle = PROMETHEUS_HANDLE.get().expect("Prometheus handle not initialized");
+    let handle = PROMETHEUS_HANDLE
+        .get()
+        .expect("Prometheus handle not initialized");
     handle.render()
 }
 

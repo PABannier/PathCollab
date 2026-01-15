@@ -4,10 +4,13 @@
 //! where the presenter sends 30Hz cursor updates and 10Hz viewport updates.
 //! All followers should receive broadcasts with P99 < 100ms for cursors.
 
-use super::super::{LoadTestConfig, LoadTestResults, LatencyStats};
+#![allow(dead_code)]
+#![allow(clippy::collapsible_if)]
+
 use super::super::client::{ClientEvent, LoadTestClient, ServerMessage, spawn_update_client};
-use std::sync::atomic::{AtomicU64, Ordering};
+use super::super::{LatencyStats, LoadTestConfig, LoadTestResults};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
@@ -42,7 +45,11 @@ impl FanOutScenario {
 
         // Create sessions and spawn presenter + follower tasks
         for session_idx in 0..self.config.num_sessions {
-            println!("Setting up session {}/{}", session_idx + 1, self.config.num_sessions);
+            println!(
+                "Setting up session {}/{}",
+                session_idx + 1,
+                self.config.num_sessions
+            );
 
             // Create presenter client
             let presenter = match LoadTestClient::connect(&self.config.ws_url).await {
@@ -71,7 +78,8 @@ impl FanOutScenario {
             let viewport_hz = self.config.viewport_hz;
             let duration = self.config.duration;
             let handle = tokio::spawn(async move {
-                spawn_update_client(presenter, cursor_hz, viewport_hz, duration, presenter_tx).await;
+                spawn_update_client(presenter, cursor_hz, viewport_hz, duration, presenter_tx)
+                    .await;
             });
             join_handles.push(handle);
 
@@ -117,16 +125,20 @@ impl FanOutScenario {
                                     ServerMessage::Ack { .. } => "ack",
                                     _ => "other",
                                 };
-                                let _ = follower_tx.send(ClientEvent::MessageReceived {
-                                    latency: None, // We track latency on presenter side
-                                    msg_type,
-                                }).await;
+                                let _ = follower_tx
+                                    .send(ClientEvent::MessageReceived {
+                                        latency: None, // We track latency on presenter side
+                                        msg_type,
+                                    })
+                                    .await;
                             }
                             Ok(None) => {}
                             Err(e) => {
-                                let _ = follower_tx.send(ClientEvent::Error {
-                                    message: e.to_string(),
-                                }).await;
+                                let _ = follower_tx
+                                    .send(ClientEvent::Error {
+                                        message: e.to_string(),
+                                    })
+                                    .await;
                             }
                         }
                     }
@@ -154,7 +166,10 @@ impl FanOutScenario {
         while collect_start.elapsed() < collect_duration {
             match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    ClientEvent::MessageSent { seq: _, msg_type: _ } => {
+                    ClientEvent::MessageSent {
+                        seq: _,
+                        msg_type: _,
+                    } => {
                         messages_sent.fetch_add(1, Ordering::SeqCst);
                     }
                     ClientEvent::MessageReceived { latency, msg_type } => {
@@ -173,7 +188,7 @@ impl FanOutScenario {
                     }
                 },
                 Ok(None) => break, // Channel closed
-                Err(_) => {} // Timeout, continue
+                Err(_) => {}       // Timeout, continue
             }
         }
 
@@ -217,7 +232,10 @@ mod tests {
 
         println!("{}", results.report());
         assert!(results.messages_sent > 0, "Should have sent messages");
-        assert!(results.messages_received > 0, "Should have received messages");
+        assert!(
+            results.messages_received > 0,
+            "Should have received messages"
+        );
     }
 
     #[tokio::test]

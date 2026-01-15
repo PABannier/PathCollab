@@ -5,8 +5,8 @@
 
 use crate::overlay::types::{
     CellClassDef, CellData, OverlayError, ParsedOverlay, TissueClassDef, TissueTileData,
-    compute_bbox, compute_polygon_area, current_timestamp_ms,
-    default_cell_color, default_tissue_color, limits,
+    compute_bbox, compute_polygon_area, current_timestamp_ms, default_cell_color,
+    default_tissue_color, limits,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -220,11 +220,8 @@ impl OverlayParser {
                 let (bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y) = compute_bbox(&abs_coords);
 
                 // Compute area from tile-relative coordinates (scale-invariant)
-                let rel_coords: Vec<(f32, f32)> = polygon
-                    .coordinates
-                    .iter()
-                    .map(|p| (p.x, p.y))
-                    .collect();
+                let rel_coords: Vec<(f32, f32)> =
+                    polygon.coordinates.iter().map(|p| (p.x, p.y)).collect();
                 let area = compute_polygon_area(&rel_coords);
 
                 cells.push(CellData {
@@ -338,35 +335,39 @@ mod tests {
     fn create_test_slide_data() -> proto::SlideSegmentationData {
         use proto::segmentation_polygon::Point;
 
-        let mut slide = proto::SlideSegmentationData::default();
-        slide.slide_id = "test-slide".to_string();
-        slide.slide_path = "/path/to/slide.svs".to_string();
-        slide.mpp = 0.25;
-        slide.max_level = 5;
-        slide.cell_model_name = "hovernet".to_string();
-        slide.tissue_model_name = "tissue_v1".to_string();
+        let mut slide = proto::SlideSegmentationData {
+            slide_id: "test-slide".to_string(),
+            slide_path: "/path/to/slide.svs".to_string(),
+            mpp: 0.25,
+            max_level: 5,
+            cell_model_name: "hovernet".to_string(),
+            tissue_model_name: "tissue_v1".to_string(),
+            ..Default::default()
+        };
 
         // Add a tile with one cell
-        let mut tile = proto::TileSegmentationData::default();
-        tile.tile_id = "tile_0_0".to_string();
-        tile.level = 0;
-        tile.x = 0.0;
-        tile.y = 0.0;
-        tile.width = 256;
-        tile.height = 256;
+        let cell = proto::SegmentationPolygon {
+            cell_id: 1,
+            cell_type: "Tumor".to_string(),
+            confidence: 0.95,
+            centroid: Point { x: 128.0, y: 128.0 },
+            coordinates: vec![
+                Point { x: 100.0, y: 100.0 },
+                Point { x: 150.0, y: 100.0 },
+                Point { x: 150.0, y: 150.0 },
+                Point { x: 100.0, y: 150.0 },
+            ],
+        };
 
-        // Add a cell polygon
-        let mut cell = proto::SegmentationPolygon::default();
-        cell.cell_id = 1;
-        cell.cell_type = "Tumor".to_string();
-        cell.confidence = 0.95;
-        cell.centroid = Point { x: 128.0, y: 128.0 };
-        cell.coordinates = vec![
-            Point { x: 100.0, y: 100.0 },
-            Point { x: 150.0, y: 100.0 },
-            Point { x: 150.0, y: 150.0 },
-            Point { x: 100.0, y: 150.0 },
-        ];
+        let mut tile = proto::TileSegmentationData {
+            tile_id: "tile_0_0".to_string(),
+            level: 0,
+            x: 0.0,
+            y: 0.0,
+            width: 256,
+            height: 256,
+            ..Default::default()
+        };
         tile.masks.push(cell);
 
         // Add tissue data
@@ -378,7 +379,9 @@ mod tests {
         };
 
         slide.tiles.push(tile);
-        slide.tissue_class_mapping.insert(0, "Background".to_string());
+        slide
+            .tissue_class_mapping
+            .insert(0, "Background".to_string());
         slide.tissue_class_mapping.insert(1, "Tumor".to_string());
 
         slide
@@ -426,17 +429,18 @@ mod tests {
         let mut slide = create_test_slide_data();
 
         // Add a second cell with different type
-        let mut cell2 = proto::SegmentationPolygon::default();
-        cell2.cell_id = 2;
-        cell2.cell_type = "Lymphocyte".to_string();
-        cell2.confidence = 0.88;
-        cell2.centroid = Point { x: 50.0, y: 50.0 };
-        cell2.coordinates = vec![
-            Point { x: 40.0, y: 40.0 },
-            Point { x: 60.0, y: 40.0 },
-            Point { x: 60.0, y: 60.0 },
-            Point { x: 40.0, y: 60.0 },
-        ];
+        let cell2 = proto::SegmentationPolygon {
+            cell_id: 2,
+            cell_type: "Lymphocyte".to_string(),
+            confidence: 0.88,
+            centroid: Point { x: 50.0, y: 50.0 },
+            coordinates: vec![
+                Point { x: 40.0, y: 40.0 },
+                Point { x: 60.0, y: 60.0 },
+                Point { x: 60.0, y: 40.0 },
+                Point { x: 40.0, y: 60.0 },
+            ],
+        };
         slide.tiles[0].masks.push(cell2);
 
         let data = slide.encode_to_vec();
@@ -447,8 +451,16 @@ mod tests {
         assert_eq!(result.metadata.cell_classes.len(), 2);
 
         // Check that cell types are mapped correctly
-        let tumor_class = result.metadata.cell_classes.iter().find(|c| c.name == "Tumor");
-        let lymph_class = result.metadata.cell_classes.iter().find(|c| c.name == "Lymphocyte");
+        let tumor_class = result
+            .metadata
+            .cell_classes
+            .iter()
+            .find(|c| c.name == "Tumor");
+        let lymph_class = result
+            .metadata
+            .cell_classes
+            .iter()
+            .find(|c| c.name == "Lymphocyte");
         assert!(tumor_class.is_some());
         assert!(lymph_class.is_some());
     }

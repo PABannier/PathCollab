@@ -4,6 +4,9 @@
 //! that PathCollab can handle activity spikes with 20 followers
 //! per session at 30Hz cursor + 10Hz viewport updates.
 
+#![allow(dead_code)]
+#![allow(clippy::collapsible_if)]
+
 pub mod client;
 pub mod scenarios;
 
@@ -64,7 +67,9 @@ pub struct LatencyStats {
 
 impl LatencyStats {
     pub fn new() -> Self {
-        Self { samples: Vec::new() }
+        Self {
+            samples: Vec::new(),
+        }
     }
 
     pub fn record(&mut self, latency: Duration) {
@@ -174,13 +179,13 @@ impl LoadTestResults {
         let mut report = String::new();
         report.push_str("=== Load Test Results ===\n\n");
 
-        report.push_str(&format!(
-            "Duration: {:.2}s\n",
-            self.duration.as_secs_f64()
-        ));
+        report.push_str(&format!("Duration: {:.2}s\n", self.duration.as_secs_f64()));
         report.push_str(&format!("Messages sent: {}\n", self.messages_sent));
         report.push_str(&format!("Messages received: {}\n", self.messages_received));
-        report.push_str(&format!("Connection errors: {}\n\n", self.connection_errors));
+        report.push_str(&format!(
+            "Connection errors: {}\n\n",
+            self.connection_errors
+        ));
 
         report.push_str("Cursor Latencies:\n");
         if let Some(p50) = self.cursor_latencies.p50() {
@@ -224,11 +229,7 @@ impl LoadTestResults {
 
         report.push_str(&format!(
             "\nOverall: {}\n",
-            if self.meets_budgets() {
-                "PASS"
-            } else {
-                "FAIL"
-            }
+            if self.meets_budgets() { "PASS" } else { "FAIL" }
         ));
 
         report

@@ -3,10 +3,13 @@
 //! Provides a high-level API for simulating PathCollab clients
 //! with proper protocol handling and latency tracking.
 
+#![allow(dead_code)]
+#![allow(clippy::collapsible_if)]
+
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -16,7 +19,10 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungsten
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
-    CreateSession { slide_id: String, seq: u64 },
+    CreateSession {
+        slide_id: String,
+        seq: u64,
+    },
     JoinSession {
         session_id: String,
         join_secret: String,
@@ -24,10 +30,24 @@ pub enum ClientMessage {
         last_seen_rev: Option<u64>,
         seq: u64,
     },
-    PresenterAuth { presenter_key: String, seq: u64 },
-    CursorUpdate { x: f64, y: f64, seq: u64 },
-    ViewportUpdate { center_x: f64, center_y: f64, zoom: f64, seq: u64 },
-    Ping { seq: u64 },
+    PresenterAuth {
+        presenter_key: String,
+        seq: u64,
+    },
+    CursorUpdate {
+        x: f64,
+        y: f64,
+        seq: u64,
+    },
+    ViewportUpdate {
+        center_x: f64,
+        center_y: f64,
+        zoom: f64,
+        seq: u64,
+    },
+    Ping {
+        seq: u64,
+    },
 }
 
 /// Server message types (subset we care about for testing)
@@ -98,7 +118,10 @@ impl LoadTestClient {
     }
 
     /// Send a message and track for latency measurement
-    pub async fn send(&mut self, msg: ClientMessage) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn send(
+        &mut self,
+        msg: ClientMessage,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         let seq = match &msg {
             ClientMessage::CreateSession { seq, .. } => *seq,
             ClientMessage::JoinSession { seq, .. } => *seq,
@@ -120,7 +143,10 @@ impl LoadTestClient {
     }
 
     /// Create a new session
-    pub async fn create_session(&mut self, slide_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn create_session(
+        &mut self,
+        slide_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let seq = self.next_seq();
         let msg = ClientMessage::CreateSession {
             slide_id: slide_id.to_string(),
@@ -139,7 +165,10 @@ impl LoadTestClient {
                             join_secret,
                             presenter_key,
                         } => {
-                            self.session_id = session.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            self.session_id = session
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
                             self.join_secret = Some(join_secret);
                             self.presenter_key = Some(presenter_key);
                             return Ok(());
@@ -177,7 +206,10 @@ impl LoadTestClient {
                 if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
                     match server_msg {
                         ServerMessage::SessionJoined { session, .. } => {
-                            self.session_id = session.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            self.session_id = session
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
                             return Ok(());
                         }
                         ServerMessage::SessionError { code, message } => {
@@ -192,7 +224,11 @@ impl LoadTestClient {
     }
 
     /// Send cursor update
-    pub async fn send_cursor(&mut self, x: f64, y: f64) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn send_cursor(
+        &mut self,
+        x: f64,
+        y: f64,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         let seq = self.next_seq();
         let msg = ClientMessage::CursorUpdate { x, y, seq };
         self.send(msg).await
@@ -319,7 +355,15 @@ pub async fn spawn_update_client(
 /// Events from client tasks
 #[derive(Debug)]
 pub enum ClientEvent {
-    MessageSent { seq: u64, msg_type: &'static str },
-    MessageReceived { latency: Option<Duration>, msg_type: &'static str },
-    Error { message: String },
+    MessageSent {
+        seq: u64,
+        msg_type: &'static str,
+    },
+    MessageReceived {
+        latency: Option<Duration>,
+        msg_type: &'static str,
+    },
+    Error {
+        message: String,
+    },
 }

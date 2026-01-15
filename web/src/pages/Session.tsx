@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { SlideViewer, type SlideInfo, type SlideViewerHandle, ViewportLoader } from '../components/viewer'
+import {
+  SlideViewer,
+  type SlideInfo,
+  type SlideViewerHandle,
+  ViewportLoader,
+} from '../components/viewer'
 import { CursorLayer } from '../components/viewer/CursorLayer'
 import { OverlayCanvas } from '../components/viewer/OverlayCanvas'
 import { TissueHeatmapLayer } from '../components/viewer/TissueHeatmapLayer'
@@ -1045,7 +1050,10 @@ export function Session() {
           {!slide && (
             <>
               {connectionStatus === 'connecting' || connectionStatus === 'reconnecting' ? (
-                <ViewportLoader message="Connecting..." subMessage="Establishing connection to session" />
+                <ViewportLoader
+                  message="Connecting..."
+                  subMessage="Establishing connection to session"
+                />
               ) : isLoadingDefaultSlide || isCreatingSession ? (
                 <ViewportLoader message="Loading slide..." subMessage="Preparing viewport" />
               ) : (

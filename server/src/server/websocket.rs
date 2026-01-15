@@ -466,7 +466,10 @@ async fn handle_client_message(
                             .unwrap_or(false);
 
                         if demo_enabled {
-                            warn!("Slide {} not found, using demo slide (DEMO_ENABLED=true)", slide_id);
+                            warn!(
+                                "Slide {} not found, using demo slide (DEMO_ENABLED=true)",
+                                slide_id
+                            );
                             SlideInfo {
                                 id: slide_id.clone(),
                                 name: format!("Demo: {}", slide_id),
@@ -962,7 +965,11 @@ async fn handle_client_message(
                 };
 
                 // Update session with new slide
-                match state.session_manager.change_slide(&session_id, slide.clone()).await {
+                match state
+                    .session_manager
+                    .change_slide(&session_id, slide.clone())
+                    .await
+                {
                     Ok(new_slide) => {
                         // Broadcast slide change to all participants
                         state
@@ -980,7 +987,10 @@ async fn handle_client_message(
                             })
                             .await;
 
-                        info!("Session {} slide changed to {} by presenter", session_id, slide_id);
+                        info!(
+                            "Session {} slide changed to {} by presenter",
+                            session_id, slide_id
+                        );
                     }
                     Err(e) => {
                         let _ = tx

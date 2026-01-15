@@ -82,18 +82,18 @@ impl LocalSlideService {
                 .and_then(|e| e.to_str())
                 .map(|e| e.to_lowercase());
 
-            if let Some(ext) = ext {
-                if SLIDE_EXTENSIONS.contains(&ext.as_str()) {
-                    // Generate ID from filename (without extension)
-                    let id = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .map(|s| sanitize_id(s))
-                        .unwrap_or_else(|| format!("slide_{}", slides.len()));
+            if let Some(ext) = ext
+                && SLIDE_EXTENSIONS.contains(&ext.as_str())
+            {
+                // Generate ID from filename (without extension)
+                let id = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(sanitize_id)
+                    .unwrap_or_else(|| format!("slide_{}", slides.len()));
 
-                    debug!("Found slide: {} at {:?}", id, path);
-                    slides.push((id, path));
-                }
+                debug!("Found slide: {} at {:?}", id, path);
+                slides.push((id, path));
             }
         }
 
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_calculate_dzi_levels() {
-        let config = SlideConfig {
+        let _config = SlideConfig {
             source_mode: crate::config::SlideSourceMode::Local,
             slides_dir: PathBuf::from("/tmp"),
             tile_size: 256,

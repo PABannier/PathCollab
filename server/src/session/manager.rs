@@ -921,7 +921,10 @@ mod tests {
             snapshot.slide.name, "New Slide",
             "Slide name should be updated"
         );
-        assert_eq!(snapshot.slide.width, 200000, "Slide width should be updated");
+        assert_eq!(
+            snapshot.slide.width, 200000,
+            "Slide width should be updated"
+        );
         assert_eq!(
             snapshot.slide.height, 150000,
             "Slide height should be updated"

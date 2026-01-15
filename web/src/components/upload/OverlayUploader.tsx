@@ -46,7 +46,11 @@ export function OverlayUploader({
       }
 
       // Validate file type
-      if (!file.name.endsWith('.pb') && !file.name.endsWith('.proto') && !file.name.endsWith('.bin')) {
+      if (
+        !file.name.endsWith('.pb') &&
+        !file.name.endsWith('.proto') &&
+        !file.name.endsWith('.bin')
+      ) {
         onError('Invalid file type. Please upload a .pb or .bin file')
         return
       }
