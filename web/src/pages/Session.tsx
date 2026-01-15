@@ -1144,7 +1144,7 @@ export function Session() {
       </div>
 
       {/* Bottom status bar (VS Code style) */}
-      <footer className="flex items-center h-6 text-xs" style={{ backgroundColor: '#111111' }}>
+      <footer className="flex items-center h-6 text-xs" style={{ backgroundColor: '#181818' }}>
         {/* Left section with blue background */}
         <div
           className="flex items-center gap-1.5 px-2 h-full"
@@ -1152,16 +1152,20 @@ export function Session() {
         >
           {/* Connected icon */}
           <svg
-            className="w-3.5 h-3.5 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
             stroke="currentColor"
+            fill="currentColor"
+            stroke-width="0"
+            viewBox="0 0 16 16"
+            focusable="false"
+            className="text-white"
+            height="1em"
+            width="1em"
+            xmlns="http://www.w3.org/2000/svg"
           >
             <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
+              fill-rule="evenodd"
+              clip-rule="evenodd"
+              d="M12.904 9.57L8.928 5.596l3.976-3.976-.619-.62L8 5.286v.619l4.285 4.285.62-.618zM3 5.62l4.072 4.07L3 13.763l.619.618L8 10v-.619L3.619 5 3 5.619z"
             />
           </svg>
           <span className="text-white font-medium">
