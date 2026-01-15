@@ -187,7 +187,7 @@
   --statusbar-border: var(--color-gray-700);
 
   /* Sidebar */
-  --sidebar-width: 280px;
+  --sidebar-width: 20rem;
   --sidebar-bg: #252526;
   --sidebar-border: var(--color-gray-700);
 

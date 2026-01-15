@@ -218,16 +218,16 @@ export function OverlayUploader({
         onDrop={handleDrop}
         disabled={disabled || isUploading}
         className={`
-          relative flex items-center gap-2 rounded px-3 py-1.5 text-sm transition-all
-          ${isDragging ? 'ring-2 ring-green-400 bg-green-600' : ''}
+          relative flex items-center gap-2 rounded px-3 py-1.5 text-sm transition-all border
+          ${isDragging ? 'ring-2 ring-green-400 border-green-400 bg-green-600' : ''}
           ${
             uploadState === 'idle'
-              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+              ? 'bg-transparent border-emerald-500 text-emerald-500 hover:bg-emerald-500/10'
               : uploadState === 'complete'
-                ? 'bg-green-600 text-white'
+                ? 'bg-transparent border-green-500 text-green-500'
                 : uploadState === 'error'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-gray-600 text-gray-300'
+                  ? 'bg-transparent border-red-500 text-red-500'
+                  : 'bg-transparent border-gray-500 text-gray-400'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
@@ -294,7 +294,7 @@ export function OverlayUploader({
 
         {/* Text */}
         <span>
-          {uploadState === 'idle' && 'Upload Overlay'}
+          {uploadState === 'idle' && 'Upload overlay'}
           {uploadState === 'uploading' && `Uploading... ${progress}%`}
           {uploadState === 'processing' && 'Processing...'}
           {uploadState === 'complete' && 'Complete!'}

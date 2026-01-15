@@ -21,7 +21,6 @@ import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
 import { useKeyboardShortcuts, type KeyboardShortcut } from '../hooks/useKeyboardShortcuts'
-import { DebugPanel, type DebugStats } from '../components/debug'
 
 // Cell polygon data for rendering
 interface CellPolygon {
@@ -682,37 +681,6 @@ export function Session() {
 
   const isSoloMode = connectionStatus === 'solo'
 
-  // Participant count
-  const participantCount = session ? 1 + session.followers.length : 0
-
-  // Debug stats for the debug panel
-  const debugStats = useMemo<DebugStats>(
-    () => ({
-      connection: {
-        status: connectionStatus,
-        retryCount: 0, // TODO: expose from useWebSocket
-        messagesSent: 0, // TODO: expose from useWebSocket
-        messagesReceived: 0, // TODO: expose from useWebSocket
-      },
-      tiles: {
-        requested: 0, // TODO: track tile requests
-        loaded: 0, // TODO: track loaded tiles
-        errors: 0, // TODO: track tile errors
-      },
-      overlay: {
-        id: overlayId,
-        status: overlayId ? 'loaded' : 'none',
-        cellCount: overlayCells.length,
-      },
-      session: {
-        id: session?.id ?? null,
-        role: session ? (isPresenter ? 'presenter' : 'follower') : null,
-        participantCount,
-      },
-    }),
-    [connectionStatus, overlayId, overlayCells.length, session, isPresenter, participantCount]
-  )
-
   return (
     <div className="flex h-screen flex-col">
       {/* Status Bar */}
@@ -723,9 +691,6 @@ export function Session() {
               {slide.name}
             </span>
           )
-        }
-        right={
-          <ConnectionBadge status={connectionStatus} />
         }
       />
 
@@ -785,117 +750,122 @@ export function Session() {
       {/* Two-pane layout: Sidebar + Viewer */}
       <div className="flex flex-1 overflow-hidden relative">
         <Sidebar>
-          {/* Session info */}
-          <SidebarSection title="Session">
-            {isSoloMode ? (
-              <div className="text-sm">
-                <p className="text-gray-400 mb-2">Solo mode - viewing without collaboration</p>
-                <p className="text-gray-500 text-xs">
-                  To collaborate, start a session by connecting to the server.
-                </p>
+          {/* Follow presenter toggle (followers only) */}
+          {session && !isPresenter && (
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <span className="text-sm font-medium text-gray-300">Follow presenter</span>
+                <p className="text-xs text-gray-500">Sync your view automatically</p>
               </div>
-            ) : session ? (
-              <div className="space-y-3">
-                <div>
-                  <p className="text-sm text-gray-300 font-mono truncate">{session.id}</p>
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    <div className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: session.presenter.color }}
-                      />
-                      <span className="text-gray-300">{session.presenter.name}</span>
-                      <span className="text-gray-500">(host)</span>
-                    </div>
-                    {session.followers.map((f) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-xs"
-                      >
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: f.color }}
-                        />
-                        <span className="text-gray-300">{f.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <Toggle
+                checked={isFollowing}
+                onChange={setIsFollowing}
+                aria-label="Follow presenter"
+                size="sm"
+              />
+            </div>
+          )}
 
-                {/* Follow presenter toggle (followers only) */}
-                {!isPresenter && (
-                  <div className="flex items-center justify-between py-2 border-t border-gray-700">
-                    <div>
-                      <span className="text-sm font-medium text-gray-300">Follow presenter</span>
-                      <p className="text-xs text-gray-500">Sync your view automatically</p>
-                    </div>
-                    <Toggle
-                      checked={isFollowing}
-                      onChange={setIsFollowing}
-                      aria-label="Follow presenter"
-                      size="sm"
-                    />
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-sm">
-                <p className="text-gray-400 mb-2">No active session</p>
-                <p className="text-gray-500 text-xs mb-3">
-                  Share this slide to start collaborating.
-                </p>
-              </div>
-            )}
+          {/* Connection status */}
+          {!isSoloMode && (
+            <div className="mb-4 flex items-center gap-2">
+              <ConnectionBadge status={connectionStatus} />
+              <span className="text-gray-400 italic text-sm">
+                {connectionStatus === 'connected'
+                  ? 'You are connected'
+                  : connectionStatus === 'connecting'
+                    ? 'Connecting...'
+                    : connectionStatus === 'reconnecting'
+                      ? 'Reconnecting...'
+                      : 'Disconnected'}
+              </span>
+            </div>
+          )}
 
-            {/* Share link - textbox with copy button when session exists */}
-            {slide && !isSoloMode && shareUrl && (
-              <div className="mt-2">
+          {/* Share Link section */}
+          {slide && !isSoloMode && (
+            <div className="mb-4">
+              <p className="font-bold text-gray-300 mb-2" style={{ fontSize: '1rem' }}>
+                Share Link
+              </p>
+              {shareUrl ? (
                 <div className="relative">
                   <input
                     type="text"
                     readOnly
                     value={shareUrl}
-                    className="w-full bg-gray-700 text-gray-300 text-xs rounded px-2 py-2 pr-16 border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
+                    className="w-full text-gray-300 text-sm rounded px-2 py-1.5 pr-14 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
+                    style={{ backgroundColor: '#3C3C3C' }}
                     onClick={(e) => (e.target as HTMLInputElement).select()}
                     title={shareUrl}
                   />
                   <button
                     onClick={handleShare}
                     disabled={copyState === 'success'}
-                    className={`absolute right-1 top-1 bottom-1 px-3 text-xs font-medium rounded transition-colors ${
+                    className={`absolute right-1 top-1 bottom-1 px-2 text-xs font-medium rounded transition-colors ${
                       copyState === 'success'
                         ? 'bg-green-600 text-white'
                         : copyState === 'error'
                           ? 'bg-red-600 text-white hover:bg-red-700'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'text-white hover:opacity-80'
                     }`}
+                    style={
+                      copyState !== 'success' && copyState !== 'error'
+                        ? { backgroundColor: '#575759' }
+                        : undefined
+                    }
                   >
                     {copyState === 'success' ? 'Copied!' : copyState === 'error' ? 'Retry' : 'Copy'}
                   </button>
                 </div>
-              </div>
-            )}
-            {/* Create session button when no session exists */}
-            {slide && !isSoloMode && !shareUrl && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={handleShare}
-                className="w-full mt-2"
-                loading={isCreatingSession}
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleShare}
+                  className="w-full"
+                  loading={isCreatingSession}
+                >
+                  {isCreatingSession ? 'Creating...' : 'Create Share Link'}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Active Users section */}
+          {session && (
+            <div className="mb-4">
+              <p className="font-bold text-gray-300 mb-2" style={{ fontSize: '1rem' }}>
+                Active Users
+              </p>
+              <div className="flex flex-col gap-1">
+                <div
+                  className="flex items-center gap-2 px-2 py-1.5 rounded text-sm"
+                  style={{ backgroundColor: '#3C3C3C' }}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: session.presenter.color }}
                   />
-                </svg>
-                {isCreatingSession ? 'Creating...' : 'Create Share Link'}
-              </Button>
-            )}
-          </SidebarSection>
+                  <span className="text-gray-300">{session.presenter.name}</span>
+                  <span className="text-gray-500 ml-auto">(host)</span>
+                </div>
+                {session.followers.map((f) => (
+                  <div
+                    key={f.id}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded text-sm"
+                    style={{ backgroundColor: '#3C3C3C' }}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: f.color }}
+                    />
+                    <span className="text-gray-300">{f.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Overlay upload (presenter only) */}
           {session && isPresenter && !overlayId && (
@@ -999,8 +969,29 @@ export function Session() {
             </SidebarSection>
           )}
 
-          {/* Debug Panel - collapsed by default */}
-          <DebugPanel stats={debugStats} defaultCollapsed />
+          {/* About section */}
+          <SidebarSection title="About">
+            <p className="text-gray-300 leading-relaxed mb-3" style={{ fontSize: '0.875rem' }}>
+              PathCollab is a real-time collaborative viewer for whole-slide images. Share your
+              slide with colleagues and explore together with synchronized views and live cursors.
+            </p>
+            <a
+              href="https://github.com/PABannier/PathCollab"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-gray-400 hover:text-gray-200 transition-colors"
+              style={{ fontSize: '0.875rem' }}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path
+                  fillRule="evenodd"
+                  clipRule="evenodd"
+                  d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                />
+              </svg>
+              <span>Repository</span>
+            </a>
+          </SidebarSection>
         </Sidebar>
 
         {/* Main viewer area */}
@@ -1152,11 +1143,39 @@ export function Session() {
         </main>
       </div>
 
+      {/* Bottom status bar (VS Code style) */}
+      <footer className="flex items-center h-6 text-xs" style={{ backgroundColor: '#111111' }}>
+        {/* Left section with blue background */}
+        <div
+          className="flex items-center gap-1.5 px-2 h-full"
+          style={{ backgroundColor: '#007ACC' }}
+        >
+          {/* Connected icon */}
+          <svg
+            className="w-3.5 h-3.5 text-white"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"
+            />
+          </svg>
+          <span className="text-white font-medium">
+            {session ? session.id.slice(0, 8) : 'No Session'}
+          </span>
+        </div>
+        {/* Right section - black background (flex-1 fills the rest) */}
+        <div className="flex-1 px-2" />
+      </footer>
+
       {/* Keyboard shortcuts help modal */}
       {showHelp && (
         <KeyboardShortcutsHelp
           shortcuts={[
-            { key: '\\', ctrl: true, description: 'Toggle sidebar' },
             { key: '0', ctrl: true, description: 'Reset zoom to fit' },
             { key: 'f', ctrl: true, description: 'Follow presenter' },
             { key: 'l', ctrl: true, description: 'Copy share link' },

@@ -279,7 +279,7 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full bg-gray-900" />
+      <div ref={containerRef} className="h-full w-full" style={{ backgroundColor: '#1E1E1E' }} />
 
       {/* Loading indicator */}
       {isLoading && (
