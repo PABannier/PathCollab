@@ -33,6 +33,8 @@ pub enum ClientMessage {
     },
     /// Snap to presenter viewport
     SnapToPresenter { seq: u64 },
+    /// Change slide (presenter only)
+    ChangeSlide { slide_id: String, seq: u64 },
     /// Ping for keepalive
     Ping { seq: u64 },
 }
@@ -84,6 +86,8 @@ pub enum ServerMessage {
         overlay_id: String,
         manifest: OverlayManifest,
     },
+    /// Slide changed notification (broadcast to all participants)
+    SlideChanged { slide: SlideInfo },
     /// Ping for keepalive (server to client)
     Ping,
     /// Pong response (to client's Ping)

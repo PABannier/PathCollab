@@ -271,6 +271,34 @@ impl SessionManager {
         Ok(session.rev)
     }
 
+    /// Change the slide for a session (presenter only)
+    pub async fn change_slide(
+        &self,
+        session_id: &str,
+        slide: SlideInfo,
+    ) -> Result<SlideInfo, SessionError> {
+        let mut sessions = self.sessions.write().await;
+
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
+
+        session.slide = slide.clone();
+        session.rev += 1;
+
+        // Reset viewport to center when slide changes
+        session.presenter_viewport = Viewport {
+            center_x: 0.5,
+            center_y: 0.5,
+            zoom: 1.0,
+            timestamp: now_millis(),
+        };
+
+        info!("Session {} slide changed to {}", session_id, slide.id);
+
+        Ok(slide)
+    }
+
     /// Update participant cursor
     pub async fn update_cursor(
         &self,
@@ -833,6 +861,126 @@ mod tests {
             actual_grace_period_ms, expected_grace_period_ms,
             "Presenter grace period must be 30 seconds (30,000 ms). Got: {} ms",
             actual_grace_period_ms
+        );
+    }
+
+    /// Test: Presenter can change slides mid-session
+    /// When presenter changes slides, all followers should receive the new slide info
+    #[tokio::test]
+    async fn test_change_slide_updates_session() {
+        let manager = SessionManager::new();
+        let presenter_id = Uuid::new_v4();
+
+        // Create session with initial slide
+        let (session, _, _) = manager
+            .create_session(test_slide(), presenter_id)
+            .await
+            .expect("Session creation should succeed");
+
+        // Verify initial slide
+        let snapshot = manager.get_session(&session.id).await.unwrap();
+        assert_eq!(snapshot.slide.id, "test");
+        assert_eq!(snapshot.slide.name, "Test Slide");
+
+        // Create a new slide to switch to
+        let new_slide = SlideInfo {
+            id: "new_slide".to_string(),
+            name: "New Slide".to_string(),
+            width: 200000,
+            height: 150000,
+            tile_size: 512,
+            num_levels: 12,
+            tile_url_template: "/tile/{level}/{x}/{y}".to_string(),
+        };
+
+        // Change the slide
+        let result = manager.change_slide(&session.id, new_slide.clone()).await;
+        assert!(result.is_ok(), "Slide change should succeed");
+
+        // Verify the slide was updated
+        let snapshot = manager.get_session(&session.id).await.unwrap();
+        assert_eq!(snapshot.slide.id, "new_slide", "Slide ID should be updated");
+        assert_eq!(
+            snapshot.slide.name, "New Slide",
+            "Slide name should be updated"
+        );
+        assert_eq!(snapshot.slide.width, 200000, "Slide width should be updated");
+        assert_eq!(
+            snapshot.slide.height, 150000,
+            "Slide height should be updated"
+        );
+
+        // Verify viewport was reset to center
+        assert_eq!(
+            snapshot.presenter_viewport.center_x, 0.5,
+            "Viewport center_x should reset to 0.5"
+        );
+        assert_eq!(
+            snapshot.presenter_viewport.center_y, 0.5,
+            "Viewport center_y should reset to 0.5"
+        );
+        assert_eq!(
+            snapshot.presenter_viewport.zoom, 1.0,
+            "Viewport zoom should reset to 1.0"
+        );
+    }
+
+    /// Test: Slide change increments session revision
+    /// This ensures followers can detect state changes
+    #[tokio::test]
+    async fn test_change_slide_increments_revision() {
+        let manager = SessionManager::new();
+        let presenter_id = Uuid::new_v4();
+
+        let (session, _, _) = manager
+            .create_session(test_slide(), presenter_id)
+            .await
+            .expect("Session creation should succeed");
+
+        let initial_rev = manager.get_session(&session.id).await.unwrap().rev;
+
+        // Change slide
+        let new_slide = SlideInfo {
+            id: "another_slide".to_string(),
+            name: "Another Slide".to_string(),
+            width: 50000,
+            height: 50000,
+            tile_size: 256,
+            num_levels: 8,
+            tile_url_template: "/tile/{level}/{x}/{y}".to_string(),
+        };
+
+        manager
+            .change_slide(&session.id, new_slide)
+            .await
+            .expect("Slide change should succeed");
+
+        let new_rev = manager.get_session(&session.id).await.unwrap().rev;
+        assert!(
+            new_rev > initial_rev,
+            "Session revision should increment after slide change"
+        );
+    }
+
+    /// Test: Slide change on non-existent session returns error
+    #[tokio::test]
+    async fn test_change_slide_invalid_session() {
+        let manager = SessionManager::new();
+
+        let new_slide = SlideInfo {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            width: 1000,
+            height: 1000,
+            tile_size: 256,
+            num_levels: 4,
+            tile_url_template: "/tile/{level}/{x}/{y}".to_string(),
+        };
+
+        let result = manager.change_slide("nonexistent", new_slide).await;
+        assert!(
+            matches!(result, Err(SessionError::NotFound(_))),
+            "Should return NotFound error for invalid session"
         );
     }
 

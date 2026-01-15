@@ -158,6 +158,7 @@ export function Session() {
     updateCursor,
     updateViewport,
     updateLayerVisibility,
+    changeSlide,
     snapToPresenter,
     setIsFollowing,
   } = useSession({
@@ -640,18 +641,13 @@ export function Session() {
       })
   }, [shareUrl])
 
-  // Handle slide change - creates a new session with the selected slide
+  // Handle slide change - sends change_slide message to server
   const handleSlideChange = useCallback(
     (newSlideId: string) => {
       if (!newSlideId || newSlideId === slide?.id) return
-
-      // Navigate to create a new session with the selected slide
-      // Include presenter key in hash if available
-      const presenterSecret = secrets?.presenterKey ?? presenterKey
-      const hash = presenterSecret ? `#presenter=${presenterSecret}` : ''
-      window.location.href = `/s/new?slide=${newSlideId}${hash}`
+      changeSlide(newSlideId)
     },
-    [slide?.id, secrets?.presenterKey, presenterKey]
+    [slide?.id, changeSlide]
   )
 
   // Handle zoom reset
@@ -800,24 +796,30 @@ export function Session() {
             </div>
           )}
 
-          {/* Slide selector (presenter only) */}
-          {isPresenter && availableSlides.length > 1 && (
+          {/* Slide selector (presenter) or current slide display (followers) */}
+          {slide && (
             <div className="mb-4">
               <p className="font-bold text-gray-300 mb-2" style={{ fontSize: '1rem' }}>
-                Choose Slide
+                {isPresenter && availableSlides.length > 1 ? 'Choose Slide' : 'Current Slide'}
               </p>
-              <select
-                value={slide?.id || ''}
-                onChange={(e) => handleSlideChange(e.target.value)}
-                className="w-full text-gray-300 text-sm rounded px-2 py-1.5 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                style={{ backgroundColor: '#3C3C3C' }}
-              >
-                {availableSlides.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              {isPresenter && availableSlides.length > 1 ? (
+                <select
+                  value={slide.id}
+                  onChange={(e) => handleSlideChange(e.target.value)}
+                  className="w-full text-gray-300 text-sm rounded px-2 py-1.5 border-0 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                  style={{ backgroundColor: '#3C3C3C' }}
+                >
+                  {availableSlides.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-gray-400 text-sm truncate" title={slide.name}>
+                  {slide.name}
+                </p>
+              )}
             </div>
           )}
 

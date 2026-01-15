@@ -98,6 +98,7 @@ interface UseSessionReturn {
   updateCursor: (x: number, y: number) => void
   updateViewport: (centerX: number, centerY: number, zoom: number) => void
   updateLayerVisibility: (visibility: LayerVisibility) => void
+  changeSlide: (slideId: string) => void
   snapToPresenter: () => void
   setIsFollowing: (following: boolean) => void
 }
@@ -269,6 +270,15 @@ export function useSession({
           break
         }
 
+        case 'slide_changed': {
+          const newSlide = message.slide as SlideInfo
+          setSession((prev) => {
+            if (!prev) return prev
+            return { ...prev, slide: newSlide }
+          })
+          break
+        }
+
         case 'ping': {
           sendMessageRef.current?.({ type: 'ping' })
           break
@@ -382,6 +392,17 @@ export function useSession({
     [sendMessage]
   )
 
+  // Change slide (presenter only)
+  const changeSlide = useCallback(
+    (slideId: string) => {
+      sendMessage({
+        type: 'change_slide',
+        slide_id: slideId,
+      })
+    },
+    [sendMessage]
+  )
+
   // Snap to presenter
   const snapToPresenter = useCallback(() => {
     sendMessage({
@@ -408,6 +429,7 @@ export function useSession({
       updateCursor,
       updateViewport,
       updateLayerVisibility,
+      changeSlide,
       snapToPresenter,
       setIsFollowing,
     }
@@ -429,6 +451,7 @@ export function useSession({
     updateCursor,
     updateViewport,
     updateLayerVisibility,
+    changeSlide,
     snapToPresenter,
     setIsFollowing,
   }

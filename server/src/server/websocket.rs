@@ -840,5 +840,107 @@ async fn handle_client_message(
                 })
                 .await;
         }
+        ClientMessage::ChangeSlide { slide_id, seq } => {
+            // Get session ID and presenter status
+            let (session_id, is_presenter) = {
+                let connections = state.connections.read().await;
+                let conn = connections.get(&connection_id);
+                (
+                    conn.and_then(|c| c.session_id.clone()),
+                    conn.is_some_and(|c| c.is_presenter),
+                )
+            };
+
+            // Only presenter can change slides
+            if !is_presenter {
+                let _ = tx
+                    .send(ServerMessage::Ack {
+                        ack_seq: seq,
+                        status: crate::protocol::AckStatus::Rejected,
+                        reason: Some("Only presenter can change slides".to_string()),
+                    })
+                    .await;
+                return;
+            }
+
+            if let Some(session_id) = session_id {
+                // Fetch slide metadata
+                let slide = if let Some(ref slide_service) = state.slide_service {
+                    match slide_service.get_slide(&slide_id).await {
+                        Ok(metadata) => SlideInfo {
+                            id: metadata.id,
+                            name: metadata.name,
+                            width: metadata.width,
+                            height: metadata.height,
+                            tile_size: metadata.tile_size,
+                            num_levels: metadata.num_levels,
+                            tile_url_template: format!(
+                                "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
+                                slide_id
+                            ),
+                        },
+                        Err(e) => {
+                            let _ = tx
+                                .send(ServerMessage::Ack {
+                                    ack_seq: seq,
+                                    status: crate::protocol::AckStatus::Rejected,
+                                    reason: Some(format!("Slide not found: {}", e)),
+                                })
+                                .await;
+                            return;
+                        }
+                    }
+                } else {
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Rejected,
+                            reason: Some("Slide service not configured".to_string()),
+                        })
+                        .await;
+                    return;
+                };
+
+                // Update session with new slide
+                match state.session_manager.change_slide(&session_id, slide.clone()).await {
+                    Ok(new_slide) => {
+                        // Broadcast slide change to all participants
+                        state
+                            .broadcast_to_session(
+                                &session_id,
+                                ServerMessage::SlideChanged { slide: new_slide },
+                            )
+                            .await;
+
+                        let _ = tx
+                            .send(ServerMessage::Ack {
+                                ack_seq: seq,
+                                status: crate::protocol::AckStatus::Ok,
+                                reason: None,
+                            })
+                            .await;
+
+                        info!("Session {} slide changed to {} by presenter", session_id, slide_id);
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(ServerMessage::Ack {
+                                ack_seq: seq,
+                                status: crate::protocol::AckStatus::Rejected,
+                                reason: Some(e.to_string()),
+                            })
+                            .await;
+                    }
+                }
+            } else {
+                let _ = tx
+                    .send(ServerMessage::Ack {
+                        ack_seq: seq,
+                        status: crate::protocol::AckStatus::Rejected,
+                        reason: Some("Not in a session".to_string()),
+                    })
+                    .await;
+            }
+        }
     }
 }

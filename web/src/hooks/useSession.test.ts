@@ -19,6 +19,7 @@ import {
   mockViewport,
   mockLayerVisibility,
   mockCursors,
+  createMockSlide,
 } from '../test/fixtures'
 
 describe('useSession', () => {
@@ -590,6 +591,134 @@ describe('useSession', () => {
       })
 
       expect(onOverlayLoaded).toHaveBeenCalledWith('test-overlay', manifest)
+    })
+  })
+
+  describe('slide change', () => {
+    it('should update session slide when slide_changed message is received', async () => {
+      const { result } = renderHook(() => useSession({}))
+
+      // Setup: Join a session
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+        mockWs.getInstance()?.simulateMessage({
+          type: 'session_joined',
+          session: mockSession,
+          you: mockFollower1,
+        })
+      })
+
+      // Verify initial slide
+      expect(result.current.session?.slide.id).toBe(mockSession.slide.id)
+      expect(result.current.session?.slide.name).toBe(mockSession.slide.name)
+
+      // Create a new slide to switch to
+      const newSlide = createMockSlide({
+        id: 'new-slide-001',
+        name: 'New Slide from Presenter',
+        width: 200000,
+        height: 150000,
+      })
+
+      // Simulate presenter changing the slide
+      await act(async () => {
+        mockWs.getInstance()?.simulateMessage({
+          type: 'slide_changed',
+          slide: newSlide,
+        })
+      })
+
+      // Verify slide was updated
+      expect(result.current.session?.slide.id).toBe('new-slide-001')
+      expect(result.current.session?.slide.name).toBe('New Slide from Presenter')
+      expect(result.current.session?.slide.width).toBe(200000)
+      expect(result.current.session?.slide.height).toBe(150000)
+    })
+
+    it('should send change_slide message when changeSlide is called', async () => {
+      const { result } = renderHook(() => useSession({}))
+
+      // Connect
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+      })
+
+      // Call changeSlide
+      act(() => {
+        result.current.changeSlide('new-slide-002')
+      })
+
+      // Verify message was sent
+      const sentMessages = mockWs.getInstance()?.getSentMessages()
+      const changeSlideMessage = sentMessages?.find((m) => m.type === 'change_slide')
+      expect(changeSlideMessage).toBeDefined()
+      expect(changeSlideMessage?.slide_id).toBe('new-slide-002')
+    })
+
+    it('should preserve other session state when slide changes', async () => {
+      const { result } = renderHook(() => useSession({}))
+
+      // Setup: Join session with specific state
+      const sessionWithFollowers = {
+        ...mockSession,
+        followers: [mockFollower1],
+        rev: 5,
+      }
+
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+        mockWs.getInstance()?.simulateMessage({
+          type: 'session_joined',
+          session: sessionWithFollowers,
+          you: mockFollower1,
+        })
+      })
+
+      // Verify initial state
+      expect(result.current.session?.followers).toHaveLength(1)
+      expect(result.current.session?.presenter.id).toBe(mockSession.presenter.id)
+
+      // Change slide
+      const newSlide = createMockSlide({ id: 'changed-slide' })
+      await act(async () => {
+        mockWs.getInstance()?.simulateMessage({
+          type: 'slide_changed',
+          slide: newSlide,
+        })
+      })
+
+      // Verify other state is preserved
+      expect(result.current.session?.slide.id).toBe('changed-slide')
+      expect(result.current.session?.followers).toHaveLength(1)
+      expect(result.current.session?.presenter.id).toBe(mockSession.presenter.id)
+      expect(result.current.session?.id).toBe(mockSession.id)
+    })
+
+    it('should not update state if no session exists when slide_changed is received', async () => {
+      const { result } = renderHook(() => useSession({}))
+
+      // Connect but don't join session
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+      })
+
+      expect(result.current.session).toBeNull()
+
+      // Simulate slide_changed without an active session
+      const newSlide = createMockSlide({ id: 'orphan-slide' })
+      await act(async () => {
+        mockWs.getInstance()?.simulateMessage({
+          type: 'slide_changed',
+          slide: newSlide,
+        })
+      })
+
+      // Session should still be null
+      expect(result.current.session).toBeNull()
     })
   })
 })
