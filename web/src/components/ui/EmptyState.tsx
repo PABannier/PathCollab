@@ -176,6 +176,7 @@ export type EmptyStatePreset =
   | 'session-not-found'
   | 'loading'
   | 'connecting'
+  | 'loading-viewport'
 
 export interface PresetEmptyStateProps {
   /** Which preset to use */
@@ -243,6 +244,11 @@ const presetConfigs: Record<EmptyStatePreset, Omit<EmptyStateProps, 'action' | '
     icon: Icons.loading,
     title: 'Connecting',
     description: 'Connecting to the server...',
+  },
+  'loading-viewport': {
+    icon: Icons.loading,
+    title: 'Preparing Viewport',
+    description: 'Loading slide data...',
   },
 }
 

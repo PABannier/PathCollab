@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { SlideViewer, type SlideInfo, type SlideViewerHandle } from '../components/viewer'
+import { SlideViewer, type SlideInfo, type SlideViewerHandle, ViewportLoader } from '../components/viewer'
 import { CursorLayer } from '../components/viewer/CursorLayer'
 import { OverlayCanvas } from '../components/viewer/OverlayCanvas'
 import { TissueHeatmapLayer } from '../components/viewer/TissueHeatmapLayer'
@@ -1043,15 +1043,17 @@ export function Session() {
         >
           {/* Show loading or empty state while waiting for slide */}
           {!slide && (
-            <div className="flex h-full items-center justify-center bg-gray-900">
+            <>
               {connectionStatus === 'connecting' || connectionStatus === 'reconnecting' ? (
-                <PresetEmptyState preset="connecting" />
+                <ViewportLoader message="Connecting..." subMessage="Establishing connection to session" />
               ) : isLoadingDefaultSlide || isCreatingSession ? (
-                <PresetEmptyState preset="loading" />
+                <ViewportLoader message="Loading slide..." subMessage="Preparing viewport" />
               ) : (
-                <PresetEmptyState preset="no-slides" />
+                <div className="flex h-full items-center justify-center bg-gray-900">
+                  <PresetEmptyState preset="no-slides" />
+                </div>
               )}
-            </div>
+            </>
           )}
           {slide && (
             <SlideViewer ref={viewerRef} slide={slide} onViewportChange={handleViewportChange} />
