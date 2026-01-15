@@ -1,6 +1,7 @@
 //! Overlay types and error definitions
 
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 /// Errors that can occur during overlay processing
@@ -44,6 +45,9 @@ pub struct ParsedOverlay {
     pub slide_width: u32,
     pub slide_height: u32,
     pub tile_size: u32,
+
+    /// Microns per pixel (from slide metadata)
+    pub mpp: Option<f32>,
 
     /// Class definitions
     pub tissue_classes: Vec<TissueClassDef>,
@@ -119,4 +123,82 @@ pub mod limits {
     pub const MAX_PARSE_SECONDS: u64 = 60;
     pub const CELL_CLASS_MAX: u32 = 14;
     pub const TISSUE_CLASS_MAX: u32 = 7;
+}
+
+/// Helper functions for overlay processing
+
+/// Compute bounding box from a list of (x, y) coordinates
+pub fn compute_bbox(coords: &[(f32, f32)]) -> (f32, f32, f32, f32) {
+    if coords.is_empty() {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+    let (mut min_x, mut max_x) = (f32::INFINITY, f32::NEG_INFINITY);
+    let (mut min_y, mut max_y) = (f32::INFINITY, f32::NEG_INFINITY);
+    for (x, y) in coords {
+        min_x = min_x.min(*x);
+        max_x = max_x.max(*x);
+        min_y = min_y.min(*y);
+        max_y = max_y.max(*y);
+    }
+    (min_x, max_x, min_y, max_y)
+}
+
+/// Compute polygon area using the shoelace formula
+pub fn compute_polygon_area(coords: &[(f32, f32)]) -> f32 {
+    if coords.len() < 3 {
+        return 0.0;
+    }
+    let mut area = 0.0f32;
+    let n = coords.len();
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area += coords[i].0 * coords[j].1;
+        area -= coords[j].0 * coords[i].1;
+    }
+    (area / 2.0).abs()
+}
+
+/// Default colors for tissue classes (8 classes)
+pub fn default_tissue_color(id: u32) -> String {
+    const COLORS: &[&str] = &[
+        "#EF4444", // Red (Tumor)
+        "#F59E0B", // Amber (Stroma)
+        "#6B7280", // Gray (Necrosis)
+        "#3B82F6", // Blue (Lymphocytes)
+        "#A855F7", // Purple (Mucus)
+        "#EC4899", // Pink (Smooth Muscle)
+        "#FBBF24", // Yellow (Adipose)
+        "#E5E7EB", // Light gray (Background)
+    ];
+    COLORS.get(id as usize).unwrap_or(&"#9CA3AF").to_string()
+}
+
+/// Default colors for cell classes (15 classes)
+pub fn default_cell_color(id: u32) -> String {
+    const COLORS: &[&str] = &[
+        "#DC2626", // Red (Cancer cell)
+        "#2563EB", // Blue (Lymphocyte)
+        "#7C3AED", // Violet (Macrophage)
+        "#0891B2", // Cyan (Neutrophil)
+        "#4F46E5", // Indigo (Plasma cell)
+        "#D97706", // Amber (Fibroblast)
+        "#059669", // Green (Endothelial)
+        "#DB2777", // Pink (Epithelial)
+        "#EA580C", // Orange (Myofibroblast)
+        "#8B5CF6", // Purple (Dendritic)
+        "#0D9488", // Teal (Mast cell)
+        "#E11D48", // Rose (Mitotic)
+        "#6B7280", // Gray (Apoptotic)
+        "#7C2D12", // Brown (Giant cell)
+        "#9CA3AF", // Light gray (Unknown)
+    ];
+    COLORS.get(id as usize).unwrap_or(&"#9CA3AF").to_string()
+}
+
+/// Get current Unix timestamp in milliseconds
+pub fn current_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }

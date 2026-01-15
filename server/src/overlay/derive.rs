@@ -312,6 +312,7 @@ mod tests {
                 slide_width: 10000,
                 slide_height: 10000,
                 tile_size: 256,
+                mpp: Some(0.25),
                 tissue_classes: vec![],
                 cell_classes: vec![],
                 total_cells: 2,

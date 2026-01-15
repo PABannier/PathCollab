@@ -1,20 +1,23 @@
 //! Streaming protobuf parser for overlay files
 //!
-//! Handles large overlay files by streaming and processing in chunks
-//! rather than loading everything into memory at once.
+//! Handles overlay files containing cell segmentation polygons and tissue maps
+//! from ML inference pipelines.
 
 use crate::overlay::types::{
-    CellClassDef, CellData, OverlayError, ParsedOverlay, TissueClassDef, TissueTileData, limits,
+    CellClassDef, CellData, OverlayError, ParsedOverlay, TissueClassDef, TissueTileData,
+    compute_bbox, compute_polygon_area, current_timestamp_ms,
+    default_cell_color, default_tissue_color, limits,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::path::Path;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
-// Include generated protobuf code
+// Include generated protobuf code (proto2 format from DataProtoPolygon package)
 pub mod proto {
-    include!(concat!(env!("OUT_DIR"), "/pathcollab.overlay.rs"));
+    include!(concat!(env!("OUT_DIR"), "/data_proto_polygon.rs"));
 }
 
 /// Parser for overlay protobuf files
@@ -84,9 +87,9 @@ impl OverlayParser {
         let content_sha256 = hex::encode(hash_bytes);
 
         // Parse protobuf
-        let overlay_file = proto::OverlayFile::decode(data.as_slice())?;
+        let slide_data = proto::SlideSegmentationData::decode(data.as_slice())?;
 
-        self.process_overlay(overlay_file, content_sha256)
+        self.process_slide_data(slide_data, content_sha256)
     }
 
     /// Parse overlay from raw bytes
@@ -107,28 +110,52 @@ impl OverlayParser {
         let content_sha256 = hex::encode(hash_bytes);
 
         // Parse protobuf
-        let overlay_file = proto::OverlayFile::decode(data)?;
+        let slide_data = proto::SlideSegmentationData::decode(data)?;
 
-        self.process_overlay(overlay_file, content_sha256)
+        self.process_slide_data(slide_data, content_sha256)
     }
 
-    /// Process parsed protobuf into internal structures
-    fn process_overlay(
+    /// Process parsed SlideSegmentationData into internal structures
+    fn process_slide_data(
         &self,
-        overlay: proto::OverlayFile,
+        slide_data: proto::SlideSegmentationData,
         content_sha256: String,
     ) -> Result<ParsedOverlayData, OverlayError> {
-        // Validate cell count
-        let cell_count = overlay.cells.len() as u64;
-        if cell_count > self.max_cells {
+        // Build cell type name -> class_id mapping (discovered dynamically)
+        let mut cell_type_map: HashMap<String, u32> = HashMap::new();
+        let mut next_cell_class_id = 0u32;
+
+        // Build tissue class definitions from the mapping in the proto
+        let tissue_classes: Vec<TissueClassDef> = slide_data
+            .tissue_class_mapping
+            .iter()
+            .map(|(id, name)| TissueClassDef {
+                id: *id as u32,
+                name: name.clone(),
+                color: default_tissue_color(*id as u32),
+            })
+            .collect();
+
+        // Track slide dimensions (computed from tiles)
+        let mut max_x: f32 = 0.0;
+        let mut max_y: f32 = 0.0;
+        let mut tile_size: u32 = 256; // Default
+
+        // Collect all cells and tissue tiles
+        let mut cells: Vec<CellData> = Vec::new();
+        let mut tissue_tiles: Vec<TissueTileData> = Vec::new();
+
+        // Count total cells across all tiles for validation
+        let total_cell_count: usize = slide_data.tiles.iter().map(|t| t.masks.len()).sum();
+        if total_cell_count as u64 > self.max_cells {
             return Err(OverlayError::TooManyCells {
-                count: cell_count,
+                count: total_cell_count as u64,
                 max: self.max_cells,
             });
         }
 
         // Validate tile count
-        let tile_count = overlay.tissue_tiles.len() as u64;
+        let tile_count = slide_data.tiles.len() as u64;
         if tile_count > self.max_tiles {
             return Err(OverlayError::TooManyTiles {
                 count: tile_count,
@@ -137,86 +164,117 @@ impl OverlayParser {
         }
 
         debug!(
-            "Processing overlay: {} cells, {} tiles",
-            cell_count, tile_count
+            "Processing slide {} with {} tiles, {} total cells",
+            slide_data.slide_id, tile_count, total_cell_count
         );
 
-        // Extract tissue classes
-        let tissue_classes: Vec<TissueClassDef> = overlay
-            .tissue_classes
+        // Process each tile
+        for tile in slide_data.tiles {
+            // Update tile size from first tile
+            if tile_size == 256 && tile.width > 0 {
+                tile_size = tile.width as u32;
+            }
+
+            // Tile position in slide coordinates
+            let tile_origin_x = tile.x;
+            let tile_origin_y = tile.y;
+
+            // Update max dimensions
+            max_x = max_x.max(tile_origin_x + tile.width as f32);
+            max_y = max_y.max(tile_origin_y + tile.height as f32);
+
+            // Convert tile position to tile indices
+            let tile_x = (tile_origin_x / tile.width as f32) as u32;
+            let tile_y = (tile_origin_y / tile.height as f32) as u32;
+
+            // Process cell polygons (masks)
+            for polygon in tile.masks {
+                // Get or create class_id for this cell_type
+                let class_id = *cell_type_map
+                    .entry(polygon.cell_type.clone())
+                    .or_insert_with(|| {
+                        let id = next_cell_class_id;
+                        next_cell_class_id += 1;
+                        id
+                    });
+
+                // Convert centroid from tile-relative to absolute slide coordinates
+                let abs_centroid_x = tile_origin_x + polygon.centroid.x;
+                let abs_centroid_y = tile_origin_y + polygon.centroid.y;
+
+                // Convert polygon coordinates from tile-relative to absolute
+                // and collect as (x, y) tuples for bbox/area computation
+                let abs_coords: Vec<(f32, f32)> = polygon
+                    .coordinates
+                    .iter()
+                    .map(|p| (tile_origin_x + p.x, tile_origin_y + p.y))
+                    .collect();
+
+                // Pack vertices as i32 array for rendering
+                let vertices: Vec<i32> = abs_coords
+                    .iter()
+                    .flat_map(|(x, y)| [*x as i32, *y as i32])
+                    .collect();
+
+                // Compute bounding box from absolute coordinates
+                let (bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y) = compute_bbox(&abs_coords);
+
+                // Compute area from tile-relative coordinates (scale-invariant)
+                let rel_coords: Vec<(f32, f32)> = polygon
+                    .coordinates
+                    .iter()
+                    .map(|p| (p.x, p.y))
+                    .collect();
+                let area = compute_polygon_area(&rel_coords);
+
+                cells.push(CellData {
+                    centroid_x: abs_centroid_x,
+                    centroid_y: abs_centroid_y,
+                    class_id,
+                    confidence: polygon.confidence.clamp(0.0, 1.0),
+                    bbox_min_x,
+                    bbox_min_y,
+                    bbox_max_x,
+                    bbox_max_y,
+                    vertices,
+                    area,
+                });
+            }
+
+            // Extract tissue segmentation data
+            let tissue_map = &tile.tissue_segmentation_map;
+            tissue_tiles.push(TissueTileData {
+                tile_x,
+                tile_y,
+                level: tile.level as u32,
+                class_data: tissue_map.data.to_vec(),
+                confidence_data: None, // Not provided in this proto format
+            });
+        }
+
+        // Build cell class definitions from discovered types
+        let mut cell_classes: Vec<CellClassDef> = cell_type_map
             .into_iter()
-            .map(|tc| TissueClassDef {
-                id: tc.id,
-                name: tc.name,
-                color: tc.color,
+            .map(|(name, id)| CellClassDef {
+                id,
+                name,
+                color: default_cell_color(id),
             })
             .collect();
-
-        // Extract cell classes
-        let cell_classes: Vec<CellClassDef> = overlay
-            .cell_classes
-            .into_iter()
-            .map(|cc| CellClassDef {
-                id: cc.id,
-                name: cc.name,
-                color: cc.color,
-            })
-            .collect();
-
-        // Extract cells
-        let cells: Vec<CellData> = overlay
-            .cells
-            .into_iter()
-            .filter_map(|cell| {
-                // Validate class ID
-                if cell.class_id > limits::CELL_CLASS_MAX {
-                    warn!("Skipping cell with invalid class_id: {}", cell.class_id);
-                    return None;
-                }
-
-                Some(CellData {
-                    centroid_x: cell.centroid_x,
-                    centroid_y: cell.centroid_y,
-                    class_id: cell.class_id,
-                    confidence: cell.confidence.clamp(0.0, 1.0),
-                    bbox_min_x: cell.bbox_min_x,
-                    bbox_min_y: cell.bbox_min_y,
-                    bbox_max_x: cell.bbox_max_x,
-                    bbox_max_y: cell.bbox_max_y,
-                    vertices: cell.vertices,
-                    area: cell.area,
-                })
-            })
-            .collect();
-
-        // Extract tissue tiles
-        let tissue_tiles: Vec<TissueTileData> = overlay
-            .tissue_tiles
-            .into_iter()
-            .map(|tile| TissueTileData {
-                tile_x: tile.tile_x,
-                tile_y: tile.tile_y,
-                level: tile.level,
-                class_data: tile.class_data.to_vec(),
-                confidence_data: if tile.confidence_data.is_empty() {
-                    None
-                } else {
-                    Some(tile.confidence_data.to_vec())
-                },
-            })
-            .collect();
+        // Sort by id for consistent ordering
+        cell_classes.sort_by_key(|c| c.id);
 
         // Create metadata
-        // Use actual parsed counts (after filtering invalid entries) for accuracy
         let metadata = ParsedOverlay {
             content_sha256,
-            slide_id: overlay.slide_id,
-            model_name: overlay.model_name,
-            model_version: overlay.model_version,
-            created_at: overlay.created_at,
-            slide_width: overlay.slide_width,
-            slide_height: overlay.slide_height,
-            tile_size: overlay.tile_size,
+            slide_id: slide_data.slide_id,
+            model_name: slide_data.cell_model_name,
+            model_version: "1.0".to_string(), // Not in proto, use default
+            created_at: current_timestamp_ms(),
+            slide_width: max_x as u32,
+            slide_height: max_y as u32,
+            tile_size,
+            mpp: Some(slide_data.mpp),
             tissue_classes,
             cell_classes,
             total_cells: cells.len() as u64,
@@ -224,9 +282,10 @@ impl OverlayParser {
         };
 
         info!(
-            "Parsed overlay: {} cells, {} tiles, hash={}",
+            "Parsed overlay: {} cells, {} tiles, {} cell types, hash={}",
             cells.len(),
             tissue_tiles.len(),
+            metadata.cell_classes.len(),
             &metadata.content_sha256[..16]
         );
 
@@ -274,5 +333,123 @@ mod tests {
         assert_eq!(parser.max_file_size, 1000);
         assert_eq!(parser.max_cells, 100);
         assert_eq!(parser.max_tiles, 50);
+    }
+
+    fn create_test_slide_data() -> proto::SlideSegmentationData {
+        use proto::segmentation_polygon::Point;
+
+        let mut slide = proto::SlideSegmentationData::default();
+        slide.slide_id = "test-slide".to_string();
+        slide.slide_path = "/path/to/slide.svs".to_string();
+        slide.mpp = 0.25;
+        slide.max_level = 5;
+        slide.cell_model_name = "hovernet".to_string();
+        slide.tissue_model_name = "tissue_v1".to_string();
+
+        // Add a tile with one cell
+        let mut tile = proto::TileSegmentationData::default();
+        tile.tile_id = "tile_0_0".to_string();
+        tile.level = 0;
+        tile.x = 0.0;
+        tile.y = 0.0;
+        tile.width = 256;
+        tile.height = 256;
+
+        // Add a cell polygon
+        let mut cell = proto::SegmentationPolygon::default();
+        cell.cell_id = 1;
+        cell.cell_type = "Tumor".to_string();
+        cell.confidence = 0.95;
+        cell.centroid = Point { x: 128.0, y: 128.0 };
+        cell.coordinates = vec![
+            Point { x: 100.0, y: 100.0 },
+            Point { x: 150.0, y: 100.0 },
+            Point { x: 150.0, y: 150.0 },
+            Point { x: 100.0, y: 150.0 },
+        ];
+        tile.masks.push(cell);
+
+        // Add tissue data
+        tile.tissue_segmentation_map = proto::TissueSegmentationMap {
+            data: vec![0u8; 256 * 256].into(),
+            width: 256,
+            height: 256,
+            dtype: "uint8".to_string(),
+        };
+
+        slide.tiles.push(tile);
+        slide.tissue_class_mapping.insert(0, "Background".to_string());
+        slide.tissue_class_mapping.insert(1, "Tumor".to_string());
+
+        slide
+    }
+
+    #[test]
+    fn test_parse_slide_segmentation_data() {
+        let slide = create_test_slide_data();
+        let data = slide.encode_to_vec();
+
+        let parser = OverlayParser::new();
+        let result = parser.parse_bytes(&data).unwrap();
+
+        assert_eq!(result.metadata.slide_id, "test-slide");
+        assert_eq!(result.cells.len(), 1);
+        assert_eq!(result.cells[0].class_id, 0); // First discovered type
+        assert!((result.cells[0].confidence - 0.95).abs() < 0.01);
+        assert_eq!(result.tissue_tiles.len(), 1);
+        assert_eq!(result.metadata.cell_classes.len(), 1);
+        assert_eq!(result.metadata.cell_classes[0].name, "Tumor");
+    }
+
+    #[test]
+    fn test_coordinate_transformation() {
+        let slide = create_test_slide_data();
+        let data = slide.encode_to_vec();
+
+        let parser = OverlayParser::new();
+        let result = parser.parse_bytes(&data).unwrap();
+
+        let cell = &result.cells[0];
+        // Centroid should be absolute: tile.x (0) + centroid.x (128) = 128
+        assert!((cell.centroid_x - 128.0).abs() < 0.01);
+        assert!((cell.centroid_y - 128.0).abs() < 0.01);
+
+        // Bbox should be computed from absolute coordinates
+        assert!((cell.bbox_min_x - 100.0).abs() < 0.01);
+        assert!((cell.bbox_max_x - 150.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_multiple_cell_types() {
+        use proto::segmentation_polygon::Point;
+
+        let mut slide = create_test_slide_data();
+
+        // Add a second cell with different type
+        let mut cell2 = proto::SegmentationPolygon::default();
+        cell2.cell_id = 2;
+        cell2.cell_type = "Lymphocyte".to_string();
+        cell2.confidence = 0.88;
+        cell2.centroid = Point { x: 50.0, y: 50.0 };
+        cell2.coordinates = vec![
+            Point { x: 40.0, y: 40.0 },
+            Point { x: 60.0, y: 40.0 },
+            Point { x: 60.0, y: 60.0 },
+            Point { x: 40.0, y: 60.0 },
+        ];
+        slide.tiles[0].masks.push(cell2);
+
+        let data = slide.encode_to_vec();
+        let parser = OverlayParser::new();
+        let result = parser.parse_bytes(&data).unwrap();
+
+        assert_eq!(result.cells.len(), 2);
+        assert_eq!(result.metadata.cell_classes.len(), 2);
+
+        // Check that cell types are mapped correctly
+        let tumor_class = result.metadata.cell_classes.iter().find(|c| c.name == "Tumor");
+        let lymph_class = result.metadata.cell_classes.iter().find(|c| c.name == "Lymphocyte");
+        assert!(tumor_class.is_some());
+        assert!(lymph_class.is_some());
     }
 }

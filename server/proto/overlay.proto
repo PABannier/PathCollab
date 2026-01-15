@@ -1,131 +1,52 @@
-syntax = "proto3";
+syntax = "proto2";
 
-package pathcollab.overlay;
+package DataProtoPolygon;
 
-// Root overlay file containing all analysis results for a whole-slide image
-message OverlayFile {
-  // File metadata
-  string slide_id = 1;
-  string model_name = 2;
-  string model_version = 3;
-  uint64 created_at = 4;  // Unix timestamp millis
+message SegmentationPolygon {
+    required int32  cell_id    = 1;
+    required string cell_type  = 2;
+    required float  confidence = 3;
 
-  // Slide dimensions (microns or pixels)
-  uint32 slide_width = 5;
-  uint32 slide_height = 6;
-  uint32 tile_size = 7;  // Typically 256 or 512 for slide tiles
+    message Point {
+        required float x = 1;
+        required float y = 2;
+    }
 
-  // Class definitions
-  repeated TissueClass tissue_classes = 10;
-  repeated CellClass cell_classes = 11;
+    repeated Point coordinates = 4;
 
-  // Tissue segmentation data (tiles of 224x224 class IDs)
-  repeated TissueTile tissue_tiles = 20;
-
-  // Cell detection results
-  repeated CellPolygon cells = 30;
-
-  // Statistics
-  uint64 total_cells = 40;
-  uint64 total_tissue_tiles = 41;
+    required Point centroid = 5;
 }
 
-// Tissue class definition
-message TissueClass {
-  uint32 id = 1;        // 0-7 for 8 classes
-  string name = 2;      // e.g., "Tumor", "Stroma"
-  string color = 3;     // Hex color e.g., "#EF4444"
+message TileSegmentationData {
+    required string tile_id     = 1;
+    required int32  level       = 2;
+    required float  x           = 3;
+    required float  y           = 4;
+    required int32  width       = 5;
+    required int32  height      = 6;
+
+    repeated SegmentationPolygon masks = 7;
+
+    required TissueSegmentationMap tissue_segmentation_map = 8;
 }
 
-// Cell class definition
-message CellClass {
-  uint32 id = 1;        // 0-14 for 15 classes
-  string name = 2;      // e.g., "Cancer cell", "Lymphocyte"
-  string color = 3;     // Hex color e.g., "#DC2626"
+message TissueSegmentationMap {
+    required bytes data   = 1;  // The flattened array of bytes
+    required int32 width  = 2;  // Width of the segmentation map
+    required int32 height = 3;  // Height of the segmentation map
+    required string dtype = 4;  // Format information (e.g., "uint8")
 }
 
-// Tissue segmentation tile (224x224 patch)
-message TissueTile {
-  // Tile position in the slide coordinate system
-  uint32 tile_x = 1;    // Tile column
-  uint32 tile_y = 2;    // Tile row
-  uint32 level = 3;     // Pyramid level (0 = full resolution)
+message SlideSegmentationData {
+    required string slide_id   = 1;
+    required string slide_path = 2;
+    required float  mpp        = 3;
+    required int32  max_level  = 4;
 
-  // Segmentation data: 224x224 = 50176 bytes
-  // Each byte is a tissue class ID (0-7) or 255 for background
-  bytes class_data = 4;
+    required string cell_model_name   = 5;
+    required string tissue_model_name = 6;
 
-  // Optional: confidence heatmap (same dimensions)
-  // Each byte is quantized confidence (0-255 -> 0.0-1.0)
-  bytes confidence_data = 5;
-}
+    repeated TileSegmentationData tiles = 8;
 
-// Cell detection with polygon outline
-message CellPolygon {
-  // Cell position (slide coordinates, full resolution)
-  float centroid_x = 1;
-  float centroid_y = 2;
-
-  // Classification
-  uint32 class_id = 3;        // 0-14
-  float confidence = 4;       // 0.0-1.0
-
-  // Bounding box (for spatial indexing)
-  float bbox_min_x = 5;
-  float bbox_min_y = 6;
-  float bbox_max_x = 7;
-  float bbox_max_y = 8;
-
-  // Polygon vertices relative to centroid
-  // Encoded as interleaved int16 deltas from centroid
-  // [dx0, dy0, dx1, dy1, ...] where actual = centroid + delta
-  repeated sint32 vertices = 10 [packed = true];
-
-  // Optional: area in square pixels
-  float area = 11;
-
-  // Optional: nuclear features
-  float eccentricity = 12;
-  float solidity = 13;
-}
-
-// Streaming-friendly chunk format for large files
-// Files can be split into chunks for incremental loading
-message OverlayChunk {
-  // Chunk metadata
-  uint32 chunk_index = 1;
-  uint32 total_chunks = 2;
-  string content_sha256 = 3;  // Full file hash (in first chunk)
-
-  // Chunk content type
-  oneof content {
-    OverlayHeader header = 10;
-    TissueTileChunk tissue_chunk = 11;
-    CellChunk cell_chunk = 12;
-  }
-}
-
-// Header chunk with metadata and class definitions
-message OverlayHeader {
-  string slide_id = 1;
-  string model_name = 2;
-  string model_version = 3;
-  uint64 created_at = 4;
-  uint32 slide_width = 5;
-  uint32 slide_height = 6;
-  uint32 tile_size = 7;
-  repeated TissueClass tissue_classes = 10;
-  repeated CellClass cell_classes = 11;
-  uint64 total_cells = 20;
-  uint64 total_tissue_tiles = 21;
-}
-
-// Batch of tissue tiles
-message TissueTileChunk {
-  repeated TissueTile tiles = 1;
-}
-
-// Batch of cells
-message CellChunk {
-  repeated CellPolygon cells = 1;
+    map<int32, string> tissue_class_mapping = 9;
 }
