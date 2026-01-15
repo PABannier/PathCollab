@@ -3,8 +3,8 @@ FROM rust:1.87-slim-bookworm AS builder
 
 WORKDIR /app
 
-# Install build dependencies including protobuf compiler and OpenSlide
-RUN apt-get update && apt-get install -y pkg-config libssl-dev protobuf-compiler libopenslide-dev && rm -rf /var/lib/apt/lists/*
+# Install build dependencies including protobuf compiler, OpenSlide, and libclang for bindgen
+RUN apt-get update && apt-get install -y pkg-config libssl-dev protobuf-compiler libopenslide-dev libclang-dev && rm -rf /var/lib/apt/lists/*
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock* ./
