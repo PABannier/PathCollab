@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// Session manager errors
@@ -129,15 +129,22 @@ impl SessionManager {
             session_id, presenter_connection_id
         );
 
-        // Store session
-        {
+        // Store session and clone it before releasing lock
+        let session = {
             let mut sessions = self.sessions.write().await;
             sessions.insert(session_id.clone(), session);
-        }
+            // Clone immediately while we still hold the lock
+            sessions.get(&session_id).cloned()
+        };
 
-        // Return session data (need to read it back)
-        let sessions = self.sessions.read().await;
-        let session = sessions.get(&session_id).unwrap().clone();
+        // The session should always exist since we just inserted it
+        let session = session.ok_or_else(|| {
+            error!(
+                "Session {} disappeared immediately after creation",
+                session_id
+            );
+            SessionError::NotFound(session_id)
+        })?;
 
         histogram!("pathcollab_session_create_duration_seconds").record(start.elapsed());
         Ok((session, join_secret, presenter_key))
@@ -474,14 +481,15 @@ fn create_session_snapshot(session: &Session) -> SessionSnapshot {
     }
 }
 
-/// Simple hash function for secrets (use argon2 in production)
+/// Hash secrets using SHA256 for secure comparison
 fn hash_secret(secret: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use sha2::{Digest, Sha256};
 
-    let mut hasher = DefaultHasher::new();
-    secret.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(secret.as_bytes());
+    let result = hasher.finalize();
+    // Return hex-encoded hash
+    result.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Verify secret against hash

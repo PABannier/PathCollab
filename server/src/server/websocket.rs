@@ -316,9 +316,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             }
                         }
                     }
-                    Message::Binary(_) => {
-                        // Binary messages (MessagePack) - to be implemented
-                        debug!("Received binary message");
+                    Message::Binary(data) => {
+                        // Binary messages not currently used - log and ignore
+                        // Future: MessagePack-encoded presence updates for performance
+                        debug!("Received binary message ({} bytes), ignoring", data.len());
                     }
                     Message::Ping(data) => {
                         // Handled by axum automatically with pong
@@ -537,11 +538,23 @@ async fn handle_client_message(
                     }
 
                     // Get session snapshot
-                    let snapshot = state
-                        .session_manager
-                        .get_session(&session_id)
-                        .await
-                        .expect("Session just created");
+                    let snapshot = match state.session_manager.get_session(&session_id).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!(
+                                "Failed to retrieve newly created session {}: {}",
+                                session_id, e
+                            );
+                            let _ = tx
+                                .send(ServerMessage::SessionError {
+                                    code: crate::protocol::ErrorCode::InvalidSlide,
+                                    message: "Internal error: session created but not retrievable"
+                                        .to_string(),
+                                })
+                                .await;
+                            return;
+                        }
+                    };
 
                     let _ = tx
                         .send(ServerMessage::SessionCreated {
@@ -639,11 +652,12 @@ async fn handle_client_message(
                 }
                 Err(e) => {
                     let (code, message) = match &e {
-                        SessionError::NotFound(_) => {
-                            (crate::protocol::ErrorCode::SessionNotFound, e.to_string())
-                        }
-                        SessionError::InvalidJoinSecret => {
-                            (crate::protocol::ErrorCode::SessionNotFound, e.to_string())
+                        SessionError::NotFound(_) | SessionError::InvalidJoinSecret => {
+                            // Generic message that doesn't reveal if session exists
+                            (
+                                crate::protocol::ErrorCode::SessionNotFound,
+                                "Session not found or invalid credentials".to_string(),
+                            )
                         }
                         SessionError::SessionFull(_) => {
                             (crate::protocol::ErrorCode::SessionFull, e.to_string())
@@ -651,7 +665,17 @@ async fn handle_client_message(
                         SessionError::SessionExpired => {
                             (crate::protocol::ErrorCode::SessionExpired, e.to_string())
                         }
-                        _ => (crate::protocol::ErrorCode::SessionNotFound, e.to_string()),
+                        SessionError::SessionLocked => {
+                            // Session exists but is locked - safe to reveal since they had valid session ID
+                            (
+                                crate::protocol::ErrorCode::SessionFull,
+                                "Session is locked".to_string(),
+                            )
+                        }
+                        _ => (
+                            crate::protocol::ErrorCode::SessionNotFound,
+                            "Session not found or invalid credentials".to_string(),
+                        ),
                     };
                     let _ = tx.send(ServerMessage::SessionError { code, message }).await;
                     let _ = tx
