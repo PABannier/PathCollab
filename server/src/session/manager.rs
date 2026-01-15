@@ -553,7 +553,7 @@ mod tests {
         );
 
         // Phase 1 spec: Session ID must match pattern /^[a-z2-7]{10}$/
-        // This excludes ambiguous characters: 0, 1, l, o
+        // This excludes digits 0/1 and 8/9 (base32 alphabet a-z, 2-7)
         let valid_chars: &[char] = &[
             'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
             'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '2', '3', '4', '5', '6', '7',
@@ -567,7 +567,7 @@ mod tests {
             );
         }
 
-        // Verify it does NOT contain ambiguous characters (0, 1, 8, 9, uppercase)
+        // Verify it does NOT contain disallowed digits (0, 1, 8, 9)
         for c in ['0', '1', '8', '9'] {
             assert!(
                 !session.id.contains(c),

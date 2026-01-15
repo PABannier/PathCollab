@@ -185,6 +185,10 @@ export function useWebSocket({
       seq,
     }
 
+    if (!configRef.current.enabled) {
+      return seq
+    }
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msgWithSeq))
     } else {

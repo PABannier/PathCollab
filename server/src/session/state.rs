@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-/// Session ID: 10-character base32 string (lowercase, avoids ambiguous chars)
+/// Session ID: 10-character base32 string (lowercase, a-z + 2-7)
 pub type SessionId = String;
 
-/// Charset for session IDs: lowercase base32 without ambiguous characters (0, 1, l, o)
-const SESSION_ID_CHARSET: &[u8] = b"abcdefghijkmnopqrstuvwxyz234567";
+/// Charset for session IDs: lowercase base32 (a-z, 2-7) to avoid 0/1 confusion
+const SESSION_ID_CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyz234567";
 const SESSION_ID_LENGTH: usize = 10;
 
 /// Generate a cryptographically random session ID
@@ -222,7 +222,8 @@ mod tests {
         assert!(!validate_session_id("ABCD234567")); // uppercase
         assert!(!validate_session_id("abcd234560")); // contains 0
         assert!(!validate_session_id("abcd234561")); // contains 1
-        assert!(!validate_session_id("abcdl34567")); // contains l (looks like 1)
+        assert!(!validate_session_id("abcd234568")); // contains 8 (invalid)
+        assert!(!validate_session_id("abcd234569")); // contains 9 (invalid)
     }
 
     #[test]

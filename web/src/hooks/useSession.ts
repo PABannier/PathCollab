@@ -120,6 +120,7 @@ export function useSession({
   const [isFollowing, setIsFollowing] = useState(true) // Default to following when joining
   const pendingPresenterAuthSeqRef = useRef<number | null>(null)
   const presenterAuthSessionRef = useRef<string | null>(null)
+  const sendMessageRef = useRef<((message: WebSocketMessage) => number) | null>(null)
 
   // Build WebSocket URL
   // In development, connect directly to backend on port 8080 (Vite+Bun proxy has WebSocket issues)
@@ -164,6 +165,12 @@ export function useSession({
           const participant = message.participant as Participant
           setSession((prev) => {
             if (!prev) return prev
+            if (prev.presenter.id === participant.id) {
+              return prev
+            }
+            if (prev.followers.some((f) => f.id === participant.id)) {
+              return prev
+            }
             return {
               ...prev,
               followers: [...prev.followers, participant],
@@ -261,6 +268,15 @@ export function useSession({
           onOverlayLoaded?.(overlayId, manifest)
           break
         }
+
+        case 'ping': {
+          sendMessageRef.current?.({ type: 'ping' })
+          break
+        }
+
+        case 'pong': {
+          break
+        }
       }
     },
     [onError, onOverlayLoaded]
@@ -271,6 +287,10 @@ export function useSession({
     enabled: !SOLO_MODE,
     onMessage: handleMessage,
   })
+
+  useEffect(() => {
+    sendMessageRef.current = sendMessage
+  }, [sendMessage])
 
   // Auto-join session on connection if sessionId and joinSecret are provided
   useEffect(() => {

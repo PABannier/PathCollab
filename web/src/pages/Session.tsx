@@ -350,7 +350,7 @@ export function Session() {
     if (defaultSlide) {
       // Calculate numLevels from slide dimensions (DZI formula)
       const maxDim = Math.max(defaultSlide.width, defaultSlide.height)
-      const numLevels = Math.ceil(Math.log2(maxDim / 256)) + 1
+      const numLevels = maxDim > 0 ? Math.ceil(Math.log2(maxDim)) + 1 : 1
       return {
         id: defaultSlide.slide_id,
         name: defaultSlide.name,
