@@ -1,11 +1,11 @@
 //! HTTP route handlers for slide API
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -167,10 +167,7 @@ pub async fn get_tile(
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, "image/jpeg"),
-            (
-                header::CACHE_CONTROL,
-                "public, max-age=31536000, immutable",
-            ),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
         ],
         jpeg_bytes,
     )

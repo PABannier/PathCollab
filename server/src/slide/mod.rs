@@ -12,6 +12,6 @@ mod service;
 mod types;
 
 pub use local::LocalSlideService;
-pub use routes::{slide_routes, SlideAppState};
+pub use routes::{SlideAppState, slide_routes};
 pub use service::SlideService;
 pub use types::{SlideError, SlideListItem, SlideMetadata, TileRequest};

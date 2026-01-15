@@ -887,7 +887,10 @@ mod websocket_protocol {
         // Send ping message
         let ping_msg = ClientMessage::Ping { seq: 1 };
         let ping_json = serde_json::to_string(&ping_msg).unwrap();
-        ws_stream.send(Message::Text(ping_json.into())).await.unwrap();
+        ws_stream
+            .send(Message::Text(ping_json.into()))
+            .await
+            .unwrap();
 
         // Expect pong response
         let mut received_pong = false;
@@ -970,7 +973,8 @@ mod websocket_protocol {
         let sid = session_id.unwrap();
         assert_eq!(sid.len(), 10, "Session ID should be 10 characters");
         assert!(
-            sid.chars().all(|c| "abcdefghijklmnopqrstuvwxyz234567".contains(c)),
+            sid.chars()
+                .all(|c| "abcdefghijklmnopqrstuvwxyz234567".contains(c)),
             "Session ID should be base32"
         );
 
@@ -1005,9 +1009,11 @@ mod websocket_protocol {
             slide_id: "test-slide".to_string(),
             seq: 1,
         };
-        ws1.send(Message::Text(serde_json::to_string(&create_msg).unwrap().into()))
-            .await
-            .unwrap();
+        ws1.send(Message::Text(
+            serde_json::to_string(&create_msg).unwrap().into(),
+        ))
+        .await
+        .unwrap();
 
         // Get session details from first connection
         let mut session_id = String::new();
@@ -1044,9 +1050,11 @@ mod websocket_protocol {
             last_seen_rev: None,
             seq: 1,
         };
-        ws2.send(Message::Text(serde_json::to_string(&join_msg).unwrap().into()))
-            .await
-            .unwrap();
+        ws2.send(Message::Text(
+            serde_json::to_string(&join_msg).unwrap().into(),
+        ))
+        .await
+        .unwrap();
 
         // Wait for session_joined response
         let mut session_joined = false;
@@ -1090,9 +1098,11 @@ mod websocket_protocol {
             slide_id: "test-slide".to_string(),
             seq: 1,
         };
-        ws1.send(Message::Text(serde_json::to_string(&create_msg).unwrap().into()))
-            .await
-            .unwrap();
+        ws1.send(Message::Text(
+            serde_json::to_string(&create_msg).unwrap().into(),
+        ))
+        .await
+        .unwrap();
 
         let mut session_id = String::new();
         let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -1117,9 +1127,11 @@ mod websocket_protocol {
             last_seen_rev: None,
             seq: 1,
         };
-        ws2.send(Message::Text(serde_json::to_string(&join_msg).unwrap().into()))
-            .await
-            .unwrap();
+        ws2.send(Message::Text(
+            serde_json::to_string(&join_msg).unwrap().into(),
+        ))
+        .await
+        .unwrap();
 
         // Should receive error
         let mut received_error = false;
@@ -1156,7 +1168,9 @@ mod websocket_protocol {
         // Send ping with specific seq
         let ping_msg = ClientMessage::Ping { seq: 42 };
         ws_stream
-            .send(Message::Text(serde_json::to_string(&ping_msg).unwrap().into()))
+            .send(Message::Text(
+                serde_json::to_string(&ping_msg).unwrap().into(),
+            ))
             .await
             .unwrap();
 
@@ -1363,7 +1377,9 @@ mod phase2_presence {
             seq: 1,
         };
         presenter
-            .send(Message::Text(serde_json::to_string(&create_msg).unwrap().into()))
+            .send(Message::Text(
+                serde_json::to_string(&create_msg).unwrap().into(),
+            ))
             .await
             .unwrap();
 
@@ -1398,7 +1414,9 @@ mod phase2_presence {
             seq: 1,
         };
         follower
-            .send(Message::Text(serde_json::to_string(&join_msg).unwrap().into()))
+            .send(Message::Text(
+                serde_json::to_string(&join_msg).unwrap().into(),
+            ))
             .await
             .unwrap();
 
@@ -1412,7 +1430,9 @@ mod phase2_presence {
             seq: 2,
         };
         presenter
-            .send(Message::Text(serde_json::to_string(&cursor_msg).unwrap().into()))
+            .send(Message::Text(
+                serde_json::to_string(&cursor_msg).unwrap().into(),
+            ))
             .await
             .unwrap();
 
@@ -1426,7 +1446,9 @@ mod phase2_presence {
                             if !changed.is_empty() {
                                 // Phase 2 spec: cursor should have x, y, and participant info
                                 let cursor = &changed[0];
-                                if (cursor.x - 500.0).abs() < 0.01 && (cursor.y - 300.0).abs() < 0.01 {
+                                if (cursor.x - 500.0).abs() < 0.01
+                                    && (cursor.y - 300.0).abs() < 0.01
+                                {
                                     received_cursor = true;
                                     // Phase 2 spec: cursor should include participant name and color
                                     assert!(!cursor.name.is_empty());
@@ -1441,7 +1463,10 @@ mod phase2_presence {
         });
         let _ = timeout.await;
 
-        assert!(received_cursor, "Follower should receive presenter's cursor update");
+        assert!(
+            received_cursor,
+            "Follower should receive presenter's cursor update"
+        );
 
         server_handle.abort();
     }
@@ -1658,7 +1683,10 @@ mod phase2_presence {
         });
         let _ = timeout.await;
 
-        assert!(received_viewport, "Snap to presenter should return presenter's viewport");
+        assert!(
+            received_viewport,
+            "Snap to presenter should return presenter's viewport"
+        );
 
         server_handle.abort();
     }
@@ -1740,9 +1768,8 @@ mod phase2_presence {
             .unwrap();
 
         // Presenter should NOT receive viewport update from follower
-        let received_follower_viewport = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            async {
+        let received_follower_viewport =
+            tokio::time::timeout(std::time::Duration::from_secs(2), async {
                 while let Some(msg) = presenter.next().await {
                     if let Ok(Message::Text(text)) = msg {
                         if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
@@ -1756,9 +1783,8 @@ mod phase2_presence {
                     }
                 }
                 false
-            },
-        )
-        .await;
+            })
+            .await;
 
         // Should timeout or not receive follower's viewport
         assert!(
@@ -1834,7 +1860,12 @@ mod phase2_participants {
         // Phase 2 spec: Name should be "Adjective Animal" format
         assert!(!presenter_name.is_empty());
         let parts: Vec<&str> = presenter_name.split_whitespace().collect();
-        assert_eq!(parts.len(), 2, "Name should be two words: '{}'", presenter_name);
+        assert_eq!(
+            parts.len(),
+            2,
+            "Name should be two words: '{}'",
+            presenter_name
+        );
 
         // First word should be capitalized adjective
         assert!(
@@ -2040,7 +2071,10 @@ mod phase2_participants {
         });
         let _ = timeout.await;
 
-        assert!(received_join, "Presenter should receive participant_joined event");
+        assert!(
+            received_join,
+            "Presenter should receive participant_joined event"
+        );
 
         // Close follower connection
         drop(write);
@@ -2062,7 +2096,10 @@ mod phase2_participants {
         });
         let _ = timeout.await;
 
-        assert!(received_leave, "Presenter should receive participant_left event");
+        assert!(
+            received_leave,
+            "Presenter should receive participant_left event"
+        );
 
         server_handle.abort();
     }
@@ -2203,7 +2240,9 @@ mod phase2_robustness {
             seq: 2,
         };
         follower
-            .send(Message::Text(serde_json::to_string(&layer_msg).unwrap().into()))
+            .send(Message::Text(
+                serde_json::to_string(&layer_msg).unwrap().into(),
+            ))
             .await
             .unwrap();
 
@@ -2338,7 +2377,10 @@ mod phase2_robustness {
         });
         let _ = timeout.await;
 
-        assert!(rejoined, "Follower should be able to rejoin after disconnect");
+        assert!(
+            rejoined,
+            "Follower should be able to rejoin after disconnect"
+        );
 
         server_handle.abort();
     }

@@ -751,7 +751,8 @@ mod tests {
                 .expect("Join should succeed");
 
             assert_eq!(
-                participant.color, *expected_color,
+                participant.color,
+                *expected_color,
                 "Follower {} must get color {} (cycling through palette). Got: {}",
                 i + 1,
                 expected_color,

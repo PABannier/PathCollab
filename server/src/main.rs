@@ -2,7 +2,7 @@ use axum::{Json, Router, extract::State, routing::get};
 use pathcollab_server::config::{Config, SlideSourceMode};
 use pathcollab_server::overlay::overlay_routes;
 use pathcollab_server::server::{AppState, ws_handler};
-use pathcollab_server::slide::{slide_routes, LocalSlideService, SlideAppState};
+use pathcollab_server::slide::{LocalSlideService, SlideAppState, slide_routes};
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -155,19 +155,13 @@ async fn main() -> anyhow::Result<()> {
     // Initialize slide service based on configuration
     let slide_service: Arc<dyn pathcollab_server::SlideService> = match config.slide.source_mode {
         SlideSourceMode::Local => {
-            info!(
-                "Using local slide source: {:?}",
-                config.slide.slides_dir
-            );
+            info!("Using local slide source: {:?}", config.slide.slides_dir);
             let service = LocalSlideService::new(&config.slide)
                 .expect("Failed to initialize local slide service");
             Arc::new(service)
         }
         SlideSourceMode::WsiStreamer => {
-            info!(
-                "Using WSIStreamer at: {}",
-                config.wsistreamer_url
-            );
+            info!("Using WSIStreamer at: {}", config.wsistreamer_url);
             // For now, fall back to local if WsiStreamer is configured
             // TODO: Implement WsiStreamerSlideService
             info!("WsiStreamer mode not yet implemented, falling back to local");

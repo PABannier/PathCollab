@@ -34,11 +34,7 @@ impl SlideCache {
     }
 
     /// Get or open a slide, caching the handle
-    pub async fn get_or_open(
-        &self,
-        id: &str,
-        path: &Path,
-    ) -> Result<Arc<OpenSlide>, SlideError> {
+    pub async fn get_or_open(&self, id: &str, path: &Path) -> Result<Arc<OpenSlide>, SlideError> {
         // Check cache first
         {
             let slides = self.slides.read().await;
@@ -51,9 +47,8 @@ impl SlideCache {
 
         // Open the slide
         debug!("Opening slide: {} at {:?}", id, path);
-        let slide = OpenSlide::new(path).map_err(|e| {
-            SlideError::OpenError(format!("Failed to open {:?}: {}", path, e))
-        })?;
+        let slide = OpenSlide::new(path)
+            .map_err(|e| SlideError::OpenError(format!("Failed to open {:?}: {}", path, e)))?;
         let slide = Arc::new(slide);
 
         // Insert into cache

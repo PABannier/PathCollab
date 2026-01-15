@@ -16,4 +16,7 @@ pub use overlay::overlay_routes;
 pub use protocol::{ClientMessage, ServerMessage};
 pub use server::AppState;
 pub use session::manager::SessionManager;
-pub use slide::{slide_routes, LocalSlideService, SlideAppState, SlideError, SlideMetadata, SlideService, TileRequest};
+pub use slide::{
+    LocalSlideService, SlideAppState, SlideError, SlideMetadata, SlideService, TileRequest,
+    slide_routes,
+};
