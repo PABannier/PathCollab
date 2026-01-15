@@ -176,13 +176,30 @@ export function Session() {
     return null
   }, [joinSecret, sessionId, slideParam])
 
+  // Auto-create session when connected and slide is available
+  // This makes collaboration seamless - users arrive and can immediately share
   useEffect(() => {
-    if (!autoCreateSlideId || session || connectionStatus !== 'connected') return
+    // Don't auto-create if we're joining an existing session
+    if (sessionId && sessionId !== 'new' && sessionId !== 'demo') return
+    // Don't create if already have a session or not connected
+    if (session || connectionStatus !== 'connected') return
+    // Don't create twice
     if (autoCreateRequestedRef.current) return
+    // Need a slide to create session
+    const slideId = autoCreateSlideId || slideParam || defaultSlide?.slide_id
+    if (!slideId) return
 
     autoCreateRequestedRef.current = true
-    createSession(autoCreateSlideId)
-  }, [autoCreateSlideId, connectionStatus, createSession, session])
+    createSession(slideId)
+  }, [
+    autoCreateSlideId,
+    connectionStatus,
+    createSession,
+    session,
+    sessionId,
+    slideParam,
+    defaultSlide?.slide_id,
+  ])
 
   const layerVisibility = useMemo<LayerVisibility>(
     () => ({
@@ -536,11 +553,6 @@ export function Session() {
     [session, viewerBounds, currentViewport, convertToSlideCoords, updateCursorPosition]
   )
 
-  // Handle create session
-  const handleCreateSession = useCallback(() => {
-    createSession(slideParam || 'demo')
-  }, [createSession, slideParam])
-
   // Handle snap to presenter
   const handleSnapToPresenter = useCallback(() => {
     pendingSnapRef.current = true
@@ -708,14 +720,18 @@ export function Session() {
         left={
           <>
             <h1 className="text-lg font-semibold text-white">PathCollab</h1>
-            {slide && (
-              <span className="text-sm text-gray-400 truncate max-w-[200px]">{slide.name}</span>
-            )}
+            <ConnectionBadge status={connectionStatus} />
           </>
+        }
+        center={
+          slide && (
+            <span className="text-sm text-gray-200 truncate max-w-[400px]" title={slide.name}>
+              {slide.name}
+            </span>
+          )
         }
         right={
           <>
-            <ConnectionBadge status={connectionStatus} />
             {isSoloMode && (
               <span className="rounded bg-purple-600 px-2 py-0.5 text-xs text-white">Solo</span>
             )}
@@ -731,24 +747,19 @@ export function Session() {
                 )}
               </>
             )}
-            {!session && connectionStatus === 'connected' && (
-              <Button size="sm" onClick={handleCreateSession} loading={isCreatingSession}>
-                {isCreatingSession ? 'Creating...' : 'Start Session'}
-              </Button>
-            )}
             {session && !isPresenter && presenterViewport && (
               <Button size="sm" variant="secondary" onClick={handleSnapToPresenter}>
                 Follow
               </Button>
             )}
-            {session && shareUrl && (
-              <div className="flex items-center gap-0 w-full">
-                <div className="relative flex-1">
+            {shareUrl && (
+              <div className="flex items-center gap-0">
+                <div className="relative">
                   <input
                     type="text"
                     readOnly
                     value={shareUrl}
-                    className="w-full bg-gray-700 text-gray-200 text-xs rounded-l px-2 py-1.5 pr-16 border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
+                    className="w-48 bg-gray-700 text-gray-200 text-xs rounded-l px-2 py-1.5 pr-16 border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
                     onClick={(e) => (e.target as HTMLInputElement).select()}
                     title={shareUrl}
                   />
@@ -768,9 +779,9 @@ export function Session() {
                 </div>
               </div>
             )}
-            {session && !shareUrl && (
+            {!shareUrl && session && (
               <Button size="sm" onClick={handleShare} loading={isCreatingSession}>
-                Generate Link
+                Share
               </Button>
             )}
           </>
