@@ -244,3 +244,43 @@ impl Default for QosProfileData {
         }
     }
 }
+
+impl ClientMessage {
+    /// Get the message type name for metrics
+    pub fn message_type(&self) -> &'static str {
+        match self {
+            ClientMessage::JoinSession { .. } => "join_session",
+            ClientMessage::CreateSession { .. } => "create_session",
+            ClientMessage::PresenterAuth { .. } => "presenter_auth",
+            ClientMessage::CursorUpdate { .. } => "cursor_update",
+            ClientMessage::ViewportUpdate { .. } => "viewport_update",
+            ClientMessage::LayerUpdate { .. } => "layer_update",
+            ClientMessage::SnapToPresenter { .. } => "snap_to_presenter",
+            ClientMessage::ChangeSlide { .. } => "change_slide",
+            ClientMessage::Ping { .. } => "ping",
+        }
+    }
+}
+
+impl ServerMessage {
+    /// Get the message type name for metrics
+    pub fn message_type(&self) -> &'static str {
+        match self {
+            ServerMessage::SessionCreated { .. } => "session_created",
+            ServerMessage::SessionJoined { .. } => "session_joined",
+            ServerMessage::QosProfile { .. } => "qos_profile",
+            ServerMessage::Ack { .. } => "ack",
+            ServerMessage::SessionError { .. } => "session_error",
+            ServerMessage::SessionEnded { .. } => "session_ended",
+            ServerMessage::ParticipantJoined { .. } => "participant_joined",
+            ServerMessage::ParticipantLeft { .. } => "participant_left",
+            ServerMessage::PresenceDelta { .. } => "presence_delta",
+            ServerMessage::PresenterViewport { .. } => "presenter_viewport",
+            ServerMessage::LayerState { .. } => "layer_state",
+            ServerMessage::OverlayLoaded { .. } => "overlay_loaded",
+            ServerMessage::SlideChanged { .. } => "slide_changed",
+            ServerMessage::Ping => "ping",
+            ServerMessage::Pong => "pong",
+        }
+    }
+}

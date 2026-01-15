@@ -1,4 +1,5 @@
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{Json, Router, extract::State, routing::get, response::IntoResponse};
+use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use pathcollab_server::config::{Config, SlideSourceMode};
 use pathcollab_server::overlay::overlay_routes;
 use pathcollab_server::server::{AppState, ws_handler};
@@ -98,10 +99,43 @@ async fn metrics(State(state): State<AppState>) -> Json<MetricsResponse> {
     })
 }
 
+/// Prometheus metrics handle for exposing metrics in Prometheus format
+static PROMETHEUS_HANDLE: std::sync::OnceLock<PrometheusHandle> = std::sync::OnceLock::new();
+
+/// Initialize the Prometheus metrics recorder
+fn setup_prometheus_metrics() -> PrometheusHandle {
+    PrometheusBuilder::new()
+        .install_recorder()
+        .expect("Failed to install Prometheus recorder")
+}
+
+/// Endpoint to expose metrics in Prometheus format
+async fn prometheus_metrics() -> impl IntoResponse {
+    let handle = PROMETHEUS_HANDLE.get().expect("Prometheus handle not initialized");
+    handle.render()
+}
+
+/// Update gauge metrics for sessions and connections (called periodically)
+async fn update_gauge_metrics(state: &AppState) {
+    let (sessions, connections) = state.get_stats().await;
+
+    // Update gauges using the metrics crate
+    metrics::gauge!("pathcollab_sessions_active").set(sessions as f64);
+    metrics::gauge!("pathcollab_ws_connections_active").set(connections as f64);
+
+    // Uptime gauge
+    let uptime = START_TIME.get().map(|t| t.elapsed().as_secs()).unwrap_or(0);
+    metrics::gauge!("pathcollab_uptime_seconds").set(uptime as f64);
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Record server start time
     START_TIME.set(Instant::now()).ok();
+
+    // Initialize Prometheus metrics recorder (must be done before any metrics are recorded)
+    let prometheus_handle = setup_prometheus_metrics();
+    PROMETHEUS_HANDLE.set(prometheus_handle).ok();
 
     // Initialize tracing
     tracing_subscriber::registry()
@@ -191,6 +225,16 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Periodic update of gauge metrics (every 5 seconds)
+    let metrics_state = app_state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            update_gauge_metrics(&metrics_state).await;
+        }
+    });
+
     // Build CORS layer
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -205,6 +249,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/metrics", get(metrics))
+        .route("/metrics/prometheus", get(prometheus_metrics))
         .route("/ws", get(ws_handler))
         .nest("/api/overlay", overlay_routes())
         .with_state(app_state)

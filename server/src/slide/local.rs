@@ -1,10 +1,12 @@
 //! Local slide service using OpenSlide
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use image::codecs::jpeg::JpegEncoder;
 use image::{ImageEncoder, RgbaImage};
+use metrics::{counter, histogram};
 use openslide_rs::{Address, OpenSlide, Region, Size};
 use tracing::{debug, error, info, warn};
 
@@ -269,6 +271,7 @@ impl LocalSlideService {
         );
 
         // Read the region from OpenSlide
+        let read_start = Instant::now();
         let region = Region {
             address: Address { x: x_l0, y: y_l0 },
             level: os_level,
@@ -284,21 +287,32 @@ impl LocalSlideService {
                 level, x, y, e
             ))
         })?;
+        histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "read")
+            .record(read_start.elapsed());
 
         // Resize if we need to scale down
         let final_image = if scale_factor > 1.001 {
-            image::imageops::resize(
+            let resize_start = Instant::now();
+            let resized = image::imageops::resize(
                 &rgba_image,
                 target_w,
                 target_h,
                 image::imageops::FilterType::Lanczos3,
-            )
+            );
+            histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "resize")
+                .record(resize_start.elapsed());
+            resized
         } else {
             rgba_image
         };
 
         // Encode to JPEG
-        self.encode_jpeg(&final_image)
+        let encode_start = Instant::now();
+        let result = self.encode_jpeg(&final_image);
+        histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "encode")
+            .record(encode_start.elapsed());
+
+        result
     }
 
     /// Encode RGBA image to JPEG
@@ -371,6 +385,9 @@ impl SlideService for LocalSlideService {
     }
 
     async fn get_tile(&self, request: &TileRequest) -> Result<Vec<u8>, SlideError> {
+        let start = Instant::now();
+        counter!("pathcollab_tile_requests_total").increment(1);
+
         // Get metadata (will open slide if needed)
         let metadata = self.get_slide(&request.slide_id).await?;
 
@@ -382,8 +399,18 @@ impl SlideService for LocalSlideService {
         let slide = self.cache.get_or_open(&request.slide_id, &path).await?;
 
         // Read and encode the tile
-        self.read_tile_jpeg(&slide, &metadata, request.level, request.x, request.y)
-            .await
+        let result = self
+            .read_tile_jpeg(&slide, &metadata, request.level, request.x, request.y)
+            .await;
+
+        // Record overall tile latency
+        histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
+
+        if result.is_err() {
+            counter!("pathcollab_tile_errors_total").increment(1);
+        }
+
+        result
     }
 }
 

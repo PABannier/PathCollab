@@ -37,6 +37,10 @@ async-trait = "0.1"
 openslide-rs = { version = "2", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
+# Metrics / Observability
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
+
 [dev-dependencies]
 tokio-tungstenite = "0.26"
 

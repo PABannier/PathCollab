@@ -5,8 +5,10 @@ use crate::session::state::{
     Session, SessionConfig, SessionId, SessionParticipant, SessionState, generate_participant_name,
     generate_secret, generate_session_id, get_participant_color, now_millis,
 };
+use metrics::{counter, histogram};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -70,6 +72,9 @@ impl SessionManager {
         slide: SlideInfo,
         presenter_connection_id: Uuid,
     ) -> Result<(Session, String, String), SessionError> {
+        let start = Instant::now();
+        counter!("pathcollab_sessions_created_total").increment(1);
+
         let session_id = generate_session_id();
         let join_secret = generate_secret(128);
         let presenter_key = generate_secret(192);
@@ -134,6 +139,7 @@ impl SessionManager {
         let sessions = self.sessions.read().await;
         let session = sessions.get(&session_id).unwrap().clone();
 
+        histogram!("pathcollab_session_create_duration_seconds").record(start.elapsed());
         Ok((session, join_secret, presenter_key))
     }
 
@@ -143,6 +149,9 @@ impl SessionManager {
         session_id: &str,
         join_secret: &str,
     ) -> Result<(SessionSnapshot, Participant), SessionError> {
+        let start = Instant::now();
+        counter!("pathcollab_session_joins_total").increment(1);
+
         let mut sessions = self.sessions.write().await;
 
         let session = sessions
@@ -201,6 +210,10 @@ impl SessionManager {
         );
 
         let snapshot = create_session_snapshot(session);
+
+        // Record participants count in this session
+        histogram!("pathcollab_session_participants").record(session.participants.len() as f64);
+        histogram!("pathcollab_session_join_duration_seconds").record(start.elapsed());
 
         Ok((snapshot, participant_data))
     }
@@ -342,6 +355,9 @@ impl SessionManager {
         session.participants.remove(&participant_id);
         session.rev += 1;
 
+        // Track participant leaves
+        counter!("pathcollab_session_leaves_total", "role" => if was_presenter { "presenter" } else { "follower" }).increment(1);
+
         if was_presenter {
             // Start presenter grace period
             session.state = SessionState::PresenterDisconnected {
@@ -382,6 +398,7 @@ impl SessionManager {
         for id in expired {
             info!("Removing expired session: {}", id);
             sessions.remove(&id);
+            counter!("pathcollab_sessions_expired_total").increment(1);
         }
     }
 

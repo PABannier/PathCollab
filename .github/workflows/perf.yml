@@ -1,0 +1,206 @@
+name: Performance Tests
+
+on:
+  # Manual trigger with optional full load test
+  workflow_dispatch:
+    inputs:
+      run_full_load_test:
+        description: 'Run full load tests (5 sessions, 20 followers, 30 seconds)'
+        required: false
+        default: 'false'
+        type: boolean
+  # Also run on PRs but only compile check
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/perf.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Verify performance test infrastructure compiles
+  compile-check:
+    name: Compile Performance Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libopenslide-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build server (release)
+        run: cargo build --release
+
+      - name: Compile performance tests
+        run: cargo test --test perf_tests --no-run --release
+
+  # Full load test (manual trigger only)
+  load-test:
+    name: Run Load Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_full_load_test == 'true'
+    needs: compile-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libopenslide-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build server (release)
+        run: cargo build --release
+
+      - name: Create test directories
+        run: |
+          mkdir -p /tmp/pathcollab/slides
+          mkdir -p /tmp/pathcollab/overlay_cache
+
+      - name: Start server in background
+        run: |
+          PATHCOLLAB_HOST=127.0.0.1 \
+          PATHCOLLAB_PORT=9090 \
+          PATHCOLLAB_SLIDES_DIR=/tmp/pathcollab/slides \
+          PATHCOLLAB_OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
+          PATHCOLLAB_DEMO_ENABLED=true \
+          RUST_LOG=info \
+          ./target/release/pathcollab &
+
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:9090/health > /dev/null 2>&1; then
+              echo "Server is ready!"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 1
+          done
+
+      - name: Run minimal load test
+        run: |
+          cargo test --test perf_tests test_fanout_minimal --release -- --ignored --nocapture
+        timeout-minutes: 5
+
+      - name: Run standard load test
+        run: |
+          cargo test --test perf_tests test_fanout_standard --release -- --ignored --nocapture
+        timeout-minutes: 10
+
+      - name: Collect server metrics
+        if: always()
+        run: |
+          echo "=== Server Metrics ==="
+          curl -s http://127.0.0.1:9090/metrics || true
+          echo ""
+          echo "=== Prometheus Metrics ==="
+          curl -s http://127.0.0.1:9090/metrics/prometheus || true
+
+  # Prometheus metrics endpoint validation
+  metrics-check:
+    name: Validate Metrics Endpoint
+    runs-on: ubuntu-latest
+    needs: compile-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libopenslide-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build server (release)
+        run: cargo build --release
+
+      - name: Create test directories
+        run: |
+          mkdir -p /tmp/pathcollab/slides
+          mkdir -p /tmp/pathcollab/overlay_cache
+
+      - name: Start server
+        run: |
+          PATHCOLLAB_HOST=127.0.0.1 \
+          PATHCOLLAB_PORT=9090 \
+          PATHCOLLAB_SLIDES_DIR=/tmp/pathcollab/slides \
+          PATHCOLLAB_OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
+          RUST_LOG=info \
+          ./target/release/pathcollab &
+
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:9090/health > /dev/null 2>&1; then
+              echo "Server is ready!"
+              break
+            fi
+            echo "Waiting for server... ($i/30)"
+            sleep 1
+          done
+
+      - name: Validate health endpoint
+        run: |
+          response=$(curl -s http://127.0.0.1:9090/health)
+          echo "Health response: $response"
+          # Check that it returns valid JSON with expected fields
+          echo "$response" | jq -e '.status' > /dev/null
+
+      - name: Validate metrics endpoint
+        run: |
+          response=$(curl -s http://127.0.0.1:9090/metrics)
+          echo "Metrics response: $response"
+          # Check that it returns valid JSON with expected fields
+          echo "$response" | jq -e '.uptime_seconds' > /dev/null
+          echo "$response" | jq -e '.active_sessions' > /dev/null
+
+      - name: Validate Prometheus metrics endpoint
+        run: |
+          response=$(curl -s http://127.0.0.1:9090/metrics/prometheus)
+          echo "Prometheus metrics:"
+          echo "$response"
+          # Check that it returns Prometheus format (contains # HELP or metric names)
+          if echo "$response" | grep -q "pathcollab"; then
+            echo "Prometheus metrics look valid"
+          else
+            echo "Warning: No pathcollab metrics found (this is OK if no activity yet)"
+          fi

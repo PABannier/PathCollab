@@ -9,6 +9,7 @@ use axum::{
     },
     response::Response,
 };
+use metrics::{counter, histogram};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -87,10 +88,24 @@ impl AppState {
 
     /// Broadcast a message to all participants in a session
     pub async fn broadcast_to_session(&self, session_id: &str, msg: ServerMessage) {
+        let start = Instant::now();
         let broadcasters = self.session_broadcasters.read().await;
         if let Some(sender) = broadcasters.get(session_id) {
+            let msg_type = msg.message_type();
+            let receiver_count = sender.receiver_count();
+
             // Ignore send errors (no receivers)
-            let _ = sender.send(msg);
+            let result = sender.send(msg);
+
+            // Record metrics
+            histogram!("pathcollab_ws_broadcast_duration_seconds", "type" => msg_type)
+                .record(start.elapsed());
+            counter!("pathcollab_ws_broadcasts_total", "type" => msg_type).increment(1);
+            histogram!("pathcollab_ws_broadcast_recipients").record(receiver_count as f64);
+
+            if result.is_err() {
+                counter!("pathcollab_ws_broadcast_errors_total", "type" => msg_type).increment(1);
+            }
         }
     }
 
@@ -388,6 +403,12 @@ async fn handle_client_message(
     state: &AppState,
     tx: &mpsc::Sender<ServerMessage>,
 ) {
+    let start = Instant::now();
+    let msg_type = msg.message_type();
+
+    // Record message received
+    counter!("pathcollab_ws_messages_total", "type" => msg_type, "direction" => "in").increment(1);
+
     match msg {
         ClientMessage::Ping { seq } => {
             let _ = tx.send(ServerMessage::Pong).await;
@@ -943,4 +964,8 @@ async fn handle_client_message(
             }
         }
     }
+
+    // Record message handling latency
+    histogram!("pathcollab_ws_message_duration_seconds", "type" => msg_type)
+        .record(start.elapsed());
 }
