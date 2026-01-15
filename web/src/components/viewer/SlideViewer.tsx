@@ -105,7 +105,8 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
 
     const viewer = OpenSeadragon({
       element: containerRef.current,
-      prefixUrl: '',
+      // Use OpenSeadragon CDN for navigation button images
+      prefixUrl: 'https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/',
       // Navigation controls
       showNavigationControl: true,
       navigationControlAnchor: OpenSeadragon.ControlAnchor.TOP_LEFT,

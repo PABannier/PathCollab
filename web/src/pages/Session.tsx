@@ -119,17 +119,6 @@ export function Session() {
     DEFAULT_TISSUE_CLASSES.map((c) => c.id)
   )
 
-  // Sidebar state (persisted in localStorage)
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    const stored = localStorage.getItem('pathcollab-sidebar-open')
-    return stored !== null ? stored === 'true' : true
-  })
-
-  // Persist sidebar state to localStorage
-  useEffect(() => {
-    localStorage.setItem('pathcollab-sidebar-open', String(sidebarOpen))
-  }, [sidebarOpen])
-
   // Get secrets from URL hash fragment (not sent to server)
   const hashParams = useMemo(() => {
     const hash = window.location.hash.slice(1)
@@ -648,12 +637,6 @@ export function Session() {
   const shortcuts = useMemo<KeyboardShortcut[]>(
     () => [
       {
-        key: '\\',
-        ctrl: true,
-        description: 'Toggle sidebar',
-        action: () => setSidebarOpen((prev) => !prev),
-      },
-      {
         key: '0',
         ctrl: true,
         description: 'Reset zoom to fit',
@@ -849,7 +832,7 @@ export function Session() {
 
       {/* Two-pane layout: Sidebar + Viewer */}
       <div className="flex flex-1 overflow-hidden relative">
-        <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)}>
+        <Sidebar>
           {/* Session info */}
           <SidebarSection title="Session">
             {isSoloMode ? (

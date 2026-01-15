@@ -1,69 +1,32 @@
 import { type KeyboardEvent, type ReactNode, useId, useState } from 'react'
 
 interface SidebarProps {
-  isOpen: boolean
-  onToggle: () => void
   children: ReactNode
 }
 
 /**
- * Collapsible sidebar component for the viewer layout.
+ * Fixed sidebar component for the viewer layout.
  * Uses design token: --sidebar-width (280px)
  */
-export function Sidebar({ isOpen, onToggle, children }: SidebarProps) {
+export function Sidebar({ children }: SidebarProps) {
   const sidebarId = useId()
 
   return (
-    <>
-      {/* Sidebar */}
-      <aside
-        id={sidebarId}
-        className="flex flex-col overflow-hidden"
-        style={{
-          width: isOpen ? 'var(--sidebar-width)' : '0',
-          backgroundColor: 'var(--sidebar-bg)',
-          borderRight: isOpen ? '1px solid var(--sidebar-border)' : 'none',
-          transition: `width var(--transition-normal) var(--ease-default)`,
-        }}
-        aria-hidden={!isOpen}
-        role="complementary"
-        aria-label="Session sidebar"
-      >
-        <nav
-          className="flex-1 overflow-y-auto overflow-x-hidden p-4"
-          aria-label="Session navigation"
-        >
-          {children}
-        </nav>
-      </aside>
-
-      {/* Toggle button */}
-      <button
-        onClick={onToggle}
-        className="absolute top-1/2 -translate-y-1/2 text-gray-300 rounded-r-md p-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
-        style={{
-          left: isOpen ? 'var(--sidebar-width)' : '0',
-          backgroundColor: 'var(--color-gray-700)',
-          zIndex: 'var(--z-dropdown)',
-          transition: `left var(--transition-normal) var(--ease-default), background-color var(--transition-fast)`,
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-gray-600)')}
-        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-gray-700)')}
-        title={`${isOpen ? 'Collapse' : 'Expand'} sidebar (Ctrl+\\)`}
-        aria-label={isOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-        aria-expanded={isOpen}
-        aria-controls={sidebarId}
-      >
-        <svg
-          className={`w-4 h-4 transition-transform ${isOpen ? '' : 'rotate-180'}`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
-    </>
+    <aside
+      id={sidebarId}
+      className="flex flex-col overflow-hidden"
+      style={{
+        width: 'var(--sidebar-width)',
+        backgroundColor: 'var(--sidebar-bg)',
+        borderRight: '1px solid var(--sidebar-border)',
+      }}
+      role="complementary"
+      aria-label="Session sidebar"
+    >
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4" aria-label="Session navigation">
+        {children}
+      </nav>
+    </aside>
   )
 }
 
