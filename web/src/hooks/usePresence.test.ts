@@ -17,12 +17,7 @@ import { renderHook, act } from '@testing-library/react'
 import { usePresence } from './usePresence'
 
 // Mock DOMRect-like object for tests
-const createMockDOMRect = (
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): DOMRect =>
+const createMockDOMRect = (x: number, y: number, width: number, height: number): DOMRect =>
   ({
     x,
     y,
@@ -451,7 +446,9 @@ describe('usePresence coordinate conversion', () => {
     const viewport = { centerX: 0.5, centerY: 0.5, zoom: 1 }
 
     // Null bounds
-    expect(result.current.convertToSlideCoords(400, 300, null as unknown as DOMRect, viewport)).toBeNull()
+    expect(
+      result.current.convertToSlideCoords(400, 300, null as unknown as DOMRect, viewport)
+    ).toBeNull()
   })
 
   /**

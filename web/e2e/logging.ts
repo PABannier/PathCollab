@@ -40,7 +40,9 @@ export class TestLogger {
     this.logs.push(entry)
     console.log(`[${entry.timestamp}] [${category}:${type}] ${message}`)
     if (data) {
-      console.log(`[${entry.timestamp}] [${category}:data] ${JSON.stringify(data).substring(0, 500)}`)
+      console.log(
+        `[${entry.timestamp}] [${category}:data] ${JSON.stringify(data).substring(0, 500)}`
+      )
     }
   }
 
@@ -72,7 +74,12 @@ export function setupVerboseLogging(page: Page, testName: string): TestLogger {
   // Network requests
   page.on('request', (req) => {
     const postData = req.postData()
-    logger.log('Network', 'request', `${req.method()} ${req.url()}`, postData ? { body: postData.substring(0, 500) } : undefined)
+    logger.log(
+      'Network',
+      'request',
+      `${req.method()} ${req.url()}`,
+      postData ? { body: postData.substring(0, 500) } : undefined
+    )
   })
 
   // Network responses
@@ -207,7 +214,5 @@ export function loggedAssert(
  * Format a summary of WebSocket messages for logging
  */
 export function formatWsMessages(messages: unknown[]): string {
-  return messages
-    .map((msg, i) => `  [${i}] ${JSON.stringify(msg).substring(0, 100)}`)
-    .join('\n')
+  return messages.map((msg, i) => `  [${i}] ${JSON.stringify(msg).substring(0, 100)}`).join('\n')
 }

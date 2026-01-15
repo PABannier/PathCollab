@@ -213,7 +213,9 @@ describe('ConnectionBadge status mapping', () => {
 
     Object.entries(colorMap).forEach(([status, expectedClass]) => {
       const { container, unmount } = render(
-        <ConnectionBadge status={status as 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'solo'} />
+        <ConnectionBadge
+          status={status as 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'solo'}
+        />
       )
 
       const dot = container.querySelector(`.${expectedClass.replace('-', '\\-')}`)
@@ -238,7 +240,9 @@ describe('ConnectionBadge status mapping', () => {
 
     Object.entries(labelMap).forEach(([status, expectedLabel]) => {
       const { unmount } = render(
-        <ConnectionBadge status={status as 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'solo'} />
+        <ConnectionBadge
+          status={status as 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'solo'}
+        />
       )
 
       expect(screen.getByText(expectedLabel)).toBeTruthy()

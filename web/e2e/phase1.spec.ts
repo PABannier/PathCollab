@@ -17,8 +17,8 @@
  * - Session management (create, join, URL routing)
  */
 
-import { test, expect, type Page, type BrowserContext } from '@playwright/test'
-import { setupVerboseLogging, TestLogger, logStep, measureAction } from './logging'
+import { test, expect } from '@playwright/test'
+import { setupVerboseLogging, logStep, measureAction } from './logging'
 import { ServerHarness, createTestServerHarness } from './server-harness'
 
 // Test configuration
@@ -108,7 +108,11 @@ test.describe('Tile Rendering (Phase 1 Week 1)', () => {
         const timing = res.timing()
         if (timing?.responseEnd) {
           tileTimes.push(timing.responseEnd)
-          logger.log('Performance', 'tile-load', `Tile loaded in ${timing.responseEnd}ms: ${res.url()}`)
+          logger.log(
+            'Performance',
+            'tile-load',
+            `Tile loaded in ${timing.responseEnd}ms: ${res.url()}`
+          )
         }
       }
     })
@@ -123,7 +127,11 @@ test.describe('Tile Rendering (Phase 1 Week 1)', () => {
       const maxTime = Math.max(...tileTimes)
       const minTime = Math.min(...tileTimes)
 
-      logger.log('Performance', 'summary', `Tiles: ${tileTimes.length}, Avg: ${avgTime.toFixed(0)}ms, Min: ${minTime.toFixed(0)}ms, Max: ${maxTime.toFixed(0)}ms`)
+      logger.log(
+        'Performance',
+        'summary',
+        `Tiles: ${tileTimes.length}, Avg: ${avgTime.toFixed(0)}ms, Min: ${minTime.toFixed(0)}ms, Max: ${maxTime.toFixed(0)}ms`
+      )
 
       // Phase 1 spec: Tiles must load within 200ms
       expect(maxTime).toBeLessThan(200)
@@ -245,7 +253,7 @@ test.describe('Minimap (Phase 1 Week 1)', () => {
     await logStep(page, logger, 3, 'Check for viewport indicator')
     // Phase 1 spec: Current viewport indicator (rectangular overlay)
     const displayRegion = page.locator('.displayregion, [data-testid="viewport-indicator"]')
-    const hasIndicator = await displayRegion.count() > 0
+    const hasIndicator = (await displayRegion.count()) > 0
     logger.log('Minimap', 'indicator', `Viewport indicator present: ${hasIndicator}`)
 
     logger.end()
@@ -302,7 +310,11 @@ test.describe('WebSocket Server (Phase 1 Week 2)', () => {
     await logStep(page, logger, 2, 'Wait for message exchange')
     await page.waitForTimeout(5000)
 
-    logger.log('WebSocket', 'summary', `Sent: ${sentMessages.length}, Received: ${receivedMessages.length}`)
+    logger.log(
+      'WebSocket',
+      'summary',
+      `Sent: ${sentMessages.length}, Received: ${receivedMessages.length}`
+    )
 
     // Phase 1 spec: Should see session creation messages
     expect(sentMessages.length).toBeGreaterThan(0)
@@ -451,7 +463,11 @@ test.describe('Full Integration (Phase 1 Week 2)', () => {
           }
           if (data.join_secret) {
             joinSecret = data.join_secret
-            presenterLogger.log('Session', 'secret', `Secret received (length: ${joinSecret?.length})`)
+            presenterLogger.log(
+              'Session',
+              'secret',
+              `Secret received (length: ${joinSecret?.length})`
+            )
           }
         } catch {
           // Not JSON

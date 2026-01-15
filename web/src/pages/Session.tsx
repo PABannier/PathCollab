@@ -319,6 +319,8 @@ export function Session() {
 
   useEffect(() => {
     if (!session?.layer_visibility) return
+    // Sync local layer state with session state from server
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     applyLayerVisibility(session.layer_visibility)
   }, [applyLayerVisibility, session?.layer_visibility])
 
@@ -639,6 +641,9 @@ export function Session() {
     viewerRef.current?.setViewport({ centerX: 0.5, centerY: 0.5, zoom: 1 })
   }, [])
 
+  // Help dialog state - managed separately to avoid circular dependency with shortcuts
+  const [showHelp, setShowHelp] = useState(false)
+
   // Keyboard shortcuts
   const shortcuts = useMemo<KeyboardShortcut[]>(
     () => [
@@ -672,10 +677,10 @@ export function Session() {
         action: () => setShowHelp(false),
       },
     ],
-    [handleZoomReset, handleSnapToPresenter, handleShare]
+    [handleZoomReset, handleSnapToPresenter, handleShare, setShowHelp]
   )
 
-  const { showHelp, setShowHelp } = useKeyboardShortcuts({
+  useKeyboardShortcuts({
     shortcuts,
     enabled: true,
   })
@@ -944,12 +949,7 @@ export function Session() {
                 className="w-full mt-2"
                 loading={isCreatingSession}
               >
-                <svg
-                  className="w-4 h-4 mr-2"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
+                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"

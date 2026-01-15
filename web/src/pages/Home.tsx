@@ -60,11 +60,10 @@ export function Home() {
   const [slides, setSlides] = useState<SlideListItem[]>([])
   const [selectedSlideId, setSelectedSlideId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [loadingSlides, setLoadingSlides] = useState(false)
+  const [loadingSlides, setLoadingSlides] = useState(true) // Start loading immediately
 
   // Fetch available slides on mount
   useEffect(() => {
-    setLoadingSlides(true)
     fetch('/api/slides')
       .then((res) => res.json())
       .then((data: SlideListItem[]) => {

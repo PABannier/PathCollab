@@ -18,12 +18,7 @@ import { render, screen } from '@testing-library/react'
 import { CursorLayer } from './CursorLayer'
 
 // Mock DOMRect-like object for tests (DOMRect is not available in jsdom)
-const createMockDOMRect = (
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): DOMRect => ({
+const createMockDOMRect = (x: number, y: number, width: number, height: number): DOMRect => ({
   x,
   y,
   width,

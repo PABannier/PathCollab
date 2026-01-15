@@ -108,8 +108,10 @@ export class TestWebSocketClient {
   private url: string
   private seq: number = 0
   private receivedMessages: ServerMessage[] = []
-  private pendingResponses: Map<number, { resolve: (msg: ServerMessage) => void; reject: (err: Error) => void }> =
-    new Map()
+  private pendingResponses: Map<
+    number,
+    { resolve: (msg: ServerMessage) => void; reject: (err: Error) => void }
+  > = new Map()
   private onMessageCallback?: (msg: ServerMessage) => void
   private connected: boolean = false
 
@@ -167,8 +169,10 @@ export class TestWebSocketClient {
           }
 
           this.onMessageCallback?.(msg)
-        } catch (err) {
-          console.log(`[${timestamp()}] [WsClient:error] Failed to parse message: ${data.toString()}`)
+        } catch {
+          console.log(
+            `[${timestamp()}] [WsClient:error] Failed to parse message: ${data.toString()}`
+          )
         }
       })
 

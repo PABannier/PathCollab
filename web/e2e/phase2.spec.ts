@@ -10,7 +10,7 @@
  * Run with: bunx playwright test e2e/phase2.spec.ts
  */
 
-import { test, expect, Page, BrowserContext } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { setupVerboseLogging, logStep } from './logging'
 
 // Test configuration
@@ -49,27 +49,6 @@ async function joinSession(page: Page, shareUrl: string): Promise<void> {
   // Wait for viewer to load
   const viewer = page.locator('.openseadragon-container')
   await expect(viewer).toBeVisible({ timeout: 15000 })
-}
-
-/**
- * Wait for WebSocket connection to be established
- */
-async function waitForWebSocketConnection(page: Page, timeout = 10000): Promise<boolean> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), timeout)
-
-    page.on('websocket', (ws) => {
-      ws.on('framereceived', (frame) => {
-        if (
-          frame.payload.includes('session_created') ||
-          frame.payload.includes('session_joined')
-        ) {
-          clearTimeout(timer)
-          resolve(true)
-        }
-      })
-    })
-  })
 }
 
 // ============================================================================
@@ -115,9 +94,9 @@ test.describe('Phase 2: Connection Status', () => {
 
     await logStep(page, logger, 3, 'Check for solo mode')
     // Look for purple indicator or "Solo Mode" text
-    const soloIndicator = page.locator('.bg-purple-500')
-    // May or may not be present depending on implementation
-    // This test documents expected behavior
+    // soloIndicator check is for documentation - may or may not be present depending on implementation
+    const _soloIndicator = page.locator('.bg-purple-500')
+    void _soloIndicator // Suppress unused warning - documents expected behavior
 
     logger.end()
   })
@@ -284,9 +263,9 @@ test.describe('Phase 2: Minimap', () => {
 
     await logStep(page, logger, 3, 'Check for minimap')
     // Minimap is typically a navigator element
-    const minimap = page.locator('.openseadragon-navigator')
-    // May or may not be visible depending on implementation
-    // This documents expected behavior
+    // Minimap check is for documentation - may or may not be visible depending on implementation
+    const _minimap = page.locator('.openseadragon-navigator')
+    void _minimap // Suppress unused warning - documents expected behavior
 
     logger.end()
   })
@@ -449,8 +428,9 @@ test.describe('Phase 2: Multi-User Collaboration', () => {
       await followerPage.waitForTimeout(2000)
 
       // Check for some follow-related UI element
-      const followElement = followerPage.locator('text=/[Ff]ollow/')
       // Document expected behavior - element may or may not be present
+      const _followElement = followerPage.locator('text=/[Ff]ollow/')
+      void _followElement // Suppress unused warning - documents expected behavior
 
       presenterLogger.end()
       followerLogger.end()

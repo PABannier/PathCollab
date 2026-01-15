@@ -153,7 +153,6 @@ export function TissueHeatmapLayer({
     })
 
     if (!gl) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError('WebGL2 not supported')
       return
     }

@@ -139,7 +139,9 @@ export class ServerHarness {
 
           // Verify response matches Phase 1 spec
           if (data.status !== 'ok') {
-            console.log(`[${timestamp()}] [Server] WARNING: status is "${data.status}", expected "ok"`)
+            console.log(
+              `[${timestamp()}] [Server] WARNING: status is "${data.status}", expected "ok"`
+            )
           }
           if (!data.version) {
             console.log(`[${timestamp()}] [Server] WARNING: version field missing`)
@@ -148,7 +150,7 @@ export class ServerHarness {
           return
         }
         console.log(`[${timestamp()}] [Server] Health check returned ${res.status}`)
-      } catch (err) {
+      } catch {
         // Server not ready yet, continue waiting
       }
       await new Promise((r) => setTimeout(r, 500))

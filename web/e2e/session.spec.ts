@@ -8,7 +8,7 @@
  * This file focuses on additional session-specific scenarios.
  */
 
-import { test, expect, Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { setupVerboseLogging, logStep } from './logging'
 
 // Test configuration
@@ -17,25 +17,6 @@ const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:5173'
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/**
- * Wait for the WebSocket connection to be established
- * by checking for session creation message
- */
-async function waitForSessionCreation(page: Page, timeout = 10000): Promise<boolean> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), timeout)
-
-    page.on('websocket', (ws) => {
-      ws.on('framereceived', (frame) => {
-        if (frame.payload.includes('session_created')) {
-          clearTimeout(timer)
-          resolve(true)
-        }
-      })
-    })
-  })
-}
 
 // ============================================================================
 // Test Suites
@@ -218,9 +199,7 @@ test.describe('Error Handling', () => {
     // Filter known acceptable errors
     const criticalErrors = errors.filter(
       (err) =>
-        !err.includes('ResizeObserver') &&
-        !err.includes('WebSocket') &&
-        !err.includes('net::ERR_')
+        !err.includes('ResizeObserver') && !err.includes('WebSocket') && !err.includes('net::ERR_')
     )
 
     logger.log('Errors', 'summary', `Total: ${errors.length}, Critical: ${criticalErrors.length}`)
