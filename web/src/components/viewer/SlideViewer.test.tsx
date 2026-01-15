@@ -63,7 +63,11 @@ vi.mock('openseadragon', () => {
     }
   }
 
-  const OpenSeadragonMock = vi.fn(() => mockViewer)
+  const OpenSeadragonMock = vi.fn(() => mockViewer) as ReturnType<typeof vi.fn> & {
+    ControlAnchor: Record<string, number>
+    Point: typeof MockPoint
+    TileSource: typeof MockTileSource
+  }
 
   // Add static properties
   OpenSeadragonMock.ControlAnchor = {
@@ -135,7 +139,8 @@ describe('SlideViewer', () => {
     })
 
     // Verify the tile source configuration was passed
-    const osdCall = (OpenSeadragon.default as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
+    const osdCall = (OpenSeadragon.default as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0]
     expect(osdCall).toBeTruthy()
   })
 
@@ -171,7 +176,8 @@ describe('SlideViewer', () => {
 
     // The component should register a viewport-change handler
     const OpenSeadragon = await import('openseadragon')
-    const mockViewer = (OpenSeadragon.default as ReturnType<typeof vi.fn>).mock.results[0]?.value
+    const mockViewer = (OpenSeadragon.default as unknown as ReturnType<typeof vi.fn>).mock
+      .results[0]?.value
 
     // Find the viewport-change handler that was registered
     const addHandlerCalls = mockViewer?.addHandler.mock.calls || []
@@ -200,7 +206,8 @@ describe('SlideViewer', () => {
     render(<SlideViewer slide={testSlide} onTileLoadError={onTileLoadError} />)
 
     const OpenSeadragon = await import('openseadragon')
-    const mockViewer = (OpenSeadragon.default as ReturnType<typeof vi.fn>).mock.results[0]?.value
+    const mockViewer = (OpenSeadragon.default as unknown as ReturnType<typeof vi.fn>).mock
+      .results[0]?.value
 
     // Find the tile-load-failed handler
     const addHandlerCalls = mockViewer?.addHandler.mock.calls || []
@@ -247,7 +254,8 @@ describe('SlideViewer', () => {
     render(<SlideViewer ref={ref} slide={testSlide} />)
 
     const OpenSeadragon = await import('openseadragon')
-    const mockViewer = (OpenSeadragon.default as ReturnType<typeof vi.fn>).mock.results[0]?.value
+    const mockViewer = (OpenSeadragon.default as unknown as ReturnType<typeof vi.fn>).mock
+      .results[0]?.value
 
     await waitFor(() => {
       expect(ref.current).toBeTruthy()
