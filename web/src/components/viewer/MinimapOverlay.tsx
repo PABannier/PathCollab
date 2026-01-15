@@ -61,13 +61,15 @@ export function MinimapOverlay({
     const left = presenterViewport.centerX - vpWidth / 2
     const top = presenterViewport.centerY - vpHeight / 2
 
-    // Convert to minimap pixel coordinates
-    return {
-      x: Math.max(0, left * minimapWidth),
-      y: Math.max(0, top * minimapHeight),
-      width: Math.min(minimapWidth - left * minimapWidth, vpWidth * minimapWidth),
-      height: Math.min(minimapHeight - top * minimapHeight, vpHeight * minimapHeight),
-    }
+    // Convert to minimap pixel coordinates, properly clamping to minimap bounds
+    const x = Math.max(0, left) * minimapWidth
+    const y = Math.max(0, top) * minimapHeight
+    const right = Math.min(1, left + vpWidth)
+    const bottom = Math.min(1, top + vpHeight)
+    const width = Math.max(0, (right - Math.max(0, left)) * minimapWidth)
+    const height = Math.max(0, (bottom - Math.max(0, top)) * minimapHeight)
+
+    return { x, y, width, height }
   }, [presenterViewport, minimapWidth, minimapHeight, slideAspectRatio, isPresenter])
 
   // Calculate cursor positions in minimap coordinates

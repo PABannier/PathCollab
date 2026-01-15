@@ -484,11 +484,12 @@ describe('useSession', () => {
       expect(onError).toHaveBeenCalledWith('Session not found')
     })
 
-    it('should call onError when ack is rejected', async () => {
+    it('should call onError when presenter auth ack is rejected', async () => {
       const onError = vi.fn()
 
-      renderHook(() =>
+      const { result } = renderHook(() =>
         useSession({
+          presenterKey: 'test-presenter-key',
           onError,
         })
       )
@@ -496,15 +497,28 @@ describe('useSession', () => {
       await act(async () => {
         vi.advanceTimersByTime(10)
         mockWs.getInstance()?.simulateOpen()
+      })
+
+      // Trigger presenter auth
+      act(() => {
+        result.current.authenticatePresenter()
+      })
+
+      // Get the sequence number from the sent message
+      const sentMessages = mockWs.getInstance()?.getSentMessages()
+      const authMessage = sentMessages?.find((m) => m.type === 'presenter_auth')
+
+      // Simulate rejection with matching seq
+      await act(async () => {
         mockWs.getInstance()?.simulateMessage({
           type: 'ack',
-          ack_seq: 1,
+          ack_seq: authMessage?.seq,
           status: 'rejected',
-          reason: 'Invalid operation',
+          reason: 'Invalid presenter key',
         })
       })
 
-      expect(onError).toHaveBeenCalledWith('Invalid operation')
+      expect(onError).toHaveBeenCalledWith('Invalid presenter key')
     })
 
     it('should reset state when session_ended is received', async () => {

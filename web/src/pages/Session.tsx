@@ -135,8 +135,9 @@ export function Session() {
     const hash = window.location.hash.slice(1)
     return new URLSearchParams(hash)
   }, [])
-  const joinSecret = hashParams.get('join') || searchParams.get('join') || undefined
-  const presenterKey = hashParams.get('presenter') || searchParams.get('presenter') || undefined
+  // Only read secrets from hash fragment (never sent to server) - do NOT use searchParams
+  const joinSecret = hashParams.get('join') || undefined
+  const presenterKey = hashParams.get('presenter') || undefined
   const slideParam = searchParams.get('slide')?.trim() || undefined
 
   // Fetch default slide for standalone viewer mode (when no sessionId)

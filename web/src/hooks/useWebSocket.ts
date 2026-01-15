@@ -211,6 +211,9 @@ export function useWebSocket({
       wsRef.current = null
     }
 
+    // Clear message queue to prevent stale messages being sent on reconnect
+    messageQueueRef.current = []
+
     setStatus('disconnected')
   }, [clearReconnectTimeout, maxReconnectAttempts])
 
@@ -228,6 +231,8 @@ export function useWebSocket({
         wsRef.current.close()
         wsRef.current = null
       }
+      // Clear message queue on unmount to prevent memory leaks
+      messageQueueRef.current = []
     }
   }, [doConnect, clearReconnectTimeout])
 

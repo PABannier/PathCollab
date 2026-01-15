@@ -246,12 +246,11 @@ export function useSession({
             pendingPresenterAuthSeqRef.current = null
             if (message.status === 'rejected') {
               setIsPresenter(false)
+              // Only fire onError for presenter auth rejections we're tracking
+              onError?.(message.reason as string)
             } else {
               setIsPresenter(true)
             }
-          }
-          if (message.status === 'rejected') {
-            onError?.(message.reason as string)
           }
           break
         }

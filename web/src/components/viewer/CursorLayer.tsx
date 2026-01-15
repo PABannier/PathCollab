@@ -28,7 +28,7 @@ export function CursorLayer({
 }: CursorLayerProps) {
   // Convert slide coordinates to screen coordinates
   const screenCursors = useMemo(() => {
-    if (!viewerBounds || viewport.zoom <= 0) return []
+    if (!viewerBounds || viewport.zoom <= 0 || !Number.isFinite(viewport.zoom)) return []
     if (slideWidth <= 0 || slideHeight <= 0) return []
     if (viewerBounds.width <= 0 || viewerBounds.height <= 0) return []
 
