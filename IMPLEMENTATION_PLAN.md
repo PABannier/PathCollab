@@ -1235,10 +1235,8 @@ Week 6: WebGL2 Frontend
 │   └── Level-of-detail management
 │
 └── Day 5: Layer controls
-    ├── Sidebar panel (collapsible)
     ├── Tissue class toggles
     ├── Cell class toggles
-    ├── Opacity sliders
     └── Hover tooltip for cell class
 ```
 

@@ -46,8 +46,8 @@ export function OverlayUploader({
       }
 
       // Validate file type
-      if (!file.name.endsWith('.pb') && !file.name.endsWith('.proto')) {
-        onError('Invalid file type. Please upload a .pb file')
+      if (!file.name.endsWith('.pb') && !file.name.endsWith('.proto') && !file.name.endsWith('.bin')) {
+        onError('Invalid file type. Please upload a .pb or .bin file')
         return
       }
 
@@ -205,7 +205,7 @@ export function OverlayUploader({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pb,.proto"
+        accept=".pb,.proto,.bin"
         onChange={handleFileSelect}
         className="hidden"
         disabled={disabled || isUploading}
@@ -231,7 +231,7 @@ export function OverlayUploader({
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
-        title={isDragging ? 'Drop file here' : 'Upload overlay (.pb file)'}
+        title={isDragging ? 'Drop file here' : 'Upload overlay (.pb or .bin file)'}
       >
         {/* Icon */}
         {uploadState === 'idle' && (
