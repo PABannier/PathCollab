@@ -1,7 +1,6 @@
 name: Performance Tests
 
 on:
-  # Manual trigger with optional full load test
   workflow_dispatch:
     inputs:
       run_full_load_test:
@@ -9,7 +8,6 @@ on:
         required: false
         default: 'false'
         type: boolean
-  # Also run on PRs but only compile check
   pull_request:
     branches: [main]
     paths:

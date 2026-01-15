@@ -90,16 +90,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./server/Dockerfile
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build web image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./web
-          file: ./web/Dockerfile
+          file: ./Dockerfile
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
