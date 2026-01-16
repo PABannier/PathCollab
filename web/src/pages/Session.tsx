@@ -125,6 +125,9 @@ export function Session() {
     DEFAULT_TISSUE_CLASSES.map((c) => c.id)
   )
 
+  // Footer cursor position (for displaying coordinates)
+  const [footerCursorPos, setFooterCursorPos] = useState<{ x: number; y: number } | null>(null)
+
   // Get secrets from URL hash fragment (not sent to server)
   const hashParams = useMemo(() => {
     const hash = window.location.hash.slice(1)
@@ -564,16 +567,30 @@ export function Session() {
   // Handle mouse move for cursor tracking
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      if (!session || !viewerBounds) return
-
-      const slideCoords = convertToSlideCoords(e.clientX, e.clientY, viewerBounds, currentViewport)
-
-      if (slideCoords) {
-        updateCursorPosition(slideCoords.x, slideCoords.y)
+      // Always track cursor for footer display when we have bounds
+      if (viewerBounds) {
+        const slideCoords = convertToSlideCoords(
+          e.clientX,
+          e.clientY,
+          viewerBounds,
+          currentViewport
+        )
+        if (slideCoords) {
+          setFooterCursorPos({ x: slideCoords.x, y: slideCoords.y })
+          // Only send cursor updates to session if active
+          if (session) {
+            updateCursorPosition(slideCoords.x, slideCoords.y)
+          }
+        }
       }
     },
     [session, viewerBounds, currentViewport, convertToSlideCoords, updateCursorPosition]
   )
+
+  // Handle mouse leave to clear footer cursor position
+  const handleMouseLeave = useCallback(() => {
+    setFooterCursorPos(null)
+  }, [])
 
   // Handle snap to presenter
   const handleSnapToPresenter = useCallback(() => {
@@ -1006,6 +1023,7 @@ export function Session() {
           className="relative flex-1 overflow-hidden"
           ref={viewerContainerRef}
           onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
         >
           {/* Show loading or empty state while waiting for slide */}
           {!slide && (
@@ -1140,14 +1158,17 @@ export function Session() {
         </main>
       </div>
 
-      {/* Bottom status bar (VS Code style) */}
-      <footer className="flex items-center h-6 text-xs" style={{ backgroundColor: '#181818' }}>
-        {/* Left section with blue background */}
+      {/* Bottom status bar (VS Code style) with useful metrics */}
+      <footer
+        className="flex items-center h-6 text-xs border-t"
+        style={{ backgroundColor: 'var(--footer-bg)', borderColor: 'var(--footer-border)' }}
+      >
+        {/* Left section with VS Code blue accent */}
         <div
           className="flex items-center gap-1.5 px-2 h-full"
-          style={{ backgroundColor: '#007ACC' }}
+          style={{ backgroundColor: 'var(--footer-accent)' }}
         >
-          {/* Connected icon */}
+          {/* Connection icon */}
           <svg
             stroke="currentColor"
             fill="currentColor"
@@ -1160,8 +1181,8 @@ export function Session() {
             xmlns="http://www.w3.org/2000/svg"
           >
             <path
-              fill-rule="evenodd"
-              clip-rule="evenodd"
+              fillRule="evenodd"
+              clipRule="evenodd"
               d="M12.904 9.57L8.928 5.596l3.976-3.976-.619-.62L8 5.286v.619l4.285 4.285.62-.618zM3 5.62l4.072 4.07L3 13.763l.619.618L8 10v-.619L3.619 5 3 5.619z"
             />
           </svg>
@@ -1169,8 +1190,27 @@ export function Session() {
             {session ? session.id.slice(0, 8) : 'No Session'}
           </span>
         </div>
-        {/* Right section - black background (flex-1 fills the rest) */}
-        <div className="flex-1 px-2" />
+
+        {/* Right section: Metrics */}
+        <div className="flex-1 flex items-center justify-end gap-4 px-3 text-gray-400">
+          {/* Participant count */}
+          {session && (
+            <span>
+              {session.followers.length + 1} participant
+              {session.followers.length !== 0 ? 's' : ''}
+            </span>
+          )}
+
+          {/* Zoom level */}
+          <span>Zoom: {Math.round(currentViewport.zoom * 100)}%</span>
+
+          {/* Cursor coordinates (when hovering over slide) */}
+          {footerCursorPos && (
+            <span className="font-mono text-gray-500">
+              x={Math.round(footerCursorPos.x)} y={Math.round(footerCursorPos.y)}
+            </span>
+          )}
+        </div>
       </footer>
 
       {/* Keyboard shortcuts help modal */}

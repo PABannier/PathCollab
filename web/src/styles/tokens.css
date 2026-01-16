@@ -186,6 +186,12 @@
   --statusbar-bg: #333333;
   --statusbar-border: var(--color-gray-700);
 
+  /* Footer Bar (VS Code style) */
+  --footer-height: 1.5rem; /* 24px */
+  --footer-bg: var(--sidebar-bg); /* Match sidebar */
+  --footer-border: var(--color-gray-700);
+  --footer-accent: #007acc; /* VS Code blue */
+
   /* Sidebar */
   --sidebar-width: 20rem;
   --sidebar-bg: #252526;
