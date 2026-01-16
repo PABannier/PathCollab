@@ -102,7 +102,7 @@ interface UseSessionReturn {
   changeSlide: (slideId: string) => void
   snapToPresenter: () => void
   setIsFollowing: (following: boolean) => void
-  checkDivergence: (currentViewport: {centerX: number, centerY: number, zoom: number}) => void
+  checkDivergence: (currentViewport: { centerX: number; centerY: number; zoom: number }) => void
 }
 
 export function useSession({

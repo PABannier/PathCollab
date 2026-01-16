@@ -2,7 +2,6 @@ export { SlideViewer, type SlideInfo, type SlideViewerHandle } from './SlideView
 export { CursorLayer } from './CursorLayer'
 export { OverlayCanvas } from './OverlayCanvas'
 export { TissueHeatmapLayer } from './TissueHeatmapLayer'
-export { LayerPanel } from './LayerPanel'
 export { MinimapOverlay } from './MinimapOverlay'
 export { CellTooltip } from './CellTooltip'
 export { ViewportLoader } from './ViewportLoader'

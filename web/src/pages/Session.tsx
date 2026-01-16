@@ -9,7 +9,6 @@ import {
 import { CursorLayer } from '../components/viewer/CursorLayer'
 import { OverlayCanvas } from '../components/viewer/OverlayCanvas'
 import { TissueHeatmapLayer } from '../components/viewer/TissueHeatmapLayer'
-import { LayerPanel } from '../components/viewer/LayerPanel'
 import { MinimapOverlay } from '../components/viewer/MinimapOverlay'
 import { CellTooltip } from '../components/viewer/CellTooltip'
 import { OverlayUploader } from '../components/upload/OverlayUploader'
@@ -19,6 +18,7 @@ import {
   Button,
   FollowModeIndicator,
   KeyboardShortcutsHelp,
+  LayerControls,
   NetworkErrorBanner,
   PresetEmptyState,
   ReturnToPresenterButton,
@@ -954,86 +954,25 @@ export function Session() {
           {/* Layer controls (when overlay is loaded) */}
           {overlayId && (
             <SidebarSection title="Layers">
-              <div className="space-y-3">
-                {/* Tissue heatmap controls */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-sm text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={tissueEnabled}
-                        onChange={(e) => handleTissueEnabledChange(e.target.checked)}
-                        disabled={layerControlsDisabled}
-                        className="rounded"
-                      />
-                      Tissue Heatmap
-                    </label>
-                    {tissueEnabled && (
-                      <span className="text-xs text-gray-500">
-                        {Math.round(tissueOpacity * 100)}%
-                      </span>
-                    )}
-                  </div>
-                  {tissueEnabled && (
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={tissueOpacity * 100}
-                      onChange={(e) => handleTissueOpacityChange(Number(e.target.value) / 100)}
-                      className="w-full h-1"
-                      disabled={layerControlsDisabled}
-                    />
-                  )}
-                </div>
-                {/* Cell overlay controls */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-sm text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={overlayEnabled}
-                        onChange={(e) => handleCellsEnabledChange(e.target.checked)}
-                        disabled={layerControlsDisabled}
-                        className="rounded"
-                      />
-                      Cell Polygons
-                    </label>
-                    {overlayEnabled && (
-                      <span className="text-xs text-gray-500">
-                        {Math.round(overlayOpacity * 100)}%
-                      </span>
-                    )}
-                  </div>
-                  {overlayEnabled && (
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={overlayOpacity * 100}
-                      onChange={(e) => handleCellsOpacityChange(Number(e.target.value) / 100)}
-                      className="w-full h-1"
-                      disabled={layerControlsDisabled}
-                    />
-                  )}
-                </div>
-                {/* Cell hover toggle */}
-                <label className="flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={cellHoverEnabled}
-                    onChange={(e) => handleCellHoverEnabledChange(e.target.checked)}
-                    disabled={layerControlsDisabled}
-                    className="rounded"
-                  />
-                  Show cell info on hover
-                </label>
-                {layerControlsDisabled && (
-                  <p className="text-xs text-gray-500 italic">
-                    Layer controls managed by presenter
-                  </p>
-                )}
-              </div>
+              <LayerControls
+                tissueEnabled={tissueEnabled}
+                onTissueEnabledChange={handleTissueEnabledChange}
+                tissueOpacity={tissueOpacity}
+                onTissueOpacityChange={handleTissueOpacityChange}
+                tissueClasses={DEFAULT_TISSUE_CLASSES}
+                visibleTissueClasses={visibleTissueClasses}
+                onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
+                cellsEnabled={overlayEnabled}
+                onCellsEnabledChange={handleCellsEnabledChange}
+                cellsOpacity={overlayOpacity}
+                onCellsOpacityChange={handleCellsOpacityChange}
+                cellClasses={DEFAULT_CELL_CLASSES}
+                visibleCellClasses={visibleCellClasses}
+                onVisibleCellClassesChange={handleVisibleCellClassesChange}
+                cellHoverEnabled={cellHoverEnabled}
+                onCellHoverEnabledChange={handleCellHoverEnabledChange}
+                disabled={layerControlsDisabled}
+              />
             </SidebarSection>
           )}
 
@@ -1179,29 +1118,6 @@ export function Session() {
                 currentUserId={currentUser?.id}
               />
             </div>
-          )}
-
-          {/* Layer control panel (detailed class toggles) */}
-          {overlayId && (
-            <LayerPanel
-              tissueEnabled={tissueEnabled}
-              onTissueEnabledChange={handleTissueEnabledChange}
-              tissueOpacity={tissueOpacity}
-              onTissueOpacityChange={handleTissueOpacityChange}
-              tissueClasses={DEFAULT_TISSUE_CLASSES}
-              visibleTissueClasses={visibleTissueClasses}
-              onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
-              cellsEnabled={overlayEnabled}
-              onCellsEnabledChange={handleCellsEnabledChange}
-              cellsOpacity={overlayOpacity}
-              onCellsOpacityChange={handleCellsOpacityChange}
-              cellClasses={DEFAULT_CELL_CLASSES}
-              visibleCellClasses={visibleCellClasses}
-              onVisibleCellClassesChange={handleVisibleCellClassesChange}
-              cellHoverEnabled={cellHoverEnabled}
-              onCellHoverEnabledChange={handleCellHoverEnabledChange}
-              disabled={layerControlsDisabled}
-            />
           )}
 
           {/* Return to presenter floating button (followers only, when diverged) */}
