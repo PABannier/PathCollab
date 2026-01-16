@@ -86,6 +86,7 @@ interface UseSessionReturn {
   isPresenter: boolean
   isCreatingSession: boolean
   connectionStatus: ConnectionStatus
+  latency: number | null
   cursors: CursorWithParticipant[]
   presenterViewport: Viewport | null
   secrets: SessionSecrets | null
@@ -295,7 +296,7 @@ export function useSession({
     [onError, onOverlayLoaded]
   )
 
-  const { status, sendMessage } = useWebSocket({
+  const { status, sendMessage, latency } = useWebSocket({
     url: wsUrl,
     enabled: !SOLO_MODE,
     onMessage: handleMessage,
@@ -454,6 +455,7 @@ export function useSession({
       isPresenter: true, // Act as presenter in solo mode for full controls
       isCreatingSession: false,
       connectionStatus: status, // Will be 'solo' from useWebSocket
+      latency: null,
       cursors: [],
       presenterViewport: null,
       secrets: null,
@@ -478,6 +480,7 @@ export function useSession({
     isPresenter,
     isCreatingSession,
     connectionStatus: status,
+    latency,
     cursors,
     presenterViewport,
     secrets,

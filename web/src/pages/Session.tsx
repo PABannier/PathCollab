@@ -159,6 +159,7 @@ export function Session() {
     isPresenter,
     isCreatingSession,
     connectionStatus,
+    latency,
     cursors,
     presenterViewport,
     secrets,
@@ -1192,12 +1193,39 @@ export function Session() {
         </div>
 
         {/* Right section: Metrics */}
-        <div className="flex-1 flex items-center justify-end gap-4 px-3 text-gray-400">
+        <div className="flex-1 flex items-center justify-end gap-8 px-3 text-gray-400">
           {/* Participant count */}
           {session && (
             <span>
               {session.followers.length + 1} participant
               {session.followers.length !== 0 ? 's' : ''}
+            </span>
+          )}
+
+          {/* Latency indicator */}
+          {latency !== null && connectionStatus === 'connected' && (
+            <span
+              className="flex items-center gap-1 font-mono"
+              style={{
+                color:
+                  latency < 50
+                    ? 'var(--color-success)'
+                    : latency < 150
+                      ? 'var(--color-warning)'
+                      : 'var(--color-error)',
+              }}
+            >
+              {/* Broadcast/signal icon */}
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M8 1a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 1zm0 10a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2a.5.5 0 0 1 .5-.5zm7-3.5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM4 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 4 8zm9.646-4.354a.5.5 0 0 1 0 .708l-1.414 1.414a.5.5 0 1 1-.708-.708l1.414-1.414a.5.5 0 0 1 .708 0zM4.476 11.524a.5.5 0 0 1 0 .708l-1.414 1.414a.5.5 0 1 1-.708-.708l1.414-1.414a.5.5 0 0 1 .708 0zm9.17 2.122a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 1 1 .707-.708l1.414 1.414a.5.5 0 0 1 0 .708zM4.476 4.476a.5.5 0 0 1-.708 0L2.354 3.062a.5.5 0 1 1 .708-.708l1.414 1.414a.5.5 0 0 1 0 .708zM8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z" />
+              </svg>
+              {latency}ms
             </span>
           )}
 

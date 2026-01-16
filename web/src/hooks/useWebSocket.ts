@@ -26,6 +26,7 @@ interface UseWebSocketReturn {
   lastMessage: WebSocketMessage | null
   reconnect: () => void
   disconnect: () => void
+  latency: number | null
 }
 
 const DEFAULT_RECONNECT_INTERVAL = 1000
@@ -44,8 +45,10 @@ export function useWebSocket({
 }: UseWebSocketOptions): UseWebSocketReturn {
   const [status, setStatus] = useState<ConnectionStatus>(enabled ? 'disconnected' : 'solo')
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null)
+  const [latency, setLatency] = useState<number | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
+  const pingTimestampsRef = useRef<Map<number, number>>(new Map())
   const reconnectAttemptsRef = useRef(0)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageQueueRef = useRef<WebSocketMessage[]>([])
@@ -135,6 +138,8 @@ export function useWebSocket({
 
       ws.onclose = () => {
         setStatus('disconnected')
+        setLatency(null)
+        pingTimestampsRef.current.clear()
         onCloseRef.current?.()
 
         // Schedule reconnection
@@ -159,6 +164,16 @@ export function useWebSocket({
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data) as WebSocketMessage
+
+          // Handle ack responses for latency measurement (server sends ack with ack_seq after ping)
+          if (message.type === 'ack' && typeof message.ack_seq === 'number') {
+            const sentTime = pingTimestampsRef.current.get(message.ack_seq)
+            if (sentTime) {
+              setLatency(Date.now() - sentTime)
+              pingTimestampsRef.current.delete(message.ack_seq)
+            }
+          }
+
           setLastMessage(message)
           onMessageRef.current?.(message)
         } catch {
@@ -198,6 +213,27 @@ export function useWebSocket({
 
     return seq
   }, [])
+
+  // Periodic ping for latency measurement
+  useEffect(() => {
+    if (status !== 'connected') {
+      return
+    }
+
+    const sendPing = () => {
+      const seq = seqRef.current++
+      const msgWithSeq = { type: 'ping', seq }
+      pingTimestampsRef.current.set(seq, Date.now())
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(msgWithSeq))
+      }
+    }
+
+    // Send immediately on connect, then every 5 seconds
+    sendPing()
+    const interval = setInterval(sendPing, 5000)
+    return () => clearInterval(interval)
+  }, [status])
 
   // Manually reconnect
   const manualReconnect = useCallback(() => {
@@ -246,5 +282,6 @@ export function useWebSocket({
     lastMessage,
     reconnect: manualReconnect,
     disconnect,
+    latency,
   }
 }
