@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   SlideViewer,
   type SlideInfo,
@@ -24,7 +24,7 @@ import {
   PresetEmptyState,
   ReturnToPresenterButton,
 } from '../components/ui'
-import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
+import { useSession, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
 import { useAvailableSlides } from '../hooks/useAvailableSlides'
@@ -48,6 +48,7 @@ const DEMO_SLIDE_BASE: Omit<SlideInfo, 'tileUrlTemplate'> = {
 export function Session() {
   const { id: sessionId } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const viewerContainerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<SlideViewerHandle | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -85,6 +86,17 @@ export function Session() {
     setTimeout(() => setNotification(null), 3000)
   }, [])
 
+  // Handle session creation - update URL to include session ID and secrets
+  const handleSessionCreated = useCallback(
+    (newSessionId: string, newJoinSecret: string, newPresenterKey: string) => {
+      // Build presenter URL with secrets in hash fragment (never sent to server)
+      const presenterUrl = `/s/${newSessionId}#join=${newJoinSecret}&presenter=${newPresenterKey}`
+      // Replace current URL without adding to history
+      navigate(presenterUrl, { replace: true })
+    },
+    [navigate]
+  )
+
   // Session hook
   const {
     session,
@@ -112,6 +124,7 @@ export function Session() {
     presenterKey,
     onError: setError,
     onOverlayLoaded: handleOverlayLoaded,
+    onSessionCreated: handleSessionCreated,
   })
 
   const autoCreateSlideId = useMemo(() => {

@@ -73,6 +73,7 @@ interface UseSessionOptions {
   presenterKey?: string
   onError?: (message: string) => void
   onOverlayLoaded?: (overlayId: string, manifest: OverlayManifest) => void
+  onSessionCreated?: (sessionId: string, joinSecret: string, presenterKey: string) => void
 }
 
 interface SessionSecrets {
@@ -112,6 +113,7 @@ export function useSession({
   presenterKey,
   onError,
   onOverlayLoaded,
+  onSessionCreated,
 }: UseSessionOptions): UseSessionReturn {
   // All hooks must be called unconditionally to satisfy React's rules of hooks
   const [session, setSession] = useState<SessionState | null>(null)
@@ -152,6 +154,12 @@ export function useSession({
               joinSecret: message.join_secret as string,
               presenterKey: message.presenter_key as string,
             })
+            // Notify caller about session creation for URL update
+            onSessionCreated?.(
+              sessionData.id,
+              message.join_secret as string,
+              message.presenter_key as string
+            )
           }
           break
         }
@@ -293,7 +301,7 @@ export function useSession({
         }
       }
     },
-    [onError, onOverlayLoaded]
+    [onError, onOverlayLoaded, onSessionCreated]
   )
 
   const { status, sendMessage, latency } = useWebSocket({
