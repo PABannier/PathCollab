@@ -1,11 +1,11 @@
 use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use pathcollab_server::SessionManager;
 use pathcollab_server::config::{Config, SlideSourceMode};
 use pathcollab_server::overlay::overlay_routes;
-use pathcollab_server::session::state::SessionConfig as SessionStateConfig;
 use pathcollab_server::server::{AppState, ws_handler};
+use pathcollab_server::session::state::SessionConfig as SessionStateConfig;
 use pathcollab_server::slide::{LocalSlideService, SlideAppState, slide_routes};
-use pathcollab_server::SessionManager;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -280,8 +280,8 @@ async fn main() -> anyhow::Result<()> {
 
             // ServeDir with SPA fallback: serve index.html for any unmatched routes
             let index_path = static_dir.join("index.html");
-            let serve_dir = ServeDir::new(static_dir)
-                .not_found_service(ServeFile::new(&index_path));
+            let serve_dir =
+                ServeDir::new(static_dir).not_found_service(ServeFile::new(&index_path));
 
             // Add compression layer for static files (gzip)
             let static_service = ServiceBuilder::new()

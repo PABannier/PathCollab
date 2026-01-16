@@ -256,11 +256,14 @@ pub async fn get_raster_tile(
                 path.level, path.x, path.y
             ),
             code: "not_found".to_string(),
-    })?;
+        })?;
 
     let tile_size = overlay.manifest.tile_size.to_string();
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
     headers.insert(
         "X-Tile-Width",
         HeaderValue::from_str(&tile_size).unwrap_or_else(|_| HeaderValue::from_static("256")),

@@ -60,6 +60,11 @@ impl AppState {
         }
     }
 
+    pub fn with_session_manager(mut self, session_manager: Arc<SessionManager>) -> Self {
+        self.session_manager = session_manager;
+        self
+    }
+
     pub fn with_slide_service(mut self, service: Arc<dyn SlideService>) -> Self {
         self.slide_service = Some(service);
         self
