@@ -17,10 +17,11 @@ import { Sidebar, SidebarSection } from '../components/layout'
 import { StatusBar, ConnectionBadge } from '../components/layout'
 import {
   Button,
+  FollowModeIndicator,
   KeyboardShortcutsHelp,
   NetworkErrorBanner,
   PresetEmptyState,
-  Toggle,
+  ReturnToPresenterButton,
 } from '../components/ui'
 import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
@@ -159,6 +160,7 @@ export function Session() {
     presenterViewport,
     secrets,
     isFollowing,
+    hasDiverged,
     createSession,
     updateCursor,
     updateViewport,
@@ -166,6 +168,7 @@ export function Session() {
     changeSlide,
     snapToPresenter,
     setIsFollowing,
+    checkDivergence,
   } = useSession({
     sessionId,
     joinSecret,
@@ -529,12 +532,14 @@ export function Session() {
   const handleViewportChange = useCallback(
     (viewport: { centerX: number; centerY: number; zoom: number }) => {
       setCurrentViewport(viewport)
+      // Check if follower has diverged from presenter
+      checkDivergence(viewport)
       // Only send viewport updates if we're in a session
       if (session) {
         updateViewport(viewport.centerX, viewport.centerY, viewport.zoom)
       }
     },
-    [session, updateViewport]
+    [session, updateViewport, checkDivergence]
   )
 
   const applyPresenterViewport = useCallback(
@@ -547,6 +552,14 @@ export function Session() {
     },
     []
   )
+
+  // Handle return to presenter (re-enables follow mode and snaps to presenter)
+  const handleReturnToPresenter = useCallback(() => {
+    setIsFollowing(true)
+    if (presenterViewport) {
+      applyPresenterViewport(presenterViewport)
+    }
+  }, [setIsFollowing, presenterViewport, applyPresenterViewport])
 
   // Handle mouse move for cursor tracking
   const handleMouseMove = useCallback(
@@ -769,20 +782,9 @@ export function Session() {
       {/* Two-pane layout: Sidebar + Viewer */}
       <div className="flex flex-1 overflow-hidden relative">
         <Sidebar>
-          {/* Follow presenter toggle (followers only) */}
+          {/* Follow presenter indicator (followers only) */}
           {session && !isPresenter && (
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <span className="text-sm font-medium text-gray-300">Follow presenter</span>
-                <p className="text-xs text-gray-500">Sync your view automatically</p>
-              </div>
-              <Toggle
-                checked={isFollowing}
-                onChange={setIsFollowing}
-                aria-label="Follow presenter"
-                size="sm"
-              />
-            </div>
+            <FollowModeIndicator isFollowing={isFollowing} onFollowChange={setIsFollowing} />
           )}
 
           {/* Connection status */}
@@ -830,8 +832,8 @@ export function Session() {
             </div>
           )}
 
-          {/* Share Link section */}
-          {slide && !isSoloMode && (
+          {/* Share Link section (presenter only) */}
+          {slide && !isSoloMode && isPresenter && (
             <div className="mb-4">
               <p className="font-bold text-gray-300 mb-2" style={{ fontSize: '1rem' }}>
                 Share Link
@@ -1199,6 +1201,14 @@ export function Session() {
               cellHoverEnabled={cellHoverEnabled}
               onCellHoverEnabledChange={handleCellHoverEnabledChange}
               disabled={layerControlsDisabled}
+            />
+          )}
+
+          {/* Return to presenter floating button (followers only, when diverged) */}
+          {session && !isPresenter && hasDiverged && (
+            <ReturnToPresenterButton
+              onClick={handleReturnToPresenter}
+              presenterName={session.presenter.name}
             />
           )}
 

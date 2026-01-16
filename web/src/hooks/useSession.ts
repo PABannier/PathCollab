@@ -90,6 +90,7 @@ interface UseSessionReturn {
   presenterViewport: Viewport | null
   secrets: SessionSecrets | null
   isFollowing: boolean
+  hasDiverged: boolean
 
   // Actions
   createSession: (slideId: string) => void
@@ -101,6 +102,7 @@ interface UseSessionReturn {
   changeSlide: (slideId: string) => void
   snapToPresenter: () => void
   setIsFollowing: (following: boolean) => void
+  checkDivergence: (currentViewport: {centerX: number, centerY: number, zoom: number}) => void
 }
 
 export function useSession({
@@ -119,6 +121,7 @@ export function useSession({
   const [presenterViewport, setPresenterViewport] = useState<Viewport | null>(null)
   const [secrets, setSecrets] = useState<SessionSecrets | null>(null)
   const [isFollowing, setIsFollowing] = useState(true) // Default to following when joining
+  const [hasDiverged, setHasDiverged] = useState(false)
   const pendingPresenterAuthSeqRef = useRef<number | null>(null)
   const presenterAuthSessionRef = useRef<string | null>(null)
   const sendMessageRef = useRef<((message: WebSocketMessage) => number) | null>(null)
@@ -410,6 +413,38 @@ export function useSession({
     })
   }, [sendMessage])
 
+  // Check if follower's viewport has diverged from presenter's
+  const checkDivergence = useCallback(
+    (currentViewport: { centerX: number; centerY: number; zoom: number }) => {
+      if (!presenterViewport || isPresenter || !isFollowing) {
+        setHasDiverged(false)
+        return
+      }
+
+      // Threshold-based comparison in normalized coordinates
+      const positionDiff = Math.sqrt(
+        Math.pow(currentViewport.centerX - presenterViewport.center_x, 2) +
+          Math.pow(currentViewport.centerY - presenterViewport.center_y, 2)
+      )
+      const zoomRatio = currentViewport.zoom / presenterViewport.zoom
+      const zoomDiff = Math.abs(Math.log(zoomRatio))
+
+      const isDiverged = positionDiff > 0.05 || zoomDiff > 0.2
+
+      if (isDiverged && isFollowing) {
+        setIsFollowing(false)
+        setHasDiverged(true)
+      }
+    },
+    [presenterViewport, isPresenter, isFollowing]
+  )
+
+  // Wrapper to reset divergence when re-enabling follow
+  const handleSetIsFollowing = useCallback((following: boolean) => {
+    setIsFollowing(following)
+    if (following) setHasDiverged(false)
+  }, [])
+
   // In solo mode, override return values for standalone viewing
   // Hooks are still called above but we return solo-appropriate values
   if (SOLO_MODE) {
@@ -423,6 +458,7 @@ export function useSession({
       presenterViewport: null,
       secrets: null,
       isFollowing: false,
+      hasDiverged: false,
       createSession,
       joinSession,
       authenticatePresenter,
@@ -431,7 +467,8 @@ export function useSession({
       updateLayerVisibility,
       changeSlide,
       snapToPresenter,
-      setIsFollowing,
+      setIsFollowing: handleSetIsFollowing,
+      checkDivergence,
     }
   }
 
@@ -445,6 +482,7 @@ export function useSession({
     presenterViewport,
     secrets,
     isFollowing,
+    hasDiverged,
     createSession,
     joinSession,
     authenticatePresenter,
@@ -453,6 +491,7 @@ export function useSession({
     updateLayerVisibility,
     changeSlide,
     snapToPresenter,
-    setIsFollowing,
+    setIsFollowing: handleSetIsFollowing,
+    checkDivergence,
   }
 }
