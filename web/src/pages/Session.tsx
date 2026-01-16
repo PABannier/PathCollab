@@ -440,10 +440,11 @@ export function Session() {
       const viewportWidth = 1 / currentViewport.zoom
       const viewportHeight = viewerBounds.height / viewerBounds.width / currentViewport.zoom
 
+      // IMPORTANT: In OpenSeadragon, both X and Y are normalized by slideWidth
       const minX = (currentViewport.centerX - viewportWidth / 2) * slide.width
       const maxX = (currentViewport.centerX + viewportWidth / 2) * slide.width
-      const minY = (currentViewport.centerY - viewportHeight / 2) * slide.height
-      const maxY = (currentViewport.centerY + viewportHeight / 2) * slide.height
+      const minY = (currentViewport.centerY - viewportHeight / 2) * slide.width
+      const maxY = (currentViewport.centerY + viewportHeight / 2) * slide.width
 
       // Server stores vector chunks at level 0 using the overlay tile grid.
       const serverTileSize = overlayManifest?.tile_size ?? 256
@@ -461,8 +462,16 @@ export function Session() {
       const cells: CellPolygon[] = []
       const fetchPromises: Promise<void>[] = []
 
-      // Limit tile fetches to prevent excessive requests at low zoom
-      const maxTilesPerAxis = 4
+      // Dynamic tile limit based on zoom level
+      // At high zoom (>5), fetch all visible tiles (cells are large enough to see)
+      // At low zoom (<5), limit tiles since cells would be sub-pixel anyway
+      const tilesNeededX = endTileX - startTileX + 1
+      const tilesNeededY = endTileY - startTileY + 1
+
+      // Scale max tiles with zoom: more tiles at higher zoom
+      // zoom 1 = 6 tiles, zoom 10 = 15 tiles, zoom 50+ = 30 tiles
+      const maxTilesPerAxis = Math.min(30, Math.max(6, Math.floor(currentViewport.zoom * 1.5)))
+
       const centerTileX = Math.floor((minX + maxX) / 2 / serverTileSize)
       const centerTileY = Math.floor((minY + maxY) / 2 / serverTileSize)
       let rangeStartX = startTileX
@@ -470,13 +479,13 @@ export function Session() {
       let rangeStartY = startTileY
       let rangeEndY = endTileY
 
-      if (endTileX - startTileX + 1 > maxTilesPerAxis) {
+      if (tilesNeededX > maxTilesPerAxis) {
         rangeStartX = Math.max(0, centerTileX - Math.floor(maxTilesPerAxis / 2))
         rangeEndX = Math.min(maxTileX, rangeStartX + maxTilesPerAxis - 1)
         rangeStartX = Math.max(0, rangeEndX - maxTilesPerAxis + 1)
       }
 
-      if (endTileY - startTileY + 1 > maxTilesPerAxis) {
+      if (tilesNeededY > maxTilesPerAxis) {
         rangeStartY = Math.max(0, centerTileY - Math.floor(maxTilesPerAxis / 2))
         rangeEndY = Math.min(maxTileY, rangeStartY + maxTilesPerAxis - 1)
         rangeStartY = Math.max(0, rangeEndY - maxTilesPerAxis + 1)
@@ -523,6 +532,10 @@ export function Session() {
       await Promise.all(fetchPromises)
       // Only update state if the request wasn't aborted
       if (!abortController.signal.aborted) {
+        console.log('[Session] Fetched cells:', cells.length, 'for tiles:', rangeStartX, '-', rangeEndX, 'x', rangeStartY, '-', rangeEndY)
+        if (cells.length > 0) {
+          console.log('[Session] Sample cell:', cells[0])
+        }
         setOverlayCells(cells)
       }
     }

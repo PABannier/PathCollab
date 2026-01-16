@@ -176,24 +176,34 @@ export function OverlayCanvas({
     return () => {
       if (vaoRef.current) {
         gl.deleteVertexArray(vaoRef.current)
+        vaoRef.current = null
       }
       if (posBufferRef.current) {
         gl.deleteBuffer(posBufferRef.current)
+        posBufferRef.current = null
       }
       if (colorBufferRef.current) {
         gl.deleteBuffer(colorBufferRef.current)
+        colorBufferRef.current = null
       }
       gl.deleteProgram(program)
       gl.deleteShader(vertShader)
       gl.deleteShader(fragShader)
+      // Clear refs so they don't point to deleted objects
+      programRef.current = null
+      glRef.current = null
+      vertexCountRef.current = 0
     }
   }, [])
 
   // Build vertex data when cells change
   useEffect(() => {
     const gl = glRef.current
-    const program = programRef.current
-    if (!gl || !program || !cells.length) return
+    console.log('[OverlayCanvas] cells received:', cells.length, 'enabled:', enabled, 'gl:', !!gl, 'program:', !!programRef.current)
+    if (cells.length > 0) {
+      console.log('[OverlayCanvas] Sample cell:', cells[0], 'slideWidth:', slideWidth)
+    }
+    if (!gl || !programRef.current || !cells.length) return
 
     // Build vertex data for all visible cells
     const vertices: number[] = []
@@ -277,9 +287,13 @@ export function OverlayCanvas({
     }
 
     if (vertices.length === 0) {
+      console.log('[OverlayCanvas] No vertices generated! visibleClasses:', visibleClasses)
       vertexCountRef.current = 0
       return
     }
+
+    console.log('[OverlayCanvas] Vertices generated:', vertices.length / 2, 'triangles:', vertices.length / 6)
+    console.log('[OverlayCanvas] First few vertices (normalized):', vertices.slice(0, 12))
 
     // Delete old VAO and buffers
     if (vaoRef.current) {
@@ -303,7 +317,14 @@ export function OverlayCanvas({
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
     posBufferRef.current = posBuffer
 
-    const posLoc = gl.getAttribLocation(program, 'a_position')
+    // Use programRef.current directly to avoid stale closure
+    const currentProgram = programRef.current
+    if (!currentProgram) {
+      console.warn('[OverlayCanvas] Program not available during buffer setup')
+      return
+    }
+
+    const posLoc = gl.getAttribLocation(currentProgram, 'a_position')
     gl.enableVertexAttribArray(posLoc)
     gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0)
 
@@ -313,7 +334,7 @@ export function OverlayCanvas({
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
     colorBufferRef.current = colorBuffer
 
-    const colorLoc = gl.getAttribLocation(program, 'a_color')
+    const colorLoc = gl.getAttribLocation(currentProgram, 'a_color')
     gl.enableVertexAttribArray(colorLoc)
     gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, 0, 0)
 
@@ -328,6 +349,17 @@ export function OverlayCanvas({
     const program = programRef.current
     const vao = vaoRef.current
     const canvas = canvasRef.current
+
+    console.log('[OverlayCanvas] Render effect:', {
+      gl: !!gl,
+      program: !!program,
+      vao: !!vao,
+      canvas: !!canvas,
+      viewerBounds: !!viewerBounds,
+      enabled,
+      vertexCount: vertexCountRef.current,
+      viewport,
+    })
 
     if (!gl || !program || !vao || !canvas || !viewerBounds || !enabled) return
     if (vertexCountRef.current === 0) return
@@ -364,9 +396,8 @@ export function OverlayCanvas({
     gl.bindVertexArray(vao)
     gl.drawArrays(gl.TRIANGLES, 0, vertexCountRef.current)
     gl.bindVertexArray(null)
+    console.log('[OverlayCanvas] Drew', vertexCountRef.current, 'vertices at viewport', viewport)
   }, [viewport, viewerBounds, opacity, enabled])
-
-  if (!enabled || !viewerBounds) return null
 
   if (error) {
     return (
@@ -376,13 +407,15 @@ export function OverlayCanvas({
     )
   }
 
+  // Always render the canvas so WebGL can initialize, but hide when not enabled
   return (
     <canvas
       ref={canvasRef}
       className="pointer-events-none absolute inset-0"
       style={{
-        width: viewerBounds.width,
-        height: viewerBounds.height,
+        width: viewerBounds?.width ?? 0,
+        height: viewerBounds?.height ?? 0,
+        display: enabled && viewerBounds ? 'block' : 'none',
       }}
     />
   )

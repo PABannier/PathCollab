@@ -2,10 +2,17 @@
 
 ## Running the frontend
 
+```bash
+cd ./web && bun run dev --port 3000
+```
 
+## Running the backend in development
 
-## Running the backend
+To launch the backend, you'll need to specify the directory that contains the WSIs, and the directory that contains the overlays.
 
+```bash
+SLIDES_DIR=/data/wsi_slides OVERLAY_DIR=/data/cell_masks PORT=8080 RUST_LOG=pathcollab=debug,tower_http=debug cargo run
+```
 
 ## Quick Reference
 
