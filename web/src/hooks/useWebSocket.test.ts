@@ -171,16 +171,19 @@ describe('useWebSocket', () => {
         mockWs.getInstance()?.simulateOpen()
       })
 
-      const message: WebSocketMessage = { type: 'ping' }
+      const message: WebSocketMessage = { type: 'test_message' }
 
       act(() => {
         result.current.sendMessage(message)
       })
 
       const sentMessages = mockWs.getInstance()?.getSentMessages()
-      expect(sentMessages).toHaveLength(1)
-      expect(sentMessages?.[0].type).toBe('ping')
-      expect(sentMessages?.[0].seq).toBeDefined()
+      // Note: The hook sends an automatic ping on connect for latency measurement,
+      // so we expect at least 2 messages (auto ping + our test message)
+      expect(sentMessages?.length).toBeGreaterThanOrEqual(2)
+      const testMsg = sentMessages?.find((m) => m.type === 'test_message')
+      expect(testMsg).toBeDefined()
+      expect(testMsg?.seq).toBeDefined()
     })
 
     it('should queue messages when disconnected and send on reconnect', async () => {
@@ -203,10 +206,13 @@ describe('useWebSocket', () => {
         mockWs.getInstance()?.simulateOpen()
       })
 
-      // Queued message should be sent
+      // Queued message should be sent (along with automatic latency ping)
       const sentMessages = mockWs.getInstance()?.getSentMessages()
-      expect(sentMessages).toHaveLength(1)
-      expect(sentMessages?.[0].type).toBe('queued_message')
+      // Note: The hook sends an automatic ping on connect for latency measurement,
+      // so we expect at least 2 messages (queued message + auto ping)
+      expect(sentMessages?.length).toBeGreaterThanOrEqual(2)
+      const queuedMsg = sentMessages?.find((m) => m.type === 'queued_message')
+      expect(queuedMsg).toBeDefined()
     })
 
     it('should add sequence numbers to messages', async () => {
