@@ -791,7 +791,9 @@ export function Session() {
               <ConnectionBadge status={connectionStatus} />
               <span className="text-gray-400 italic text-sm">
                 {connectionStatus === 'connected'
-                  ? 'You are connected'
+                  ? isPresenter
+                    ? 'You are presenting'
+                    : 'You are following'
                   : connectionStatus === 'connecting'
                     ? 'Connecting...'
                     : connectionStatus === 'reconnecting'
@@ -887,26 +889,44 @@ export function Session() {
               <div className="flex flex-col gap-1">
                 <div
                   className="flex items-center gap-2 px-2 py-1.5 rounded text-sm"
-                  style={{ backgroundColor: '#3C3C3C' }}
+                  style={{ backgroundColor: 'var(--color-gray-700)' }}
                 >
                   <span
                     className="h-2 w-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: session.presenter.color }}
+                    aria-hidden="true"
                   />
-                  <span className="text-gray-300">{session.presenter.name}</span>
-                  <span className="text-gray-500 ml-auto">(host)</span>
+                  <span className="text-gray-300">
+                    {session.presenter.name}
+                    {currentUser?.id === session.presenter.id && (
+                      <span className="text-gray-400 ml-1">(you)</span>
+                    )}
+                  </span>
+                  <span
+                    className="ml-auto flex items-center gap-1"
+                    style={{ color: 'var(--color-accent-purple)' }}
+                  >
+                    <span className="text-xs">★</span>
+                    <span className="text-gray-500">host</span>
+                  </span>
                 </div>
                 {session.followers.map((f) => (
                   <div
                     key={f.id}
                     className="flex items-center gap-2 px-2 py-1.5 rounded text-sm"
-                    style={{ backgroundColor: '#3C3C3C' }}
+                    style={{ backgroundColor: 'var(--color-gray-700)' }}
                   >
                     <span
                       className="h-2 w-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: f.color }}
+                      aria-hidden="true"
                     />
-                    <span className="text-gray-300">{f.name}</span>
+                    <span className="text-gray-300">
+                      {f.name}
+                      {currentUser?.id === f.id && (
+                        <span className="text-gray-400 ml-1">(you)</span>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>
