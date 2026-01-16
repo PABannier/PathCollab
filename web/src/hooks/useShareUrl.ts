@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useEffectEvent } from 'react'
 import type { SessionState } from './useSession'
 
 /** Session secrets for secure sharing */
@@ -53,12 +53,16 @@ export function useShareUrl({
   // Track pending copy request (for auto-copy after session creation)
   const pendingCopyRef = useRef(false)
 
+  const updateShareUrl = useEffectEvent((host: string, sessionId: string, joinSecret: string) => {
+    // Build share URL with join secret in hash (not sent to server)
+    const baseUrl = `${host}/s/${sessionId}#join=${joinSecret}`
+    setShareUrl(baseUrl)
+  })
+
   // Build share URL when session is created with secrets
   useEffect(() => {
     if (session && secrets) {
-      // Build share URL with join secret in hash (not sent to server)
-      const baseUrl = `${window.location.origin}/s/${session.id}#join=${secrets.joinSecret}`
-      setShareUrl(baseUrl)
+      updateShareUrl(window.location.origin, session.id, secrets.joinSecret)
     }
   }, [session, secrets])
 
