@@ -2,8 +2,10 @@ use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use pathcollab_server::config::{Config, SlideSourceMode};
 use pathcollab_server::overlay::overlay_routes;
+use pathcollab_server::session::state::SessionConfig as SessionStateConfig;
 use pathcollab_server::server::{AppState, ws_handler};
 use pathcollab_server::slide::{LocalSlideService, SlideAppState, slide_routes};
+use pathcollab_server::SessionManager;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -215,8 +217,16 @@ async fn main() -> anyhow::Result<()> {
         slide_service: slide_service.clone(),
     };
 
-    // Create shared application state with slide service and public base URL
+    // Create shared application state with session config, slide service, and public base URL
+    let session_config = SessionStateConfig {
+        max_duration: config.session.max_duration,
+        presenter_grace_period: config.session.presenter_grace_period,
+        max_followers: config.session.max_followers,
+    };
+    let session_manager = Arc::new(SessionManager::with_config(session_config));
+
     let app_state = AppState::new()
+        .with_session_manager(session_manager)
         .with_slide_service(slide_service)
         .with_public_base_url(config.public_base_url.clone());
 
