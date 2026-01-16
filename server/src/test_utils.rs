@@ -223,6 +223,7 @@ pub fn create_test_slide() -> SlideInfo {
         tile_size: 256,
         num_levels: 10,
         tile_url_template: "/api/slide/{id}/tile/{level}/{x}/{y}".to_string(),
+        has_overlay: false,
     }
 }
 
@@ -236,6 +237,7 @@ pub fn create_test_slide_with_size(width: u64, height: u64) -> SlideInfo {
         tile_size: 256,
         num_levels: calculate_levels(width.max(height)),
         tile_url_template: "/api/slide/{id}/tile/{level}/{x}/{y}".to_string(),
+        has_overlay: false,
     }
 }
 

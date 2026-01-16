@@ -169,6 +169,8 @@ pub struct SlideInfo {
     pub tile_size: u32,
     pub num_levels: u32,
     pub tile_url_template: String,
+    #[serde(default)]
+    pub has_overlay: bool,
 }
 
 /// Viewport state

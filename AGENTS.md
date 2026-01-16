@@ -1,8 +1,15 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+## Running the frontend
+
+
+
+## Running the backend
+
 
 ## Quick Reference
+
+This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ```bash
 bd ready              # Find available work

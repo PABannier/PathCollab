@@ -59,12 +59,13 @@ export function usePresence({
       const relY = (clientY - viewerBounds.top) / viewerBounds.height
 
       // Convert to slide coordinates based on viewport
-      // OpenSeadragon uses normalized coordinates (0-1) for the slide
+      // OpenSeadragon uses normalized coordinates where both X and Y are divided by slideWidth
       const viewportWidth = 1 / viewport.zoom
-      const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
+      const viewportHeight = (viewerBounds.height / viewerBounds.width) / viewport.zoom
 
+      // NOTE: Both X and Y multiply by slideWidth because OSD normalizes Y by width, not height
       const slideX = (viewport.centerX - viewportWidth / 2 + relX * viewportWidth) * slideWidth
-      const slideY = (viewport.centerY - viewportHeight / 2 + relY * viewportHeight) * slideHeight
+      const slideY = (viewport.centerY - viewportHeight / 2 + relY * viewportHeight) * slideWidth
 
       // Clamp to slide bounds
       return {

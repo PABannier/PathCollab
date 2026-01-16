@@ -381,8 +381,9 @@ export function TissueHeatmapLayer({
     const level = Math.max(0, Math.min(maxLevel, desiredLevel))
     const scale = Math.pow(2, level)
 
+    // NOTE: Both tileWidth and tileHeight are normalized by slideWidth to match OSD's coordinate system
     const tileWidth = (tileSize * scale) / slideWidth
-    const tileHeight = (tileSize * scale) / slideHeight
+    const tileHeight = (tileSize * scale) / slideWidth
     const tilesPerDimX = Math.max(1, Math.ceil(slideWidth / (tileSize * scale)))
     const tilesPerDimY = Math.max(1, Math.ceil(slideHeight / (tileSize * scale)))
 
@@ -393,8 +394,9 @@ export function TissueHeatmapLayer({
     let endY = Math.min(tilesPerDimY - 1, Math.ceil(maxY / tileHeight))
 
     // Limit tiles around the viewport center
+    // NOTE: Both centerX and centerY use slideWidth for conversion to match OSD coords
     const centerTileX = Math.floor((viewport.centerX * slideWidth) / (tileSize * scale))
-    const centerTileY = Math.floor((viewport.centerY * slideHeight) / (tileSize * scale))
+    const centerTileY = Math.floor((viewport.centerY * slideWidth) / (tileSize * scale))
 
     if (endX - startX + 1 > maxTilesPerAxis) {
       startX = Math.max(0, centerTileX - Math.floor(maxTilesPerAxis / 2))

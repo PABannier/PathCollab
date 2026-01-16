@@ -180,13 +180,13 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let overlay_dir = Path::new(&config.overlay.cache_dir);
-    match ensure_directory(overlay_dir, "overlay cache") {
+    let overlay_cache_dir = Path::new(&config.overlay.cache_dir);
+    match ensure_directory(overlay_cache_dir, "overlay cache") {
         Ok(_) => {}
         Err(e) => {
             warn!(
                 "Failed to create overlay cache directory {:?}: {}",
-                overlay_dir, e
+                overlay_cache_dir, e
             );
         }
     }
@@ -210,15 +210,33 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Ensure overlay directory exists
+    let overlay_dir = &config.overlay.overlay_dir;
+    match ensure_directory(overlay_dir, "overlays") {
+        Ok(is_empty) => {
+            if is_empty {
+                warn!(
+                    "Overlay directory {:?} is empty - place overlay files here (pattern: <slide_name>/overlays.bin)",
+                    overlay_dir
+                );
+            }
+        }
+        Err(e) => {
+            warn!("Failed to create overlay directory {:?}: {}", overlay_dir, e);
+        }
+    }
+
     // Create slide app state for HTTP routes
     let slide_app_state = SlideAppState {
         slide_service: slide_service.clone(),
+        overlay_dir: config.overlay.overlay_dir.clone(),
     };
 
     // Create shared application state with slide service and public base URL
     let app_state = AppState::new()
         .with_slide_service(slide_service)
-        .with_public_base_url(config.public_base_url.clone());
+        .with_public_base_url(config.public_base_url.clone())
+        .with_overlay_dir(config.overlay.overlay_dir.clone());
 
     // Periodic cleanup for expired sessions
     let cleanup_state = app_state.clone();

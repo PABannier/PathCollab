@@ -20,8 +20,6 @@ pub struct TileCoord {
 #[derive(Debug, Clone)]
 pub struct IndexedCell {
     pub cell_index: usize,
-    pub centroid_x: f32,
-    pub centroid_y: f32,
     pub class_id: u32,
     pub confidence: f32,
     pub bbox: AABB<[f32; 2]>,
@@ -76,8 +74,6 @@ impl TileBinIndex {
         for (idx, cell) in cells.iter().enumerate() {
             let indexed = IndexedCell {
                 cell_index: idx,
-                centroid_x: cell.centroid_x,
-                centroid_y: cell.centroid_y,
                 class_id: cell.class_id,
                 confidence: cell.confidence,
                 bbox: AABB::from_corners(
@@ -89,8 +85,13 @@ impl TileBinIndex {
             // Add to bins at each pyramid level
             for level in 0..self.num_levels {
                 let scale = 1u32 << level;
-                let tile_x = (cell.centroid_x as u32) / (self.tile_size * scale);
-                let tile_y = (cell.centroid_y as u32) / (self.tile_size * scale);
+
+                // Compute actual centroid as midpoint of bounding box
+                let cell_centroid_x = (cell.bbox_min_x + cell.bbox_max_x) / 2.0;
+                let cell_centroid_y = (cell.bbox_min_y + cell.bbox_max_y) / 2.0;
+
+                let tile_x = (cell_centroid_x as u32) / (self.tile_size * scale);
+                let tile_y = (cell_centroid_y as u32) / (self.tile_size * scale);
 
                 let coord = TileCoord {
                     level,
@@ -214,8 +215,6 @@ mod tests {
     fn create_test_cells() -> Vec<CellData> {
         vec![
             CellData {
-                centroid_x: 100.0,
-                centroid_y: 100.0,
                 class_id: 0,
                 confidence: 0.9,
                 bbox_min_x: 90.0,
@@ -223,11 +222,8 @@ mod tests {
                 bbox_max_x: 110.0,
                 bbox_max_y: 110.0,
                 vertices: vec![],
-                area: 400.0,
             },
             CellData {
-                centroid_x: 500.0,
-                centroid_y: 500.0,
                 class_id: 1,
                 confidence: 0.8,
                 bbox_min_x: 490.0,
@@ -235,7 +231,6 @@ mod tests {
                 bbox_max_x: 510.0,
                 bbox_max_y: 510.0,
                 vertices: vec![],
-                area: 400.0,
             },
         ]
     }

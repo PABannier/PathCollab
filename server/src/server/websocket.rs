@@ -1,3 +1,4 @@
+use crate::overlay::check_overlay_exists;
 use crate::overlay::routes::OverlayStore;
 use crate::protocol::{ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport};
 use crate::session::manager::{SessionError, SessionManager};
@@ -12,6 +13,7 @@ use axum::{
 use metrics::{counter, histogram};
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -44,8 +46,10 @@ pub struct AppState {
     pub session_broadcasters: SessionBroadcasters,
     pub overlay_store: OverlayStore,
     pub slide_service: Option<Arc<dyn SlideService>>,
-    /// Public base URL for link generation (e.g., "https://pathcollab.example.com")
+    /// Public base URL for link generation
     pub public_base_url: Option<String>,
+    /// Directory containing overlay files (pattern: <slide_name>/overlays.bin)
+    pub overlay_dir: PathBuf,
 }
 
 impl AppState {
@@ -57,6 +61,7 @@ impl AppState {
             overlay_store: crate::overlay::routes::new_overlay_store(),
             slide_service: None,
             public_base_url: None,
+            overlay_dir: PathBuf::from("./data/overlays"),
         }
     }
 
@@ -67,6 +72,11 @@ impl AppState {
 
     pub fn with_public_base_url(mut self, url: Option<String>) -> Self {
         self.public_base_url = url;
+        self
+    }
+
+    pub fn with_overlay_dir(mut self, dir: PathBuf) -> Self {
+        self.overlay_dir = dir;
         self
     }
 
@@ -448,17 +458,22 @@ async fn handle_client_message(
             // Fetch real slide metadata from slide service
             let slide = if let Some(ref slide_service) = state.slide_service {
                 match slide_service.get_slide(&slide_id).await {
-                    Ok(metadata) => SlideInfo {
-                        id: metadata.id,
-                        name: metadata.name,
-                        width: metadata.width,
-                        height: metadata.height,
-                        tile_size: metadata.tile_size,
-                        num_levels: metadata.num_levels,
-                        tile_url_template: format!(
-                            "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
-                            slide_id
-                        ),
+                    Ok(metadata) => {
+                        // Check for overlay existence
+                        let has_overlay = check_overlay_exists(&state.overlay_dir, &slide_id).is_some();
+                        SlideInfo {
+                            id: metadata.id,
+                            name: metadata.name,
+                            width: metadata.width,
+                            height: metadata.height,
+                            tile_size: metadata.tile_size,
+                            num_levels: metadata.num_levels,
+                            tile_url_template: format!(
+                                "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
+                                slide_id
+                            ),
+                            has_overlay,
+                        }
                     },
                     Err(e) => {
                         // Check if demo mode allows fallback to virtual slide
@@ -482,6 +497,7 @@ async fn handle_client_message(
                                     "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
                                     slide_id
                                 ),
+                                has_overlay: false,
                             }
                         } else {
                             error!("Failed to get slide metadata: {}", e);
@@ -516,6 +532,7 @@ async fn handle_client_message(
                         "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
                         slide_id
                     ),
+                    has_overlay: false,
                 }
             };
 
@@ -954,17 +971,22 @@ async fn handle_client_message(
                 // Fetch slide metadata
                 let slide = if let Some(ref slide_service) = state.slide_service {
                     match slide_service.get_slide(&slide_id).await {
-                        Ok(metadata) => SlideInfo {
-                            id: metadata.id,
-                            name: metadata.name,
-                            width: metadata.width,
-                            height: metadata.height,
-                            tile_size: metadata.tile_size,
-                            num_levels: metadata.num_levels,
-                            tile_url_template: format!(
-                                "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
-                                slide_id
-                            ),
+                        Ok(metadata) => {
+                            // Check for overlay existence
+                            let has_overlay = check_overlay_exists(&state.overlay_dir, &slide_id).is_some();
+                            SlideInfo {
+                                id: metadata.id,
+                                name: metadata.name,
+                                width: metadata.width,
+                                height: metadata.height,
+                                tile_size: metadata.tile_size,
+                                num_levels: metadata.num_levels,
+                                tile_url_template: format!(
+                                    "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
+                                    slide_id
+                                ),
+                                has_overlay,
+                            }
                         },
                         Err(e) => {
                             let _ = tx

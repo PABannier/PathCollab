@@ -9,6 +9,7 @@ export interface SlideInfo {
   tileSize: number
   numLevels: number
   tileUrlTemplate: string
+  hasOverlay?: boolean
 }
 
 export interface SlideViewerHandle {

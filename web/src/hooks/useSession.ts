@@ -37,6 +37,7 @@ export interface SlideInfo {
   tile_size: number
   num_levels: number
   tile_url_template: string
+  has_overlay?: boolean
 }
 
 export interface SessionState {

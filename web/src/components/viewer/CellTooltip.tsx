@@ -51,27 +51,29 @@ export function CellTooltip({
       const relX = (screenX - viewerBounds.left) / viewerBounds.width
       const relY = (screenY - viewerBounds.top) / viewerBounds.height
 
-      // Viewport dimensions in normalized coords
+      // Viewport dimensions in normalized coords (OSD uses width-normalized Y)
       const vpWidth = 1 / viewport.zoom
-      const vpHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
+      const vpHeight = (viewerBounds.height / viewerBounds.width) / viewport.zoom
 
       // Convert to slide coordinates
+      // NOTE: Both X and Y multiply by slideWidth because OSD normalizes Y by width, not height
       const slideX = (viewport.centerX - vpWidth / 2 + relX * vpWidth) * slideWidth
-      const slideY = (viewport.centerY - vpHeight / 2 + relY * vpHeight) * slideHeight
+      const slideY = (viewport.centerY - vpHeight / 2 + relY * vpHeight) * slideWidth
 
       return { x: slideX, y: slideY }
     },
-    [viewerBounds, viewport, slideWidth, slideHeight]
+    [viewerBounds, viewport, slideWidth]
   )
 
   // Convert slide coordinates to screen coordinates
   const slideToScreen = useCallback(
     (slideX: number, slideY: number) => {
       const vpWidth = 1 / viewport.zoom
-      const vpHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
+      const vpHeight = (viewerBounds.height / viewerBounds.width) / viewport.zoom
 
+      // Normalize by slideWidth for both axes to match OSD coordinate system
       const normX = slideX / slideWidth
-      const normY = slideY / slideHeight
+      const normY = slideY / slideWidth
 
       const relX = (normX - viewport.centerX + vpWidth / 2) / vpWidth
       const relY = (normY - viewport.centerY + vpHeight / 2) / vpHeight
@@ -81,7 +83,7 @@ export function CellTooltip({
         y: viewerBounds.top + relY * viewerBounds.height,
       }
     },
-    [viewerBounds, viewport, slideWidth, slideHeight]
+    [viewerBounds, viewport, slideWidth]
   )
 
   // Build spatial lookup for visible cells
@@ -89,12 +91,13 @@ export function CellTooltip({
     if (!enabled || cells.length === 0) return []
 
     // Calculate viewport bounds in slide coordinates
+    // NOTE: Use slideWidth for both axes because OSD normalizes Y by width
     const vpWidth = (1 / viewport.zoom) * slideWidth
-    const vpHeight = (viewerBounds.height / viewerBounds.width / viewport.zoom) * slideHeight
+    const vpHeight = ((viewerBounds.height / viewerBounds.width) / viewport.zoom) * slideWidth
     const minX = viewport.centerX * slideWidth - vpWidth / 2
     const maxX = viewport.centerX * slideWidth + vpWidth / 2
-    const minY = viewport.centerY * slideHeight - vpHeight / 2
-    const maxY = viewport.centerY * slideHeight + vpHeight / 2
+    const minY = viewport.centerY * slideWidth - vpHeight / 2
+    const maxY = viewport.centerY * slideWidth + vpHeight / 2
 
     // Filter to cells in viewport with some padding
     const padding = vpWidth * 0.1
@@ -105,7 +108,7 @@ export function CellTooltip({
         cell.y >= minY - padding &&
         cell.y <= maxY + padding
     )
-  }, [cells, viewport, viewerBounds, slideWidth, slideHeight, enabled])
+  }, [cells, viewport, viewerBounds, slideWidth, enabled])
 
   // Find nearest cell to mouse position
   const findNearestCell = useCallback(

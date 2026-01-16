@@ -12,7 +12,6 @@ import { TissueHeatmapLayer } from '../components/viewer/TissueHeatmapLayer'
 import { LayerPanel } from '../components/viewer/LayerPanel'
 import { MinimapOverlay } from '../components/viewer/MinimapOverlay'
 import { CellTooltip } from '../components/viewer/CellTooltip'
-import { OverlayUploader } from '../components/upload/OverlayUploader'
 import { Sidebar, SidebarSection } from '../components/layout'
 import { StatusBar, ConnectionBadge } from '../components/layout'
 import {
@@ -110,12 +109,13 @@ export function Session() {
   const [overlayId, setOverlayId] = useState<string | null>(null)
   const [overlayManifest, setOverlayManifest] = useState<OverlayManifest | null>(null)
   const [overlayCells, setOverlayCells] = useState<CellPolygon[]>([])
-  const [overlayEnabled, setOverlayEnabled] = useState(true)
+  const [overlayEnabled, setOverlayEnabled] = useState(false) // Start disabled, user must toggle to load
   const [overlayOpacity, setOverlayOpacity] = useState(0.7)
   const [visibleCellClasses, setVisibleCellClasses] = useState<number[]>(
     DEFAULT_CELL_CLASSES.map((c) => c.id)
   )
   const [cellHoverEnabled, setCellHoverEnabled] = useState(true)
+  const [isLoadingOverlay, setIsLoadingOverlay] = useState(false)
 
   // Tissue heatmap state
   const [tissueEnabled, setTissueEnabled] = useState(true)
@@ -144,9 +144,31 @@ export function Session() {
   const handleOverlayLoaded = useCallback((id: string, manifest: OverlayManifest) => {
     setOverlayId(id)
     setOverlayManifest(manifest)
+    setIsLoadingOverlay(false)
     setNotification(`Overlay loaded: ${id}`)
     setTimeout(() => setNotification(null), 3000)
   }, [])
+
+  // Load overlay from server
+  const loadOverlay = useCallback(async (slideId: string, sessionIdParam: string) => {
+    if (isLoadingOverlay || overlayId) return
+
+    setIsLoadingOverlay(true)
+    try {
+      const response = await fetch(
+        `/api/overlay/load?slide_id=${encodeURIComponent(slideId)}&session_id=${encodeURIComponent(sessionIdParam)}`,
+        { method: 'POST' }
+      )
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+      // The WebSocket will receive the overlay_loaded message and call handleOverlayLoaded
+    } catch (err) {
+      setIsLoadingOverlay(false)
+      setError(err instanceof Error ? err.message : 'Failed to load overlay')
+    }
+  }, [isLoadingOverlay, overlayId])
 
   // Session hook
   const {
@@ -357,6 +379,7 @@ export function Session() {
         tileSize: session.slide.tile_size,
         numLevels: session.slide.num_levels,
         tileUrlTemplate: session.slide.tile_url_template,
+        hasOverlay: session.slide.has_overlay ?? false,
       }
     }
     // 2. Don't show anything if we're waiting for session creation
@@ -913,25 +936,36 @@ export function Session() {
             </div>
           )}
 
-          {/* Overlay upload (presenter only) */}
-          {session && isPresenter && !overlayId && (
-            <SidebarSection title="Overlay">
-              <OverlayUploader
-                sessionId={session.id}
-                presenterKey={secrets?.presenterKey ?? presenterKey}
-                onUploadComplete={(id) => {
-                  setOverlayId(id)
-                  setNotification('Overlay uploaded successfully!')
-                  setTimeout(() => setNotification(null), 3000)
-                }}
-                onError={setError}
-              />
-            </SidebarSection>
-          )}
 
-          {/* Layer controls (when overlay is loaded) */}
-          {overlayId && (
-            <SidebarSection title="Layers">
+          {/* Layer controls */}
+          <SidebarSection title="Layers">
+            {/* No overlay available message */}
+            {slide && !slide.hasOverlay && !overlayId && (
+              <div className="text-sm text-gray-500 py-2">
+                No overlay available for this slide.
+              </div>
+            )}
+
+            {/* Loading overlay message */}
+            {isLoadingOverlay && (
+              <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+                <span className="animate-spin">⏳</span>
+                Loading overlay...
+              </div>
+            )}
+
+            {/* Load overlay button (when available but not loaded) */}
+            {slide?.hasOverlay && !overlayId && !isLoadingOverlay && session && (
+              <button
+                onClick={() => loadOverlay(slide.id, session.id)}
+                className="w-full px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+              >
+                Load Overlay
+              </button>
+            )}
+
+            {/* Layer controls (when overlay is loaded) */}
+            {overlayId && (
               <div className="space-y-3">
                 {/* Tissue heatmap controls */}
                 <div className="space-y-1">
@@ -1012,8 +1046,8 @@ export function Session() {
                   </p>
                 )}
               </div>
-            </SidebarSection>
-          )}
+            )}
+          </SidebarSection>
 
           {/* About section */}
           <SidebarSection title="About">

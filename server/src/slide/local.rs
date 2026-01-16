@@ -157,6 +157,8 @@ impl LocalSlideService {
             vendor,
             mpp_x,
             mpp_y,
+            // has_overlay is set later by the route handler after checking overlay_dir
+            has_overlay: false,
         }
     }
 

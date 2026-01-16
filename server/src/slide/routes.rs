@@ -9,15 +9,19 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::service::SlideService;
 use super::types::{SlideError, SlideListItem, SlideMetadata, TileRequest};
+use crate::overlay::check_overlay_exists;
 
 /// Application state containing the slide service
 #[derive(Clone)]
 pub struct SlideAppState {
     pub slide_service: Arc<dyn SlideService>,
+    /// Directory containing overlay files (pattern: <slide_name>/overlays.bin)
+    pub overlay_dir: PathBuf,
 }
 
 /// Error response for slide API
@@ -81,7 +85,16 @@ pub async fn list_slides(
         SlideErrorResponse::from(e)
     })?;
 
-    Ok(Json(slides.into_iter().map(SlideListItem::from).collect()))
+    // Check overlay availability for each slide
+    let slides_with_overlay: Vec<SlideListItem> = slides
+        .into_iter()
+        .map(|mut m| {
+            m.has_overlay = check_overlay_exists(&state.overlay_dir, &m.id).is_some();
+            SlideListItem::from(m)
+        })
+        .collect();
+
+    Ok(Json(slides_with_overlay))
 }
 
 /// GET /api/slide/:id - Get metadata for a specific slide
@@ -89,10 +102,13 @@ pub async fn get_slide(
     State(state): State<SlideAppState>,
     Path(id): Path<String>,
 ) -> Result<Json<SlideMetadata>, SlideErrorResponse> {
-    let metadata = state.slide_service.get_slide(&id).await.map_err(|e| {
+    let mut metadata = state.slide_service.get_slide(&id).await.map_err(|e| {
         tracing::warn!("Failed to get slide {}: {}", id, e);
         SlideErrorResponse::from(e)
     })?;
+
+    // Check overlay availability
+    metadata.has_overlay = check_overlay_exists(&state.overlay_dir, &id).is_some();
 
     Ok(Json(metadata))
 }

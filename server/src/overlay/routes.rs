@@ -1,28 +1,28 @@
-//! HTTP routes for overlay upload and serving
+//! HTTP routes for overlay loading and serving
 //!
 //! Provides endpoints for:
-//! - Uploading overlay protobuf files
+//! - Loading overlay files from disk (server-side overlay_dir)
 //! - Serving raster tiles (tissue heatmaps)
 //! - Serving vector chunks (cell data)
 //! - Getting overlay manifest
 
 use crate::overlay::derive::{DerivePipeline, DerivedOverlay};
+use crate::overlay::discovery::check_overlay_exists;
 use crate::overlay::parser::OverlayParser;
 use crate::server::AppState;
 use axum::{
     Json,
-    body::Bytes,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
-/// Session-scoped overlay storage
+/// Slide-scoped overlay storage (keyed by slide_id for caching across sessions)
 pub type OverlayStore = Arc<RwLock<HashMap<String, Arc<DerivedOverlay>>>>;
 
 /// Create a new overlay store
@@ -30,16 +30,18 @@ pub fn new_overlay_store() -> OverlayStore {
     Arc::new(RwLock::new(HashMap::new()))
 }
 
-/// Upload request query parameters
+/// Load request query parameters
 #[derive(Debug, Deserialize)]
-pub struct UploadQuery {
-    /// Session ID to associate overlay with
+pub struct LoadQuery {
+    /// Slide ID to load overlay for
+    pub slide_id: String,
+    /// Session ID for broadcasting overlay_loaded message
     pub session_id: String,
 }
 
-/// Upload response
+/// Load response
 #[derive(Debug, Serialize)]
-pub struct UploadResponse {
+pub struct LoadResponse {
     pub success: bool,
     pub overlay_id: String,
     pub content_sha256: String,
@@ -82,24 +84,20 @@ impl IntoResponse for ErrorResponse {
     }
 }
 
-/// Upload an overlay protobuf file
+/// Load an overlay from the server-side overlay directory
 ///
-/// POST /api/overlay/upload?session_id=<session_id>
-/// Content-Type: application/octet-stream
-/// Body: protobuf bytes
-pub async fn upload_overlay(
+/// POST /api/overlay/load?slide_id=<slide_id>&session_id=<session_id>
+///
+/// Loads the overlay file from: <overlay_dir>/<slide_id>/overlays.bin
+/// If already cached, returns immediately with cached overlay.
+pub async fn load_overlay(
     State(state): State<AppState>,
-    Query(query): Query<UploadQuery>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<UploadResponse>, ErrorResponse> {
+    Query(query): Query<LoadQuery>,
+) -> Result<Json<LoadResponse>, ErrorResponse> {
+    let slide_id = &query.slide_id;
     let session_id = &query.session_id;
 
-    info!(
-        "Overlay upload request for session {}: {} bytes",
-        session_id,
-        body.len()
-    );
+    info!("Overlay load request for slide '{}' in session '{}'", slide_id, session_id);
 
     // Verify session exists
     if state.session_manager.get_session(session_id).await.is_err() {
@@ -109,39 +107,85 @@ pub async fn upload_overlay(
         });
     }
 
-    // Require presenter key for overlay uploads
-    let presenter_key = headers
-        .get("x-presenter-key")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty());
+    // Use slide_id as the overlay_id for caching
+    let overlay_id = slide_id.clone();
 
-    let presenter_key = match presenter_key {
-        Some(key) => key,
+    // Check if overlay is already cached
+    {
+        let store = state.overlay_store.read().await;
+        if let Some(overlay) = store.get(&overlay_id) {
+            info!("Overlay '{}' already cached, returning immediately", overlay_id);
+
+            let content_sha256 = overlay.content_sha256.clone();
+            let total_raster_tiles = overlay.manifest.total_raster_tiles;
+            let total_vector_chunks = overlay.manifest.total_vector_chunks;
+            let manifest_tile_size = overlay.manifest.tile_size;
+            let manifest_levels = overlay.manifest.levels;
+
+            // Broadcast overlay_loaded to session (even if cached)
+            state
+                .broadcast_to_session(
+                    session_id,
+                    crate::protocol::ServerMessage::OverlayLoaded {
+                        overlay_id: overlay_id.clone(),
+                        manifest: crate::protocol::OverlayManifest {
+                            overlay_id: overlay_id.clone(),
+                            content_sha256: content_sha256.clone(),
+                            raster_base_url: format!("/api/overlay/{}/raster", overlay_id),
+                            vec_base_url: format!("/api/overlay/{}/vec", overlay_id),
+                            tile_size: manifest_tile_size,
+                            levels: manifest_levels,
+                        },
+                    },
+                )
+                .await;
+
+            return Ok(Json(LoadResponse {
+                success: true,
+                overlay_id,
+                content_sha256,
+                total_raster_tiles,
+                total_vector_chunks,
+                error: None,
+            }));
+        }
+    }
+
+    // Check if overlay file exists
+    let overlay_info = match check_overlay_exists(&state.overlay_dir, slide_id) {
+        Some(info) => info,
         None => {
+            warn!("No overlay found for slide '{}' in {:?}", slide_id, state.overlay_dir);
             return Err(ErrorResponse {
-                error: "Presenter key required".to_string(),
-                code: "unauthorized".to_string(),
+                error: format!("No overlay found for slide: {}", slide_id),
+                code: "not_found".to_string(),
             });
         }
     };
 
-    if let Err(err) = state
-        .session_manager
-        .authenticate_presenter(session_id, presenter_key)
-        .await
-    {
-        return Err(ErrorResponse {
-            error: format!("Presenter auth failed: {}", err),
-            code: "unauthorized".to_string(),
-        });
-    }
+    info!(
+        "Loading overlay for slide '{}' from {:?} ({} bytes)",
+        slide_id, overlay_info.path, overlay_info.file_size
+    );
+
+    // Read overlay file
+    let overlay_bytes = match std::fs::read(&overlay_info.path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            error!("Failed to read overlay file {:?}: {}", overlay_info.path, e);
+            return Err(ErrorResponse {
+                error: format!("Failed to read overlay file: {}", e),
+                code: "io_error".to_string(),
+            });
+        }
+    };
 
     // Parse the protobuf
     let parser = OverlayParser::new();
-    let parsed = match parser.parse_bytes(&body) {
+    let parsed = match parser.parse_bytes(&overlay_bytes) {
         Ok(p) => p,
         Err(e) => {
-            error!("Failed to parse overlay: {}", e);
+            error!("Failed to parse overlay for slide '{}': {}", slide_id, e);
             return Err(ErrorResponse {
                 error: format!("Failed to parse overlay: {}", e),
                 code: "bad_request".to_string(),
@@ -153,21 +197,20 @@ pub async fn upload_overlay(
     let pipeline = DerivePipeline::default();
     let derived = pipeline.derive(parsed);
 
-    let overlay_id = format!("{}_{}", session_id, &derived.content_sha256[..8]);
     let content_sha256 = derived.content_sha256.clone();
     let total_raster_tiles = derived.manifest.total_raster_tiles;
     let total_vector_chunks = derived.manifest.total_vector_chunks;
     let manifest_tile_size = derived.manifest.tile_size;
     let manifest_levels = derived.manifest.levels;
 
-    // Store in session-scoped storage
+    // Store in slide-scoped storage (keyed by slide_id)
     {
         let mut store = state.overlay_store.write().await;
         store.insert(overlay_id.clone(), Arc::new(derived));
     }
 
     info!(
-        "Overlay {} uploaded: {} raster tiles, {} vector chunks",
+        "Overlay '{}' loaded: {} raster tiles, {} vector chunks",
         overlay_id, total_raster_tiles, total_vector_chunks
     );
 
@@ -189,7 +232,7 @@ pub async fn upload_overlay(
         )
         .await;
 
-    Ok(Json(UploadResponse {
+    Ok(Json(LoadResponse {
         success: true,
         overlay_id,
         content_sha256,
@@ -337,7 +380,7 @@ pub struct CellResponse {
     pub confidence: u8,
     pub x: i16,
     pub y: i16,
-    pub vertices: Vec<i16>,
+    pub vertices: Vec<i32>,
 }
 
 /// Query cells in a viewport region
@@ -379,11 +422,16 @@ pub async fn query_viewport(
 
     let results: Vec<ViewportCell> = cells
         .into_iter()
-        .map(|c| ViewportCell {
-            x: c.centroid_x,
-            y: c.centroid_y,
-            class_id: c.class_id,
-            confidence: c.confidence,
+        .map(|c| {
+            // Compute centroid from bounding box
+            let [min_x, min_y] = c.bbox.lower();
+            let [max_x, max_y] = c.bbox.upper();
+            ViewportCell {
+                x: (min_x + max_x) / 2.0,
+                y: (min_y + max_y) / 2.0,
+                class_id: c.class_id,
+                confidence: c.confidence,
+            }
         })
         .collect();
 
@@ -414,7 +462,7 @@ pub fn overlay_routes() -> axum::Router<AppState> {
     use axum::routing::{get, post};
 
     axum::Router::new()
-        .route("/upload", post(upload_overlay))
+        .route("/load", post(load_overlay))
         .route("/:overlay_id/manifest", get(get_manifest))
         .route("/:overlay_id/raster/:level/:x/:y", get(get_raster_tile))
         .route("/:overlay_id/vec/:level/:x/:y", get(get_vector_chunk))

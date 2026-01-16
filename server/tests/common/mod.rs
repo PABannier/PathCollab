@@ -60,6 +60,7 @@ pub fn create_test_slide_info() -> SlideInfo {
         tile_size: 256,
         num_levels: 10,
         tile_url_template: "/api/slide/{id}/tile/{level}/{x}/{y}".to_string(),
+        has_overlay: false,
     }
 }
 
@@ -83,6 +84,7 @@ impl MockSlideService {
                 vendor: Some("mock".to_string()),
                 mpp_x: Some(0.25),
                 mpp_y: Some(0.25),
+                has_overlay: false,
             }],
         }
     }
@@ -170,6 +172,7 @@ impl SlideService for MockSlideService {
 pub fn create_test_app_with_slides() -> Router {
     let slide_state = SlideAppState {
         slide_service: Arc::new(MockSlideService::new()),
+        overlay_dir: std::path::PathBuf::from("./test_overlays"),
     };
 
     let cors = CorsLayer::new()

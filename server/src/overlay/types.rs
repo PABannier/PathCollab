@@ -77,16 +77,28 @@ pub struct CellClassDef {
 /// Cell data for indexing and rendering
 #[derive(Debug, Clone)]
 pub struct CellData {
-    pub centroid_x: f32,
-    pub centroid_y: f32,
     pub class_id: u32,
     pub confidence: f32,
+    pub vertices: Vec<i32>,
     pub bbox_min_x: f32,
     pub bbox_min_y: f32,
     pub bbox_max_x: f32,
     pub bbox_max_y: f32,
-    pub vertices: Vec<i32>,
-    pub area: f32,
+}
+
+impl CellData {
+    pub fn new(class_id: u32, confidence: f32, vertices: Vec<i32>, abs_coords: Vec<(f32, f32)>) -> Self {
+        let (bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y) = compute_bbox(&abs_coords);
+        Self {
+            class_id,
+            confidence: confidence.clamp(0.0, 1.0),
+            vertices,
+            bbox_min_x,
+            bbox_min_y,
+            bbox_max_x,
+            bbox_max_y,
+        }
+    }
 }
 
 /// Tissue tile data

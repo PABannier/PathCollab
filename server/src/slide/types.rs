@@ -54,6 +54,9 @@ pub struct SlideMetadata {
     /// Microns per pixel Y (if available)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mpp_y: Option<f64>,
+    /// Whether an overlay file exists for this slide
+    #[serde(default)]
+    pub has_overlay: bool,
 }
 
 /// Request for a specific tile
@@ -77,6 +80,9 @@ pub struct SlideListItem {
     pub width: u64,
     pub height: u64,
     pub format: String,
+    /// Whether an overlay file exists for this slide
+    #[serde(default)]
+    pub has_overlay: bool,
 }
 
 impl From<SlideMetadata> for SlideListItem {
@@ -87,6 +93,7 @@ impl From<SlideMetadata> for SlideListItem {
             width: m.width,
             height: m.height,
             format: m.format,
+            has_overlay: m.has_overlay,
         }
     }
 }

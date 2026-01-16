@@ -65,11 +65,11 @@ pub struct SessionConfig {
 /// Overlay-related configuration
 #[derive(Debug, Clone)]
 pub struct OverlayConfig {
-    /// Maximum upload size in bytes
-    pub max_upload_size: usize,
-    /// Upload timeout
-    pub upload_timeout: Duration,
-    /// Cache directory path
+    /// Directory containing overlay files (pattern: <slide_name>/overlays.bin)
+    pub overlay_dir: PathBuf,
+    /// Maximum overlay file size in bytes
+    pub max_file_size: usize,
+    /// Cache directory path for derived overlay data
     pub cache_dir: String,
     /// Maximum cache size in bytes
     pub cache_max_size: usize,
@@ -178,10 +178,10 @@ impl Default for SessionConfig {
 impl Default for OverlayConfig {
     fn default() -> Self {
         Self {
-            max_upload_size: 500 * 1024 * 1024, // 500 MB
-            upload_timeout: Duration::from_secs(300),
-            // Use relative path for dev-friendly defaults (auto-created if missing)
-            cache_dir: "./data/overlays".to_string(),
+            overlay_dir: PathBuf::from("./data/overlays"),
+            max_file_size: 500 * 1024 * 1024, // 500 MB
+            // Cache directory for derived overlay data (raster tiles, vector chunks)
+            cache_dir: "./data/overlay_cache".to_string(),
             cache_max_size: 50 * 1024 * 1024 * 1024, // 50 GB
             tile_size: 256,
             max_jobs: 2,
@@ -263,14 +263,12 @@ impl Config {
         }
 
         // Overlay config
+        if let Ok(path) = env::var("OVERLAY_DIR") {
+            config.overlay.overlay_dir = PathBuf::from(path);
+        }
         if let Ok(val) = env::var("OVERLAY_MAX_SIZE_MB") {
             if let Ok(mb) = val.parse::<usize>() {
-                config.overlay.max_upload_size = mb * 1024 * 1024;
-            }
-        }
-        if let Ok(val) = env::var("OVERLAY_UPLOAD_TIMEOUT_SECS") {
-            if let Ok(secs) = val.parse::<u64>() {
-                config.overlay.upload_timeout = Duration::from_secs(secs);
+                config.overlay.max_file_size = mb * 1024 * 1024;
             }
         }
         if let Ok(path) = env::var("OVERLAY_CACHE_DIR") {

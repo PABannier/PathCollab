@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
 interface CellPolygon {
-  x: number // Slide coordinates
-  y: number
+  x: number // Centroid X in absolute slide coordinates (pixels)
+  y: number // Centroid Y in absolute slide coordinates (pixels)
   classId: number
   confidence: number
-  vertices: number[] // Flat array of relative vertex positions
+  vertices: number[] // Flat array [x0, y0, x1, y1, ...] of ABSOLUTE slide coordinates (pixels)
 }
 
 interface OverlayCanvasProps {
@@ -214,25 +214,28 @@ export function OverlayCanvas({
       const color = colorLookup[cell.classId] || colorLookup[0]
 
       // Convert cell centroid to normalized coordinates
+      // IMPORTANT: Both x and y must be normalized by slideWidth to match
+      // OpenSeadragon's coordinate system where y is proportional to width
       const cx = cell.x / slideWidth
-      const cy = cell.y / slideHeight
+      const cy = cell.y / slideWidth
 
       if (cell.vertices.length >= 6) {
         // Triangulate polygon using fan from centroid
+        // Note: vertices are ABSOLUTE slide coordinates, not relative to centroid
         for (let i = 0; i < cell.vertices.length - 2; i += 2) {
           const v0x = cell.vertices[i] / slideWidth
-          const v0y = cell.vertices[i + 1] / slideHeight
+          const v0y = cell.vertices[i + 1] / slideWidth
           const v1x = cell.vertices[i + 2] / slideWidth
-          const v1y = cell.vertices[i + 3] / slideHeight
+          const v1y = cell.vertices[i + 3] / slideWidth
 
-          // Triangle: centroid, v0, v1
+          // Triangle: centroid, v0, v1 (all in absolute normalized coords)
           vertices.push(cx, cy)
           colors.push(...color)
 
-          vertices.push(cx + v0x, cy + v0y)
+          vertices.push(v0x, v0y)
           colors.push(...color)
 
-          vertices.push(cx + v1x, cy + v1y)
+          vertices.push(v1x, v1y)
           colors.push(...color)
         }
 
@@ -240,21 +243,22 @@ export function OverlayCanvas({
         if (cell.vertices.length >= 4) {
           const lastIdx = cell.vertices.length - 2
           const v0x = cell.vertices[lastIdx] / slideWidth
-          const v0y = cell.vertices[lastIdx + 1] / slideHeight
+          const v0y = cell.vertices[lastIdx + 1] / slideWidth
           const v1x = cell.vertices[0] / slideWidth
-          const v1y = cell.vertices[1] / slideHeight
+          const v1y = cell.vertices[1] / slideWidth
 
           vertices.push(cx, cy)
           colors.push(...color)
 
-          vertices.push(cx + v0x, cy + v0y)
+          vertices.push(v0x, v0y)
           colors.push(...color)
 
-          vertices.push(cx + v1x, cy + v1y)
+          vertices.push(v1x, v1y)
           colors.push(...color)
         }
       } else {
         // No vertices - draw a small circle approximation (hexagon)
+        // Use same normalization (by slideWidth) for both axes to match OSD coordinate system
         const radius = 10 / slideWidth
         for (let i = 0; i < 6; i++) {
           const a0 = (i / 6) * Math.PI * 2
@@ -263,16 +267,10 @@ export function OverlayCanvas({
           vertices.push(cx, cy)
           colors.push(...color)
 
-          vertices.push(
-            cx + Math.cos(a0) * radius,
-            cy + Math.sin(a0) * radius * (slideWidth / slideHeight)
-          )
+          vertices.push(cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius)
           colors.push(...color)
 
-          vertices.push(
-            cx + Math.cos(a1) * radius,
-            cy + Math.sin(a1) * radius * (slideWidth / slideHeight)
-          )
+          vertices.push(cx + Math.cos(a1) * radius, cy + Math.sin(a1) * radius)
           colors.push(...color)
         }
       }
@@ -322,7 +320,7 @@ export function OverlayCanvas({
     gl.bindVertexArray(null)
 
     vertexCountRef.current = vertices.length / 2
-  }, [cells, cellClasses, visibleClasses, slideWidth, slideHeight])
+  }, [cells, cellClasses, visibleClasses, slideWidth])
 
   // Render on viewport change
   useEffect(() => {

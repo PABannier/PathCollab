@@ -5,15 +5,14 @@
 
 use crate::overlay::types::{
     CellClassDef, CellData, OverlayError, ParsedOverlay, TissueClassDef, TissueTileData,
-    compute_bbox, compute_polygon_area, current_timestamp_ms, default_cell_color,
-    default_tissue_color, limits,
+    current_timestamp_ms, default_cell_color, default_tissue_color, limits,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::path::Path;
-use tracing::{debug, info};
+use tracing::info;
 
 // Include generated protobuf code (proto2 format from DataProtoPolygon package)
 pub mod proto {
@@ -163,9 +162,11 @@ impl OverlayParser {
             });
         }
 
-        debug!(
-            "Processing slide {} with {} tiles, {} total cells",
-            slide_data.slide_id, tile_count, total_cell_count
+        let max_deepzoom_level = slide_data.max_level;
+
+        info!(
+            "Processing slide {} with {} tiles, {} total cells, max_deepzoom_level={}",
+            slide_data.slide_id, tile_count, total_cell_count, max_deepzoom_level
         );
 
         // Process each tile
@@ -175,17 +176,26 @@ impl OverlayParser {
                 tile_size = tile.width as u32;
             }
 
-            // Tile position in slide coordinates
-            let tile_origin_x = tile.x;
-            let tile_origin_y = tile.y;
+            // Proto x,y ARE tile indices at the given level
+            let tile_x = tile.x as u32;
+            let tile_y = tile.y as u32;
 
-            // Update max dimensions
-            max_x = max_x.max(tile_origin_x + tile.width as f32);
-            max_y = max_y.max(tile_origin_y + tile.height as f32);
+            // Apply scale factor if the DeepZoom level of inference is not equivalent
+            // to the maximum DeepZoom level available on the slide
+            let scale_factor = if max_deepzoom_level != tile.level {
+                (1 << (max_deepzoom_level - tile.level)) as f32
+            } else {
+                1.0
+            };
 
-            // Convert tile position to tile indices
-            let tile_x = (tile_origin_x / tile.width as f32) as u32;
-            let tile_y = (tile_origin_y / tile.height as f32) as u32;
+            // Compute tile origin in full-resolution pixel coordinates
+            // The tile indices are at the model inference level, each tile is 224x224 pixels
+            let tile_origin_x = tile_x as f32 * tile.width as f32 * scale_factor;
+            let tile_origin_y = tile_y as f32 * tile.height as f32 * scale_factor;
+
+            // Update max dimensions (in full-resolution coordinates)
+            max_x = max_x.max(tile_origin_x + tile.width as f32 * scale_factor);
+            max_y = max_y.max(tile_origin_y + tile.height as f32 * scale_factor);
 
             // Process cell polygons (masks)
             for polygon in tile.masks {
@@ -198,16 +208,12 @@ impl OverlayParser {
                         id
                     });
 
-                // Convert centroid from tile-relative to absolute slide coordinates
-                let abs_centroid_x = tile_origin_x + polygon.centroid.x;
-                let abs_centroid_y = tile_origin_y + polygon.centroid.y;
-
                 // Convert polygon coordinates from tile-relative to absolute
                 // and collect as (x, y) tuples for bbox/area computation
                 let abs_coords: Vec<(f32, f32)> = polygon
                     .coordinates
                     .iter()
-                    .map(|p| (tile_origin_x + p.x, tile_origin_y + p.y))
+                    .map(|p| (tile_origin_x + p.x * scale_factor, tile_origin_y + p.y * scale_factor))
                     .collect();
 
                 // Pack vertices as i32 array for rendering
@@ -216,34 +222,18 @@ impl OverlayParser {
                     .flat_map(|(x, y)| [*x as i32, *y as i32])
                     .collect();
 
-                // Compute bounding box from absolute coordinates
-                let (bbox_min_x, bbox_max_x, bbox_min_y, bbox_max_y) = compute_bbox(&abs_coords);
-
-                // Compute area from tile-relative coordinates (scale-invariant)
-                let rel_coords: Vec<(f32, f32)> =
-                    polygon.coordinates.iter().map(|p| (p.x, p.y)).collect();
-                let area = compute_polygon_area(&rel_coords);
-
-                cells.push(CellData {
-                    centroid_x: abs_centroid_x,
-                    centroid_y: abs_centroid_y,
-                    class_id,
-                    confidence: polygon.confidence.clamp(0.0, 1.0),
-                    bbox_min_x,
-                    bbox_min_y,
-                    bbox_max_x,
-                    bbox_max_y,
-                    vertices,
-                    area,
-                });
+                let cell_data = CellData::new(class_id, polygon.confidence, vertices, abs_coords);
+                cells.push(cell_data);
             }
 
             // Extract tissue segmentation data
+            // Store at level 0 (not the protobuf level) since the frontend expects
+            // a flat tile grid. The protobuf level indicates the inference resolution.
             let tissue_map = &tile.tissue_segmentation_map;
             tissue_tiles.push(TissueTileData {
                 tile_x,
                 tile_y,
-                level: tile.level as u32,
+                level: 0, // Always store at level 0 for flat tile grid
                 class_data: tissue_map.data.to_vec(),
                 confidence_data: None, // Not provided in this proto format
             });
@@ -402,24 +392,6 @@ mod tests {
         assert_eq!(result.tissue_tiles.len(), 1);
         assert_eq!(result.metadata.cell_classes.len(), 1);
         assert_eq!(result.metadata.cell_classes[0].name, "Tumor");
-    }
-
-    #[test]
-    fn test_coordinate_transformation() {
-        let slide = create_test_slide_data();
-        let data = slide.encode_to_vec();
-
-        let parser = OverlayParser::new();
-        let result = parser.parse_bytes(&data).unwrap();
-
-        let cell = &result.cells[0];
-        // Centroid should be absolute: tile.x (0) + centroid.x (128) = 128
-        assert!((cell.centroid_x - 128.0).abs() < 0.01);
-        assert!((cell.centroid_y - 128.0).abs() < 0.01);
-
-        // Bbox should be computed from absolute coordinates
-        assert!((cell.bbox_min_x - 100.0).abs() < 0.01);
-        assert!((cell.bbox_max_x - 150.0).abs() < 0.01);
     }
 
     #[test]

@@ -58,8 +58,8 @@ COPY --from=backend-builder /app/target/release/pathcollab /usr/local/bin/pathco
 COPY --from=frontend-builder /app/web/dist /app/static
 
 RUN useradd -r -s /bin/false pathcollab \
-    && mkdir -p /slides /data/overlays \
-    && chown -R pathcollab:pathcollab /app /data /slides
+    && mkdir -p /slides /overlays /data/overlay_cache \
+    && chown -R pathcollab:pathcollab /app /data /slides /overlays
 
 USER pathcollab
 
@@ -70,13 +70,14 @@ ENV RUST_LOG=pathcollab=info,tower_http=info \
     HOST=0.0.0.0 \
     PORT=8080 \
     SLIDES_DIR=/slides \
-    OVERLAY_CACHE_DIR=/data/overlays \
+    OVERLAY_DIR=/overlays \
+    OVERLAY_CACHE_DIR=/data/overlay_cache \
     STATIC_FILES_DIR=/app/static \
     SLIDE_SOURCE=local
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-VOLUME ["/slides", "/data"]
+VOLUME ["/slides", "/overlays", "/data"]
 
 CMD ["pathcollab"]

@@ -80,7 +80,7 @@ pub struct ChunkCell {
     pub confidence: u8,     // Quantized 0-255
     pub centroid_x: i16,    // Relative to tile origin
     pub centroid_y: i16,    // Relative to tile origin
-    pub vertices: Vec<i16>, // Relative to centroid
+    pub vertices: Vec<i32>, // Absolute slide coordinates (full resolution pixels)
 }
 
 /// Manifest data for HTTP serving
@@ -163,6 +163,31 @@ impl DerivePipeline {
         parsed: &ParsedOverlayData,
     ) -> HashMap<(u32, u32, u32), RasterTile> {
         let mut tiles = HashMap::new();
+
+        // Debug: analyze tile coordinate distribution
+        let mut level_counts: HashMap<u32, usize> = HashMap::new();
+        let mut unique_keys: std::collections::HashSet<(u32, u32, u32)> = std::collections::HashSet::new();
+
+        for tile in &parsed.tissue_tiles {
+            *level_counts.entry(tile.level).or_insert(0) += 1;
+            unique_keys.insert((tile.level, tile.tile_x, tile.tile_y));
+        }
+
+        info!(
+            "Tile analysis: {} total tiles, {} unique keys, levels: {:?}",
+            parsed.tissue_tiles.len(),
+            unique_keys.len(),
+            level_counts
+        );
+
+        // Log first few tiles to see coordinate values
+        for (i, tile) in parsed.tissue_tiles.iter().take(10).enumerate() {
+            debug!(
+                "Tissue tile {}: level={}, x={}, y={}, class_data_len={}, non_zero={}",
+                i, tile.level, tile.tile_x, tile.tile_y, tile.class_data.len(),
+                tile.class_data.iter().filter(|&&b| b != 255 && b != 0).count()
+            );
+        }
 
         // Tissue class colors (8 classes)
         let class_colors: [(u8, u8, u8, u8); 9] = [
@@ -254,9 +279,13 @@ impl DerivePipeline {
 
         // Group cells by tile at level 0 (full resolution)
         for cell in &parsed.cells {
+            // Compute actual centroid as midpoint of bounding box
+            let cell_centroid_x = (cell.bbox_min_x + cell.bbox_max_x) / 2.0;
+            let cell_centroid_y = (cell.bbox_min_y + cell.bbox_max_y) / 2.0;
+
             // Compute tile coordinates at level 0
-            let tile_x = (cell.centroid_x as u32) / self.config.tile_size;
-            let tile_y = (cell.centroid_y as u32) / self.config.tile_size;
+            let tile_x = (cell_centroid_x as u32) / self.config.tile_size;
+            let tile_y = (cell_centroid_y as u32) / self.config.tile_size;
             let tile_key = (0u32, tile_x, tile_y);
 
             // Convert cell data to chunk format
@@ -266,9 +295,9 @@ impl DerivePipeline {
             let chunk_cell = ChunkCell {
                 class_id: cell.class_id as u8,
                 confidence: (cell.confidence * 255.0) as u8,
-                centroid_x: (cell.centroid_x - tile_origin_x) as i16,
-                centroid_y: (cell.centroid_y - tile_origin_y) as i16,
-                vertices: cell.vertices.iter().map(|v| *v as i16).collect(),
+                centroid_x: (cell_centroid_x - tile_origin_x) as i16,
+                centroid_y: (cell_centroid_y - tile_origin_y) as i16,
+                vertices: cell.vertices.clone(), // Keep as i32 absolute coordinates
             };
 
             chunks
@@ -320,8 +349,6 @@ mod tests {
             },
             cells: vec![
                 CellData {
-                    centroid_x: 100.0,
-                    centroid_y: 100.0,
                     class_id: 0,
                     confidence: 0.9,
                     bbox_min_x: 90.0,
@@ -329,11 +356,8 @@ mod tests {
                     bbox_max_x: 110.0,
                     bbox_max_y: 110.0,
                     vertices: vec![],
-                    area: 400.0,
                 },
                 CellData {
-                    centroid_x: 500.0,
-                    centroid_y: 500.0,
                     class_id: 1,
                     confidence: 0.8,
                     bbox_min_x: 490.0,
@@ -341,7 +365,6 @@ mod tests {
                     bbox_max_x: 510.0,
                     bbox_max_y: 510.0,
                     vertices: vec![],
-                    area: 400.0,
                 },
             ],
             tissue_tiles: vec![TissueTileData {
@@ -374,6 +397,64 @@ mod tests {
         for tile in derived.raster_tiles.values() {
             // RGBA = 4 bytes per pixel
             assert_eq!(tile.rgba_data.len(), 256 * 256 * 4);
+        }
+    }
+
+    #[test]
+    fn test_vertices_preserved_for_large_coordinates() {
+        // Test that vertices with coordinates > i16::MAX (32767) are correctly preserved
+        // This was a bug where vertices were truncated from i32 to i16
+        let mut parsed = create_test_parsed_data();
+
+        // Create a cell with large coordinate vertices (simulating a large slide)
+        let large_coord: i32 = 50_000; // > 32767 (i16::MAX)
+        parsed.cells[0] = CellData {
+            class_id: 0,
+            confidence: 0.95,
+            bbox_min_x: (large_coord - 100) as f32,
+            bbox_min_y: (large_coord - 100) as f32,
+            bbox_max_x: (large_coord + 100) as f32,
+            bbox_max_y: (large_coord + 100) as f32,
+            // Polygon vertices in absolute slide coordinates
+            vertices: vec![
+                large_coord - 50,
+                large_coord - 50,
+                large_coord + 50,
+                large_coord - 50,
+                large_coord + 50,
+                large_coord + 50,
+                large_coord - 50,
+                large_coord + 50,
+            ],
+        };
+
+        let pipeline = DerivePipeline::default();
+        let derived = pipeline.derive(parsed);
+
+        // Find the chunk containing our cell
+        let cell_tile_x = (large_coord as u32) / 256;
+        let cell_tile_y = (large_coord as u32) / 256;
+        let chunk_key = (0u32, cell_tile_x, cell_tile_y);
+
+        let chunk = derived.vector_chunks.get(&chunk_key);
+        assert!(chunk.is_some(), "Chunk should exist for cell at ({}, {})", cell_tile_x, cell_tile_y);
+
+        let chunk = chunk.unwrap();
+        assert!(!chunk.cells.is_empty(), "Chunk should contain cells");
+
+        // Verify vertices are preserved correctly (not truncated)
+        let cell = &chunk.cells[0];
+        assert_eq!(cell.vertices.len(), 8, "Should have 8 vertex values (4 points × 2 coords)");
+
+        // Each vertex coordinate should be the large value, NOT wrapped/truncated
+        for (i, &vertex) in cell.vertices.iter().enumerate() {
+            assert!(
+                vertex > 32767 || (vertex >= large_coord - 50 && vertex <= large_coord + 50),
+                "Vertex {} should not be truncated: got {}, expected around {}",
+                i,
+                vertex,
+                large_coord
+            );
         }
     }
 }

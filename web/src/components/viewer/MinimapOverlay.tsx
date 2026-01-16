@@ -53,19 +53,28 @@ export function MinimapOverlay({
   const presenterRect = useMemo(() => {
     if (!presenterViewport || isPresenter) return null
 
-    // Viewport width/height in normalized coordinates
+    // OpenSeadragon uses width-normalized coords where Y is in [0, 1/slideAspectRatio]
+    // The minimap uses [0,1] x [0,1] for simplicity, so we need to convert
+
+    // Viewport dimensions in OSD normalized coordinates
     const vpWidth = 1 / presenterViewport.zoom
     const vpHeight = vpWidth / slideAspectRatio
 
-    // Top-left corner in normalized coordinates
-    const left = presenterViewport.centerX - vpWidth / 2
-    const top = presenterViewport.centerY - vpHeight / 2
+    // Top-left corner in OSD normalized coordinates
+    const osdLeft = presenterViewport.centerX - vpWidth / 2
+    const osdTop = presenterViewport.centerY - vpHeight / 2
+
+    // Convert OSD Y coords to [0,1] range by multiplying by slideAspectRatio
+    // OSD Y range: [0, 1/slideAspectRatio] -> minimap Y range: [0, 1]
+    const left = osdLeft
+    const top = osdTop * slideAspectRatio
+    const normalizedVpHeight = vpHeight * slideAspectRatio
 
     // Convert to minimap pixel coordinates, properly clamping to minimap bounds
     const x = Math.max(0, left) * minimapWidth
     const y = Math.max(0, top) * minimapHeight
     const right = Math.min(1, left + vpWidth)
-    const bottom = Math.min(1, top + vpHeight)
+    const bottom = Math.min(1, top + normalizedVpHeight)
     const width = Math.max(0, (right - Math.max(0, left)) * minimapWidth)
     const height = Math.max(0, (bottom - Math.max(0, top)) * minimapHeight)
 

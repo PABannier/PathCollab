@@ -39,8 +39,9 @@ export function CursorLayer({
       .filter((cursor) => cursor.participant_id !== currentUserId)
       .map((cursor) => {
         // Convert slide coordinates to normalized coordinates
+        // NOTE: Both X and Y are normalized by slideWidth to match OSD's coordinate system
         const normalizedX = cursor.x / slideWidth
-        const normalizedY = cursor.y / slideHeight
+        const normalizedY = cursor.y / slideWidth
 
         // Calculate position relative to viewport
         const relX = (normalizedX - (viewport.centerX - viewportWidth / 2)) / viewportWidth

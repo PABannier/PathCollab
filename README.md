@@ -7,7 +7,7 @@ A web-based collaborative viewer for digital pathology, enabling real-time multi
 - **Real-time Collaboration**: Presenter-led sessions with up to 20 concurrent followers
 - **Cursor Presence**: See where other participants are looking in real-time
 - **Viewport Sync**: Followers can snap to the presenter's view with smooth animations
-- **AI Overlay Support**: Upload and visualize cell segmentation and tissue classification from protobuf files
+- **AI Overlay Support**: Visualize cell segmentation and tissue classification from pre-deployed protobuf overlay files
 - **WebGL2 Rendering**: High-performance rendering of millions of polygons
 - **Zero-Auth Sessions**: Ephemeral shareable links with no account required
 - **Docker-Native**: Single `docker run` command to start everything
@@ -25,7 +25,15 @@ The simplest way to run PathCollab - a single Docker image with everything inclu
 
 ```bash
 # Run PathCollab with your slides directory
-docker run -p 8080:8080 -v /path/to/your/slides:/slides ghcr.io/pabannier/pathcollab:latest
+docker run -p 8080:8080 \
+  -v /path/to/your/slides:/slides:ro \
+  ghcr.io/pabannier/pathcollab:latest
+
+# With overlays directory for AI visualization
+docker run -p 8080:8080 \
+  -v /path/to/your/slides:/slides:ro \
+  -v /path/to/your/overlays:/overlays:ro \
+  ghcr.io/pabannier/pathcollab:latest
 ```
 
 Open your browser to **http://localhost:8080** - that's it!
@@ -35,15 +43,17 @@ The unified image (~150MB) contains both the React frontend and Rust backend. No
 #### Options
 
 ```bash
-# With persistent overlay cache
+# With overlays and persistent cache
 docker run -p 8080:8080 \
   -v /path/to/slides:/slides:ro \
+  -v /path/to/overlays:/overlays:ro \
   -v pathcollab-cache:/data \
   ghcr.io/pabannier/pathcollab:latest
 
 # With custom configuration
 docker run -p 8080:8080 \
   -v /path/to/slides:/slides:ro \
+  -v /path/to/overlays:/overlays:ro \
   -e MAX_FOLLOWERS=50 \
   -e SESSION_MAX_DURATION_HOURS=8 \
   ghcr.io/pabannier/pathcollab:latest
@@ -87,6 +97,7 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `OVERLAY_DIR` | `/overlays` | Directory containing overlay files (pattern: `<slide_name>/overlays.bin`) |
 | `OVERLAY_MAX_SIZE_MB` | `500` | Maximum overlay file size |
 | `OVERLAY_CACHE_DIR` | `/var/lib/pathcollab/overlays` | Overlay cache directory |
 | `OVERLAY_CACHE_MAX_GB` | `50` | Maximum cache size |
@@ -111,7 +122,7 @@ Place your whole-slide images in the `data/slides` directory. Supported formats 
 
 ### Session Roles
 
-- **Presenter**: First user to create or join a session. Can upload overlays, control layer visibility, and lead navigation.
+- **Presenter**: First user to create or join a session. Can load overlays, control layer visibility, and lead navigation.
 - **Follower**: Subsequent users who join. Can view the slide, see the presenter's cursor and viewport, and explore independently.
 
 ### Overlay Files
@@ -119,6 +130,17 @@ Place your whole-slide images in the `data/slides` directory. Supported formats 
 PathCollab supports protobuf overlay files containing:
 - **Tissue segmentation**: Heatmap tiles with class predictions
 - **Cell detection**: Polygon boundaries with class labels and confidence scores
+
+Overlays are deployed alongside slides in a directory structure:
+```
+/overlays/
+  slide_name_1/
+    overlays.bin
+  slide_name_2/
+    overlays.bin
+```
+
+The overlay directory (`OVERLAY_DIR`) is scanned at startup to detect which slides have overlays available. Overlays are loaded on-demand when users toggle layers in the session.
 
 The protobuf schema is defined in `server/proto/overlay.proto`.
 
@@ -332,7 +354,7 @@ Connect to `/ws` for real-time communication. Messages are JSON-encoded.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check endpoint |
-| `POST` | `/api/overlay/upload?session_id=...` | Upload overlay protobuf |
+| `POST` | `/api/overlay/load?slide_id=...&session_id=...` | Load overlay from server for a slide |
 | `GET` | `/api/overlay/:id/manifest` | Get overlay manifest |
 | `GET` | `/api/overlay/:id/raster/:z/:x/:y` | Get raster tile |
 | `GET` | `/api/overlay/:id/vec/:z/:x/:y` | Get vector chunk |
@@ -351,7 +373,9 @@ Connect to `/ws` for real-time communication. Messages are JSON-encoded.
 - Ensure server is running: `curl http://localhost:8080/health`
 - Check nginx/proxy configuration for WebSocket upgrade headers
 
-**Overlay upload fails**
+**Overlay not showing for slide**
+- Verify overlay file exists at `<OVERLAY_DIR>/<slide_name>/overlays.bin`
+- Slide name must match exactly (without file extension)
 - Check file size is under 500MB limit
 - Verify protobuf format matches expected schema
 - Check server logs for parsing errors

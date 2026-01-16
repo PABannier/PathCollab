@@ -511,6 +511,7 @@ mod tests {
             tile_size: 256,
             num_levels: 10,
             tile_url_template: "/tile/{level}/{x}/{y}".to_string(),
+            has_overlay: false,
         }
     }
 
@@ -916,6 +917,7 @@ mod tests {
             tile_size: 512,
             num_levels: 12,
             tile_url_template: "/tile/{level}/{x}/{y}".to_string(),
+            has_overlay: false,
         };
 
         // Change the slide
@@ -976,6 +978,7 @@ mod tests {
             tile_size: 256,
             num_levels: 8,
             tile_url_template: "/tile/{level}/{x}/{y}".to_string(),
+            has_overlay: false,
         };
 
         manager
@@ -1003,6 +1006,7 @@ mod tests {
             tile_size: 256,
             num_levels: 4,
             tile_url_template: "/tile/{level}/{x}/{y}".to_string(),
+            has_overlay: false,
         };
 
         let result = manager.change_slide("nonexistent", new_slide).await;
