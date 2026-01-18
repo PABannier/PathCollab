@@ -28,6 +28,10 @@ pub struct Connection {
     pub is_presenter: bool,
     pub last_ping: Instant,
     pub sender: mpsc::Sender<ServerMessage>,
+    /// Cached participant name (avoids session lookups on every cursor update)
+    pub name: Option<String>,
+    /// Cached participant color (avoids session lookups on every cursor update)
+    pub color: Option<String>,
 }
 
 /// Global connection registry
@@ -171,6 +175,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 is_presenter: false,
                 last_ping: Instant::now(),
                 sender: tx.clone(),
+                name: None,
+                color: None,
             },
         );
     }
@@ -531,14 +537,24 @@ async fn handle_client_message(
             {
                 Ok((session, join_secret, presenter_key)) => {
                     let session_id = session.id.clone();
+                    let presenter_id = session.presenter_id;
 
-                    // Update connection with session info
+                    // Get presenter info from the session for caching
+                    let (presenter_name, presenter_color) = session
+                        .participants
+                        .get(&presenter_id)
+                        .map(|p| (p.name.clone(), p.color.clone()))
+                        .unwrap_or_else(|| ("Unknown".to_string(), "#888888".to_string()));
+
+                    // Update connection with session info and cached participant data
                     {
                         let mut connections = state.connections.write().await;
                         if let Some(conn) = connections.get_mut(&connection_id) {
                             conn.session_id = Some(session_id.clone());
-                            conn.participant_id = Some(session.presenter_id);
+                            conn.participant_id = Some(presenter_id);
                             conn.is_presenter = true;
+                            conn.name = Some(presenter_name);
+                            conn.color = Some(presenter_color);
                         }
                     }
 
@@ -614,14 +630,18 @@ async fn handle_client_message(
             {
                 Ok((snapshot, participant)) => {
                     let participant_id = participant.id;
+                    let participant_name = participant.name.clone();
+                    let participant_color = participant.color.clone();
 
-                    // Update connection with session info
+                    // Update connection with session info and cached participant data
                     {
                         let mut connections = state.connections.write().await;
                         if let Some(conn) = connections.get_mut(&connection_id) {
                             conn.session_id = Some(session_id.clone());
                             conn.participant_id = Some(participant_id);
                             conn.is_presenter = false;
+                            conn.name = Some(participant_name.clone());
+                            conn.color = Some(participant_color.clone());
                         }
                     }
 
@@ -694,17 +714,22 @@ async fn handle_client_message(
             }
         }
         ClientMessage::CursorUpdate { x, y, seq: _ } => {
-            // Get session and participant info
-            let (session_id, participant_id) = {
+            // Get session and participant info from cached connection data
+            let (session_id, participant_id, name, color, is_presenter) = {
                 let connections = state.connections.read().await;
                 let conn = connections.get(&connection_id);
                 (
                     conn.and_then(|c| c.session_id.clone()),
                     conn.and_then(|c| c.participant_id),
+                    conn.and_then(|c| c.name.clone()),
+                    conn.and_then(|c| c.color.clone()),
+                    conn.is_some_and(|c| c.is_presenter),
                 )
             };
 
-            if let (Some(session_id), Some(participant_id)) = (session_id, participant_id) {
+            if let (Some(session_id), Some(participant_id), Some(name), Some(color)) =
+                (session_id, participant_id, name, color)
+            {
                 // Update cursor in session
                 if let Err(e) = state
                     .session_manager
@@ -715,43 +740,26 @@ async fn handle_client_message(
                     return;
                 }
 
-                // Get participant info for broadcast
-                if let Ok(snapshot) = state.session_manager.get_session(&session_id).await {
-                    let participant = snapshot
-                        .followers
-                        .iter()
-                        .find(|p| p.id == participant_id)
-                        .or_else(|| {
-                            if snapshot.presenter.id == participant_id {
-                                Some(&snapshot.presenter)
-                            } else {
-                                None
-                            }
-                        });
+                let cursor = CursorWithParticipant {
+                    participant_id,
+                    name,
+                    color,
+                    is_presenter,
+                    x,
+                    y,
+                };
 
-                    if let Some(p) = participant {
-                        let cursor = CursorWithParticipant {
-                            participant_id,
-                            name: p.name.clone(),
-                            color: p.color.clone(),
-                            is_presenter: snapshot.presenter.id == participant_id,
-                            x,
-                            y,
-                        };
-
-                        // Broadcast cursor update to session
-                        state
-                            .broadcast_to_session(
-                                &session_id,
-                                ServerMessage::PresenceDelta {
-                                    changed: vec![cursor],
-                                    removed: vec![],
-                                    server_ts: crate::session::state::now_millis(),
-                                },
-                            )
-                            .await;
-                    }
-                }
+                // Broadcast cursor update to session
+                state
+                    .broadcast_to_session(
+                        &session_id,
+                        ServerMessage::PresenceDelta {
+                            changed: vec![cursor],
+                            removed: vec![],
+                            server_ts: crate::session::state::now_millis(),
+                        },
+                    )
+                    .await;
             }
         }
         ClientMessage::ViewportUpdate {

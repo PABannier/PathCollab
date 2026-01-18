@@ -86,11 +86,11 @@ jobs:
 
       - name: Start server in background
         run: |
-          PATHCOLLAB_HOST=127.0.0.1 \
-          PATHCOLLAB_PORT=9090 \
-          PATHCOLLAB_SLIDES_DIR=/tmp/pathcollab/slides \
-          PATHCOLLAB_OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
-          PATHCOLLAB_DEMO_ENABLED=true \
+          HOST=127.0.0.1 \
+          PORT=9090 \
+          SLIDES_DIR=/tmp/pathcollab/slides \
+          OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
+          DEMO_ENABLED=true \
           RUST_LOG=info \
           ./target/release/pathcollab &
 
@@ -159,10 +159,10 @@ jobs:
 
       - name: Start server
         run: |
-          PATHCOLLAB_HOST=127.0.0.1 \
-          PATHCOLLAB_PORT=9090 \
-          PATHCOLLAB_SLIDES_DIR=/tmp/pathcollab/slides \
-          PATHCOLLAB_OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
+          HOST=127.0.0.1 \
+          PORT=9090 \
+          SLIDES_DIR=/tmp/pathcollab/slides \
+          OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
           RUST_LOG=info \
           ./target/release/pathcollab &
 
