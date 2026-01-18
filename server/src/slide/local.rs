@@ -103,14 +103,29 @@ impl LocalSlideService {
     }
 
     /// Find slide path by ID
-    fn find_slide_path(&self, id: &str) -> Option<PathBuf> {
-        // Scan and find matching ID
-        for (slide_id, path) in self.scan_slides() {
-            if slide_id == id {
-                return Some(path);
-            }
+    async fn find_slide_path(&self, id: &str) -> Option<PathBuf> {
+        // Check path cache first
+        if let Some(path) = self.cache.get_path(id).await {
+            return Some(path);
         }
-        None
+
+        // Path not in cache - do a single directory scan and cache all paths
+        // This is O(n) but only happens once per unknown slide ID
+        let slides = self.scan_slides();
+        let mut paths_to_cache = std::collections::HashMap::new();
+        let mut result = None;
+
+        for (slide_id, path) in slides {
+            if slide_id == id {
+                result = Some(path.clone());
+            }
+            paths_to_cache.insert(slide_id, path);
+        }
+
+        // Batch update the path cache
+        self.cache.set_paths(paths_to_cache).await;
+
+        result
     }
 
     /// Extract metadata from an OpenSlide handle
@@ -318,18 +333,20 @@ impl LocalSlideService {
 
     /// Encode RGBA image to JPEG
     fn encode_jpeg(&self, rgba: &RgbaImage) -> Result<Vec<u8>, SlideError> {
-        // Convert RGBA to RGB (JPEG doesn't support alpha)
-        let rgb = image::DynamicImage::ImageRgba8(rgba.clone()).into_rgb8();
+        let (width, height) = (rgba.width(), rgba.height());
+        let mut rgb_data = Vec::with_capacity((width * height * 3) as usize);
+
+        // Strip alpha channel - iterate over pixels and keep only RGB
+        for pixel in rgba.pixels() {
+            rgb_data.push(pixel[0]); // R
+            rgb_data.push(pixel[1]); // G
+            rgb_data.push(pixel[2]); // B
+        }
 
         let mut buffer = Vec::new();
         let encoder = JpegEncoder::new_with_quality(&mut buffer, self.jpeg_quality);
         encoder
-            .write_image(
-                rgb.as_raw(),
-                rgb.width(),
-                rgb.height(),
-                image::ExtendedColorType::Rgb8,
-            )
+            .write_image(&rgb_data, width, height, image::ExtendedColorType::Rgb8)
             .map_err(|e| SlideError::TileError(format!("JPEG encoding failed: {}", e)))?;
 
         Ok(buffer)
@@ -372,9 +389,10 @@ impl SlideService for LocalSlideService {
             return Ok(meta);
         }
 
-        // Find the slide path
+        // Find the slide path (uses cached path mapping - O(1) instead of directory scan)
         let path = self
             .find_slide_path(id)
+            .await
             .ok_or_else(|| SlideError::NotFound(id.to_string()))?;
 
         // Open and extract metadata

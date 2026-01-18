@@ -1,7 +1,7 @@
 //! Thread-safe slide handle cache with LRU eviction
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use openslide_rs::OpenSlide;
@@ -16,10 +16,15 @@ pub struct SlideCache {
     slides: RwLock<HashMap<String, Arc<OpenSlide>>>,
     /// Cached slide metadata
     metadata: RwLock<HashMap<String, SlideMetadata>>,
+    /// Cached slide paths (id -> path) - avoids directory scan on every request
+    paths: RwLock<HashMap<String, PathBuf>>,
     /// Maximum number of cached slides
     max_size: usize,
-    /// Access order for LRU eviction (most recent at end)
-    access_order: RwLock<Vec<String>>,
+    /// Access order for LRU eviction using HashMap for O(1) lookup + VecDeque for order
+    /// Key: slide_id, Value: position in access_queue
+    access_map: RwLock<HashMap<String, u64>>,
+    /// Monotonically increasing counter for access timestamps
+    access_counter: RwLock<u64>,
 }
 
 impl SlideCache {
@@ -28,9 +33,23 @@ impl SlideCache {
         Self {
             slides: RwLock::new(HashMap::new()),
             metadata: RwLock::new(HashMap::new()),
+            paths: RwLock::new(HashMap::new()),
             max_size,
-            access_order: RwLock::new(Vec::new()),
+            access_map: RwLock::new(HashMap::new()),
+            access_counter: RwLock::new(0),
         }
+    }
+
+    /// Get a cached path for a slide ID
+    pub async fn get_path(&self, id: &str) -> Option<PathBuf> {
+        let paths = self.paths.read().await;
+        paths.get(id).cloned()
+    }
+
+    /// Set multiple paths at once (for batch initialization from directory scan)
+    pub async fn set_paths(&self, new_paths: HashMap<String, PathBuf>) {
+        let mut paths = self.paths.write().await;
+        paths.extend(new_paths);
     }
 
     /// Get or open a slide, caching the handle
@@ -96,22 +115,33 @@ impl SlideCache {
 
     /// Update access order for LRU tracking
     async fn update_access_order(&self, id: &str) {
-        let mut order = self.access_order.write().await;
-        // Remove if exists
-        if let Some(pos) = order.iter().position(|x| x == id) {
-            order.remove(pos);
-        }
-        // Add to end (most recent)
-        order.push(id.to_string());
+        let mut counter = self.access_counter.write().await;
+        *counter += 1;
+        let timestamp = *counter;
+        drop(counter);
+
+        let mut access_map = self.access_map.write().await;
+        access_map.insert(id.to_string(), timestamp);
     }
 
     /// Evict the least recently used slide
     async fn evict_lru(&self) {
-        let mut order = self.access_order.write().await;
-        if let Some(lru_id) = order.first().cloned() {
-            order.remove(0);
-            drop(order);
+        let lru_id = {
+            let access_map = self.access_map.read().await;
+            access_map
+                .iter()
+                .min_by_key(|(_, ts)| *ts)
+                .map(|(id, _)| id.clone())
+        };
 
+        if let Some(lru_id) = lru_id {
+            // Remove from access_map
+            {
+                let mut access_map = self.access_map.write().await;
+                access_map.remove(&lru_id);
+            }
+
+            // Remove from slides
             let mut slides = self.slides.write().await;
             if slides.remove(&lru_id).is_some() {
                 debug!("Evicted slide from cache: {}", lru_id);
@@ -121,26 +151,5 @@ impl SlideCache {
             let mut metadata = self.metadata.write().await;
             metadata.remove(&lru_id);
         }
-    }
-
-    /// Clear all cached slides
-    #[allow(dead_code)]
-    pub async fn clear(&self) {
-        let mut slides = self.slides.write().await;
-        let mut metadata = self.metadata.write().await;
-        let mut order = self.access_order.write().await;
-
-        slides.clear();
-        metadata.clear();
-        order.clear();
-
-        warn!("Slide cache cleared");
-    }
-
-    /// Get the number of cached slides
-    #[allow(dead_code)]
-    pub async fn len(&self) -> usize {
-        let slides = self.slides.read().await;
-        slides.len()
     }
 }
