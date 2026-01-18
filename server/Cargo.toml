@@ -43,6 +43,20 @@ metrics-exporter-prometheus = "0.16"
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.8"
 
 [build-dependencies]
 prost-build = "0.13"
+
+[[bench]]
+name = "tile_encoding"
+harness = false
+
+[[bench]]
+name = "spatial_index"
+harness = false
+
+[[bench]]
+name = "message_serialization"
+harness = false
