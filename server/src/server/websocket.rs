@@ -715,7 +715,6 @@ async fn handle_client_message(
         }
         ClientMessage::CursorUpdate { x, y, seq: _ } => {
             // Get session and participant info from cached connection data
-            // This avoids an expensive get_session() call on every cursor update (30Hz hot path)
             let (session_id, participant_id, name, color, is_presenter) = {
                 let connections = state.connections.read().await;
                 let conn = connections.get(&connection_id);
@@ -741,7 +740,6 @@ async fn handle_client_message(
                     return;
                 }
 
-                // Build cursor data using cached participant info (no session lookup needed!)
                 let cursor = CursorWithParticipant {
                     participant_id,
                     name,
