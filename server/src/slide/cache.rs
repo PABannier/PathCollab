@@ -75,6 +75,19 @@ impl SlideCache {
         metadata.get(id).cloned()
     }
 
+    /// Get a cached slide handle without requiring a path
+    /// Returns None if the slide is not in cache
+    pub async fn get_cached(&self, id: &str) -> Option<Arc<OpenSlide>> {
+        let slide = {
+            let slides = self.slides.read().await;
+            slides.get(id).map(Arc::clone)
+        };
+        if slide.is_some() {
+            self.update_access_order(id).await;
+        }
+        slide
+    }
+
     /// Set metadata for a slide
     pub async fn set_metadata(&self, id: &str, meta: SlideMetadata) {
         let mut metadata = self.metadata.write().await;

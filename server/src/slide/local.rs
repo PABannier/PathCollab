@@ -397,7 +397,7 @@ impl SlideService for LocalSlideService {
             }
         };
 
-        // Get metadata (will open slide if needed)
+        // Get metadata (will open slide if needed, caching the slide handle)
         let metadata = match self.get_slide(&request.slide_id).await {
             Ok(m) => m,
             Err(e) => {
@@ -407,20 +407,12 @@ impl SlideService for LocalSlideService {
             }
         };
 
-        // Find path and get slide handle
-        let path = match self.find_slide_path(&request.slide_id) {
-            Some(p) => p,
+        // Get cached slide handle (already cached by get_slide above)
+        let slide = match self.cache.get_cached(&request.slide_id).await {
+            Some(s) => s,
             None => {
+                // This should not happen since get_slide succeeded, but handle gracefully
                 let result = Err(SlideError::NotFound(request.slide_id.clone()));
-                record_metrics(&result, start);
-                return result;
-            }
-        };
-
-        let slide = match self.cache.get_or_open(&request.slide_id, &path).await {
-            Ok(s) => s,
-            Err(e) => {
-                let result = Err(e);
                 record_metrics(&result, start);
                 return result;
             }
