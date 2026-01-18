@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use openslide_rs::OpenSlide;
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::types::{SlideError, SlideMetadata};
 
