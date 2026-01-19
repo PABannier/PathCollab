@@ -13,7 +13,7 @@ use crate::server::AppState;
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -301,19 +301,25 @@ pub async fn get_raster_tile(
             code: "not_found".to_string(),
         })?;
 
+    let tile_size = overlay.manifest.tile_size.to_string();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    headers.insert(
+        "X-Tile-Width",
+        HeaderValue::from_str(&tile_size).unwrap_or_else(|_| HeaderValue::from_static("256")),
+    );
+    headers.insert(
+        "X-Tile-Height",
+        HeaderValue::from_str(&tile_size).unwrap_or_else(|_| HeaderValue::from_static("256")),
+    );
+    headers.insert("X-Tile-Format", HeaderValue::from_static("rgba"));
+
     // Return RGBA as raw bytes (could be WebP in production)
     // For now, return as PNG-compatible raw RGBA
-    Ok((
-        StatusCode::OK,
-        [
-            ("Content-Type", "application/octet-stream"),
-            ("X-Tile-Width", "256"),
-            ("X-Tile-Height", "256"),
-            ("X-Tile-Format", "rgba"),
-        ],
-        tile.rgba_data.clone(),
-    )
-        .into_response())
+    Ok((StatusCode::OK, headers, tile.rgba_data.clone()).into_response())
 }
 
 /// Get a vector chunk (cell data)

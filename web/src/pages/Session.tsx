@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   SlideViewer,
   type SlideInfo,
@@ -9,77 +9,30 @@ import {
 import { CursorLayer } from '../components/viewer/CursorLayer'
 import { OverlayCanvas } from '../components/viewer/OverlayCanvas'
 import { TissueHeatmapLayer } from '../components/viewer/TissueHeatmapLayer'
-import { LayerPanel } from '../components/viewer/LayerPanel'
 import { MinimapOverlay } from '../components/viewer/MinimapOverlay'
 import { CellTooltip } from '../components/viewer/CellTooltip'
 import { Sidebar, SidebarSection } from '../components/layout'
+import { SessionFooter } from '../components/session'
 import { StatusBar, ConnectionBadge } from '../components/layout'
 import {
   Button,
+  FollowModeIndicator,
   KeyboardShortcutsHelp,
+  LayerControls,
   NetworkErrorBanner,
   PresetEmptyState,
-  Toggle,
+  ReturnToPresenterButton,
 } from '../components/ui'
-import { useSession, type LayerVisibility, type OverlayManifest } from '../hooks/useSession'
+import { useSession, type OverlayManifest } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
 import { useAvailableSlides } from '../hooks/useAvailableSlides'
 import { useKeyboardShortcuts, type KeyboardShortcut } from '../hooks/useKeyboardShortcuts'
-
-// Cell polygon data for rendering
-interface CellPolygon {
-  x: number
-  y: number
-  classId: number
-  confidence: number
-  vertices: number[]
-}
-
-// Cell class definition
-interface CellClass {
-  id: number
-  name: string
-  color: string
-}
-
-// Default cell classes (15 types)
-const DEFAULT_CELL_CLASSES: CellClass[] = [
-  { id: 0, name: 'Tumor', color: '#DC2626' },
-  { id: 1, name: 'Stroma', color: '#EA580C' },
-  { id: 2, name: 'Immune', color: '#CA8A04' },
-  { id: 3, name: 'Necrosis', color: '#16A34A' },
-  { id: 4, name: 'Other', color: '#0D9488' },
-  { id: 5, name: 'Class 5', color: '#0891B2' },
-  { id: 6, name: 'Class 6', color: '#2563EB' },
-  { id: 7, name: 'Class 7', color: '#7C3AED' },
-  { id: 8, name: 'Class 8', color: '#C026D3' },
-  { id: 9, name: 'Class 9', color: '#DB2777' },
-  { id: 10, name: 'Class 10', color: '#84CC16' },
-  { id: 11, name: 'Class 11', color: '#06B6D4' },
-  { id: 12, name: 'Class 12', color: '#8B5CF6' },
-  { id: 13, name: 'Class 13', color: '#F43F5E' },
-  { id: 14, name: 'Class 14', color: '#64748B' },
-]
-
-// Tissue class definition
-interface TissueClass {
-  id: number
-  name: string
-  color: string
-}
-
-// Default tissue classes (8 types)
-const DEFAULT_TISSUE_CLASSES: TissueClass[] = [
-  { id: 0, name: 'Tumor', color: '#EF4444' },
-  { id: 1, name: 'Stroma', color: '#F59E0B' },
-  { id: 2, name: 'Necrosis', color: '#6B7280' },
-  { id: 3, name: 'Lymphocytes', color: '#3B82F6' },
-  { id: 4, name: 'Mucus', color: '#A855F7' },
-  { id: 5, name: 'Smooth Muscle', color: '#EC4899' },
-  { id: 6, name: 'Adipose', color: '#FBBF24' },
-  { id: 7, name: 'Background', color: '#E5E7EB' },
-]
+import { useShareUrl } from '../hooks/useShareUrl'
+import { useLayerVisibility } from '../hooks/useLayerVisibility'
+import { useOverlayCells } from '../hooks/useOverlayCells'
+import { useViewerViewport } from '../hooks/useViewerViewport'
+import { DEFAULT_CELL_CLASSES, DEFAULT_TISSUE_CLASSES } from '../constants'
 
 // Demo slide configuration - will be replaced with actual data from backend
 const DEMO_SLIDE_BASE: Omit<SlideInfo, 'tileUrlTemplate'> = {
@@ -94,35 +47,19 @@ const DEMO_SLIDE_BASE: Omit<SlideInfo, 'tileUrlTemplate'> = {
 export function Session() {
   const { id: sessionId } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const viewerContainerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<SlideViewerHandle | null>(null)
-  const [viewerBounds, setViewerBounds] = useState<DOMRect | null>(null)
-  const [currentViewport, setCurrentViewport] = useState({ centerX: 0.5, centerY: 0.5, zoom: 1 })
   const [error, setError] = useState<string | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
-  const [shareUrl, setShareUrl] = useState<string | null>(null)
-  const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle')
-  const pendingSnapRef = useRef(false)
   const autoCreateRequestedRef = useRef(false)
 
-  // Overlay state
+  // Overlay state (metadata only - cells are fetched by useOverlayCells, visibility by useLayerVisibility)
   const [overlayId, setOverlayId] = useState<string | null>(null)
   const [overlayManifest, setOverlayManifest] = useState<OverlayManifest | null>(null)
-  const [overlayCells, setOverlayCells] = useState<CellPolygon[]>([])
-  const [overlayEnabled, setOverlayEnabled] = useState(false) // Start disabled, user must toggle to load
-  const [overlayOpacity, setOverlayOpacity] = useState(0.7)
-  const [visibleCellClasses, setVisibleCellClasses] = useState<number[]>(
-    DEFAULT_CELL_CLASSES.map((c) => c.id)
-  )
-  const [cellHoverEnabled, setCellHoverEnabled] = useState(true)
-  const [isLoadingOverlay, setIsLoadingOverlay] = useState(false)
 
-  // Tissue heatmap state
-  const [tissueEnabled, setTissueEnabled] = useState(true)
-  const [tissueOpacity, setTissueOpacity] = useState(0.5)
-  const [visibleTissueClasses, setVisibleTissueClasses] = useState<number[]>(
-    DEFAULT_TISSUE_CLASSES.map((c) => c.id)
-  )
+  // Footer cursor position (for displaying coordinates)
+  const [footerCursorPos, setFooterCursorPos] = useState<{ x: number; y: number } | null>(null)
 
   // Get secrets from URL hash fragment (not sent to server)
   const hashParams = useMemo(() => {
@@ -149,26 +86,16 @@ export function Session() {
     setTimeout(() => setNotification(null), 3000)
   }, [])
 
-  // Load overlay from server
-  const loadOverlay = useCallback(async (slideId: string, sessionIdParam: string) => {
-    if (isLoadingOverlay || overlayId) return
-
-    setIsLoadingOverlay(true)
-    try {
-      const response = await fetch(
-        `/api/overlay/load?slide_id=${encodeURIComponent(slideId)}&session_id=${encodeURIComponent(sessionIdParam)}`,
-        { method: 'POST' }
-      )
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(errorData.error || `HTTP ${response.status}`)
-      }
-      // The WebSocket will receive the overlay_loaded message and call handleOverlayLoaded
-    } catch (err) {
-      setIsLoadingOverlay(false)
-      setError(err instanceof Error ? err.message : 'Failed to load overlay')
-    }
-  }, [isLoadingOverlay, overlayId])
+  // Handle session creation - update URL to include session ID and secrets
+  const handleSessionCreated = useCallback(
+    (newSessionId: string, newJoinSecret: string, newPresenterKey: string) => {
+      // Build presenter URL with secrets in hash fragment (never sent to server)
+      const presenterUrl = `/s/${newSessionId}#join=${newJoinSecret}&presenter=${newPresenterKey}`
+      // Replace current URL without adding to history
+      navigate(presenterUrl, { replace: true })
+    },
+    [navigate]
+  )
 
   // Session hook
   const {
@@ -177,10 +104,12 @@ export function Session() {
     isPresenter,
     isCreatingSession,
     connectionStatus,
+    latency,
     cursors,
     presenterViewport,
     secrets,
     isFollowing,
+    hasDiverged,
     createSession,
     updateCursor,
     updateViewport,
@@ -188,12 +117,14 @@ export function Session() {
     changeSlide,
     snapToPresenter,
     setIsFollowing,
+    checkDivergence,
   } = useSession({
     sessionId,
     joinSecret,
     presenterKey,
     onError: setError,
     onOverlayLoaded: handleOverlayLoaded,
+    onSessionCreated: handleSessionCreated,
   })
 
   const autoCreateSlideId = useMemo(() => {
@@ -232,134 +163,28 @@ export function Session() {
     defaultSlide?.slide_id,
   ])
 
-  const layerVisibility = useMemo<LayerVisibility>(
-    () => ({
-      tissue_heatmap_visible: tissueEnabled,
-      tissue_heatmap_opacity: tissueOpacity,
-      tissue_classes_visible: visibleTissueClasses,
-      cell_polygons_visible: overlayEnabled,
-      cell_polygons_opacity: overlayOpacity,
-      cell_classes_visible: visibleCellClasses,
-      cell_hover_enabled: cellHoverEnabled,
-    }),
-    [
-      tissueEnabled,
-      tissueOpacity,
-      visibleTissueClasses,
-      overlayEnabled,
-      overlayOpacity,
-      visibleCellClasses,
-      cellHoverEnabled,
-    ]
-  )
-
-  const emitLayerVisibility = useCallback(
-    (next: LayerVisibility) => {
-      if (session && isPresenter) {
-        updateLayerVisibility(next)
-      }
-    },
-    [isPresenter, session, updateLayerVisibility]
-  )
-
-  const handleTissueEnabledChange = useCallback(
-    (enabled: boolean) => {
-      setTissueEnabled(enabled)
-      emitLayerVisibility({ ...layerVisibility, tissue_heatmap_visible: enabled })
-    },
-    [emitLayerVisibility, layerVisibility]
-  )
-
-  const handleTissueOpacityChange = useCallback(
-    (opacity: number) => {
-      setTissueOpacity(opacity)
-      emitLayerVisibility({ ...layerVisibility, tissue_heatmap_opacity: opacity })
-    },
-    [emitLayerVisibility, layerVisibility]
-  )
-
-  const handleVisibleTissueClassesChange = useCallback(
-    (classes: number[]) => {
-      setVisibleTissueClasses(classes)
-      emitLayerVisibility({ ...layerVisibility, tissue_classes_visible: classes })
-    },
-    [emitLayerVisibility, layerVisibility]
-  )
-
-  const handleCellsEnabledChange = useCallback(
-    (enabled: boolean) => {
-      setOverlayEnabled(enabled)
-      emitLayerVisibility({ ...layerVisibility, cell_polygons_visible: enabled })
-    },
-    [emitLayerVisibility, layerVisibility]
-  )
-
-  const handleCellsOpacityChange = useCallback(
-    (opacity: number) => {
-      setOverlayOpacity(opacity)
-      emitLayerVisibility({ ...layerVisibility, cell_polygons_opacity: opacity })
-    },
-    [emitLayerVisibility, layerVisibility]
-  )
-
-  const handleVisibleCellClassesChange = useCallback(
-    (classes: number[]) => {
-      setVisibleCellClasses(classes)
-      emitLayerVisibility({ ...layerVisibility, cell_classes_visible: classes })
-    },
-    [emitLayerVisibility, layerVisibility]
-  )
-
-  const handleCellHoverEnabledChange = useCallback(
-    (enabled: boolean) => {
-      setCellHoverEnabled(enabled)
-      emitLayerVisibility({ ...layerVisibility, cell_hover_enabled: enabled })
-    },
-    [emitLayerVisibility, layerVisibility]
-  )
-
-  const layerControlsDisabled = !!session && !isPresenter
-
-  const arraysEqual = useCallback((a: number[], b: number[]) => {
-    if (a.length !== b.length) return false
-    return a.every((value, index) => value === b[index])
-  }, [])
-
-  const applyLayerVisibility = useCallback(
-    (visibility: LayerVisibility) => {
-      setTissueEnabled((prev) =>
-        prev === visibility.tissue_heatmap_visible ? prev : visibility.tissue_heatmap_visible
-      )
-      setTissueOpacity((prev) =>
-        prev === visibility.tissue_heatmap_opacity ? prev : visibility.tissue_heatmap_opacity
-      )
-      setVisibleTissueClasses((prev) =>
-        arraysEqual(prev, visibility.tissue_classes_visible)
-          ? prev
-          : visibility.tissue_classes_visible
-      )
-      setOverlayEnabled((prev) =>
-        prev === visibility.cell_polygons_visible ? prev : visibility.cell_polygons_visible
-      )
-      setOverlayOpacity((prev) =>
-        prev === visibility.cell_polygons_opacity ? prev : visibility.cell_polygons_opacity
-      )
-      setVisibleCellClasses((prev) =>
-        arraysEqual(prev, visibility.cell_classes_visible) ? prev : visibility.cell_classes_visible
-      )
-      setCellHoverEnabled((prev) =>
-        prev === visibility.cell_hover_enabled ? prev : visibility.cell_hover_enabled
-      )
-    },
-    [arraysEqual]
-  )
-
-  useEffect(() => {
-    if (!session?.layer_visibility) return
-    // Sync local layer state with session state from server
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    applyLayerVisibility(session.layer_visibility)
-  }, [applyLayerVisibility, session?.layer_visibility])
+  // Layer visibility state and handlers
+  const {
+    tissueEnabled,
+    tissueOpacity,
+    visibleTissueClasses,
+    cellsEnabled,
+    cellsOpacity,
+    visibleCellClasses,
+    cellHoverEnabled,
+    layerControlsDisabled,
+    handleTissueEnabledChange,
+    handleTissueOpacityChange,
+    handleVisibleTissueClassesChange,
+    handleCellsEnabledChange,
+    handleCellsOpacityChange,
+    handleVisibleCellClassesChange,
+    handleCellHoverEnabledChange,
+  } = useLayerVisibility({
+    session,
+    isPresenter,
+    updateLayerVisibility,
+  })
 
   // Determine if we're waiting for a session to be created
   // If autoCreateSlideId is set and session is not created yet, we should wait
@@ -411,6 +236,35 @@ export function Session() {
     }
   }, [session?.slide, isWaitingForSession, defaultSlide, isLoadingDefaultSlide])
 
+  // Share URL management
+  const { shareUrl, copyState, handleShare } = useShareUrl({
+    session,
+    secrets,
+    slide,
+    createSession,
+  })
+
+  // Viewport state and handlers
+  const {
+    viewerBounds,
+    currentViewport,
+    handleViewportChange,
+    handleSnapToPresenter,
+    handleReturnToPresenter,
+    handleZoomReset,
+  } = useViewerViewport({
+    viewerRef,
+    viewerContainerRef,
+    session,
+    isPresenter,
+    isFollowing,
+    presenterViewport,
+    updateViewport,
+    snapToPresenter,
+    checkDivergence,
+    setIsFollowing,
+  })
+
   // Presence tracking
   const { startTracking, stopTracking, updateCursorPosition, convertToSlideCoords } = usePresence({
     enabled: !!session && !!slide,
@@ -428,259 +282,43 @@ export function Session() {
     return () => stopTracking()
   }, [session, startTracking, stopTracking])
 
-  // Fetch overlay cells when viewport changes
-  useEffect(() => {
-    if (!overlayId || !overlayEnabled || !viewerBounds || !slide) return
-
-    // AbortController to cancel in-flight requests when viewport changes
-    const abortController = new AbortController()
-
-    const fetchCells = async () => {
-      // Calculate viewport bounds in slide coordinates (pixels)
-      const viewportWidth = 1 / currentViewport.zoom
-      const viewportHeight = viewerBounds.height / viewerBounds.width / currentViewport.zoom
-
-      // IMPORTANT: In OpenSeadragon, both X and Y are normalized by slideWidth
-      const minX = (currentViewport.centerX - viewportWidth / 2) * slide.width
-      const maxX = (currentViewport.centerX + viewportWidth / 2) * slide.width
-      const minY = (currentViewport.centerY - viewportHeight / 2) * slide.width
-      const maxY = (currentViewport.centerY + viewportHeight / 2) * slide.width
-
-      // Server stores vector chunks at level 0 using the overlay tile grid.
-      const serverTileSize = overlayManifest?.tile_size ?? 256
-      const level = 0
-
-      // Calculate tile range using the server's tile grid
-      const maxTileX = Math.max(0, Math.ceil(slide.width / serverTileSize) - 1)
-      const maxTileY = Math.max(0, Math.ceil(slide.height / serverTileSize) - 1)
-      const startTileX = Math.max(0, Math.floor(minX / serverTileSize))
-      const endTileX = Math.min(maxTileX, Math.floor(maxX / serverTileSize))
-      const startTileY = Math.max(0, Math.floor(minY / serverTileSize))
-      const endTileY = Math.min(maxTileY, Math.floor(maxY / serverTileSize))
-
-      // Fetch vector chunks for visible tiles
-      const cells: CellPolygon[] = []
-      const fetchPromises: Promise<void>[] = []
-
-      // Dynamic tile limit based on zoom level
-      // At high zoom (>5), fetch all visible tiles (cells are large enough to see)
-      // At low zoom (<5), limit tiles since cells would be sub-pixel anyway
-      const tilesNeededX = endTileX - startTileX + 1
-      const tilesNeededY = endTileY - startTileY + 1
-
-      // Scale max tiles with zoom: more tiles at higher zoom
-      // zoom 1 = 6 tiles, zoom 10 = 15 tiles, zoom 50+ = 30 tiles
-      const maxTilesPerAxis = Math.min(30, Math.max(6, Math.floor(currentViewport.zoom * 1.5)))
-
-      const centerTileX = Math.floor((minX + maxX) / 2 / serverTileSize)
-      const centerTileY = Math.floor((minY + maxY) / 2 / serverTileSize)
-      let rangeStartX = startTileX
-      let rangeEndX = endTileX
-      let rangeStartY = startTileY
-      let rangeEndY = endTileY
-
-      if (tilesNeededX > maxTilesPerAxis) {
-        rangeStartX = Math.max(0, centerTileX - Math.floor(maxTilesPerAxis / 2))
-        rangeEndX = Math.min(maxTileX, rangeStartX + maxTilesPerAxis - 1)
-        rangeStartX = Math.max(0, rangeEndX - maxTilesPerAxis + 1)
-      }
-
-      if (tilesNeededY > maxTilesPerAxis) {
-        rangeStartY = Math.max(0, centerTileY - Math.floor(maxTilesPerAxis / 2))
-        rangeEndY = Math.min(maxTileY, rangeStartY + maxTilesPerAxis - 1)
-        rangeStartY = Math.max(0, rangeEndY - maxTilesPerAxis + 1)
-      }
-
-      for (let ty = rangeStartY; ty <= rangeEndY; ty++) {
-        for (let tx = rangeStartX; tx <= rangeEndX; tx++) {
-          // Capture tile coordinates for closure
-          const tileX = tx
-          const tileY = ty
-          // Calculate tile origin in slide coordinates using server's tile size
-          const tileOriginX = tileX * serverTileSize
-          const tileOriginY = tileY * serverTileSize
-
-          fetchPromises.push(
-            fetch(`/api/overlay/${overlayId}/vec/${level}/${tileX}/${tileY}`, {
-              signal: abortController.signal,
-            })
-              .then((res) => (res.ok ? res.json() : null))
-              .then((data) => {
-                if (data?.cells) {
-                  for (const cell of data.cells) {
-                    // Cell x/y are relative to tile origin (in pixels), convert to absolute slide coords
-                    cells.push({
-                      x: tileOriginX + cell.x,
-                      y: tileOriginY + cell.y,
-                      classId: cell.class_id,
-                      confidence: cell.confidence / 255,
-                      vertices: cell.vertices || [],
-                    })
-                  }
-                }
-              })
-              .catch((err) => {
-                // Ignore abort errors - they're expected when viewport changes
-                if (err.name !== 'AbortError') {
-                  // Silently ignore other fetch errors (network issues, 404s, etc.)
-                }
-              })
-          )
-        }
-      }
-
-      await Promise.all(fetchPromises)
-      // Only update state if the request wasn't aborted
-      if (!abortController.signal.aborted) {
-        console.log('[Session] Fetched cells:', cells.length, 'for tiles:', rangeStartX, '-', rangeEndX, 'x', rangeStartY, '-', rangeEndY)
-        if (cells.length > 0) {
-          console.log('[Session] Sample cell:', cells[0])
-        }
-        setOverlayCells(cells)
-      }
-    }
-
-    // Debounce the fetch to avoid too many requests
-    const timeoutId = setTimeout(fetchCells, 100)
-    return () => {
-      clearTimeout(timeoutId)
-      abortController.abort()
-    }
-  }, [overlayId, overlayEnabled, currentViewport, viewerBounds, slide, overlayManifest])
-
-  // Update viewer bounds on resize
-  useEffect(() => {
-    const updateBounds = () => {
-      if (viewerContainerRef.current) {
-        setViewerBounds(viewerContainerRef.current.getBoundingClientRect())
-      }
-    }
-
-    updateBounds()
-    window.addEventListener('resize', updateBounds)
-    return () => window.removeEventListener('resize', updateBounds)
-  }, [])
-
-  // Handle viewport changes
-  const handleViewportChange = useCallback(
-    (viewport: { centerX: number; centerY: number; zoom: number }) => {
-      setCurrentViewport(viewport)
-      // Only send viewport updates if we're in a session
-      if (session) {
-        updateViewport(viewport.centerX, viewport.centerY, viewport.zoom)
-      }
-    },
-    [session, updateViewport]
-  )
-
-  const applyPresenterViewport = useCallback(
-    (viewport: { center_x: number; center_y: number; zoom: number }) => {
-      viewerRef.current?.setViewport({
-        centerX: viewport.center_x,
-        centerY: viewport.center_y,
-        zoom: viewport.zoom,
-      })
-    },
-    []
-  )
+  // Fetch overlay cells based on viewport
+  const { overlayCells } = useOverlayCells({
+    overlayId,
+    overlayManifest,
+    cellsEnabled,
+    currentViewport,
+    viewerBounds,
+    slide,
+  })
 
   // Handle mouse move for cursor tracking
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      if (!session || !viewerBounds) return
-
-      const slideCoords = convertToSlideCoords(e.clientX, e.clientY, viewerBounds, currentViewport)
-
-      if (slideCoords) {
-        updateCursorPosition(slideCoords.x, slideCoords.y)
+      // Always track cursor for footer display when we have bounds
+      if (viewerBounds) {
+        const slideCoords = convertToSlideCoords(
+          e.clientX,
+          e.clientY,
+          viewerBounds,
+          currentViewport
+        )
+        if (slideCoords) {
+          setFooterCursorPos({ x: slideCoords.x, y: slideCoords.y })
+          // Only send cursor updates to session if active
+          if (session) {
+            updateCursorPosition(slideCoords.x, slideCoords.y)
+          }
+        }
       }
     },
     [session, viewerBounds, currentViewport, convertToSlideCoords, updateCursorPosition]
   )
 
-  // Handle snap to presenter
-  const handleSnapToPresenter = useCallback(() => {
-    pendingSnapRef.current = true
-    snapToPresenter()
-    if (presenterViewport) {
-      applyPresenterViewport(presenterViewport)
-    }
-  }, [applyPresenterViewport, presenterViewport, snapToPresenter])
-
-  useEffect(() => {
-    if (!pendingSnapRef.current || !presenterViewport) return
-    applyPresenterViewport(presenterViewport)
-    pendingSnapRef.current = false
-  }, [applyPresenterViewport, presenterViewport])
-
-  // Auto-follow presenter viewport when following is enabled
-  // This ref tracks the last applied viewport to avoid re-applying the same one
-  const lastAppliedViewportRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    if (!isFollowing || isPresenter || !presenterViewport) return
-
-    // Create a unique key for this viewport to detect changes
-    const viewportKey = `${presenterViewport.center_x}-${presenterViewport.center_y}-${presenterViewport.zoom}-${presenterViewport.timestamp}`
-
-    // Only apply if this is a new viewport (avoid duplicate applications)
-    if (lastAppliedViewportRef.current === viewportKey) return
-    lastAppliedViewportRef.current = viewportKey
-
-    applyPresenterViewport(presenterViewport)
-  }, [isFollowing, isPresenter, presenterViewport, applyPresenterViewport])
-
-  // Build share URL when session is created with secrets
-  useEffect(() => {
-    if (session && secrets) {
-      // Build share URL with join secret in hash (not sent to server)
-      const baseUrl = `${window.location.origin}/s/${session.id}#join=${secrets.joinSecret}`
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setShareUrl(baseUrl)
-    }
-  }, [session, secrets])
-
-  // Track pending copy request (for auto-copy after session creation)
-  const pendingCopyRef = useRef(false)
-
-  // Handle share link - auto-creates session if needed
-  const handleShare = useCallback(async () => {
-    if (copyState === 'success') return // Prevent rapid double-clicks
-
-    // If no session, auto-create one and mark pending copy
-    if (!session && slide) {
-      pendingCopyRef.current = true
-      createSession(slide.id)
-      return
-    }
-
-    const url = shareUrl || window.location.href
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopyState('success')
-      setTimeout(() => setCopyState('idle'), 2000)
-    } catch {
-      setCopyState('error')
-      setTimeout(() => setCopyState('idle'), 3000)
-    }
-  }, [shareUrl, session, slide, copyState, createSession])
-
-  // Auto-copy share URL when session is created after Copy Link click
-  useEffect(() => {
-    if (!pendingCopyRef.current || !shareUrl) return
-    pendingCopyRef.current = false
-
-    navigator.clipboard
-      .writeText(shareUrl)
-      .then(() => {
-        setCopyState('success')
-        setTimeout(() => setCopyState('idle'), 2000)
-      })
-      .catch(() => {
-        setCopyState('error')
-        setTimeout(() => setCopyState('idle'), 3000)
-      })
-  }, [shareUrl])
+  // Handle mouse leave to clear footer cursor position
+  const handleMouseLeave = useCallback(() => {
+    setFooterCursorPos(null)
+  }, [])
 
   // Handle slide change - sends change_slide message to server
   const handleSlideChange = useCallback(
@@ -690,11 +328,6 @@ export function Session() {
     },
     [slide?.id, changeSlide]
   )
-
-  // Handle zoom reset
-  const handleZoomReset = useCallback(() => {
-    viewerRef.current?.setViewport({ centerX: 0.5, centerY: 0.5, zoom: 1 })
-  }, [])
 
   // Help dialog state - managed separately to avoid circular dependency with shortcuts
   const [showHelp, setShowHelp] = useState(false)
@@ -805,20 +438,9 @@ export function Session() {
       {/* Two-pane layout: Sidebar + Viewer */}
       <div className="flex flex-1 overflow-hidden relative">
         <Sidebar>
-          {/* Follow presenter toggle (followers only) */}
+          {/* Follow presenter indicator (followers only) */}
           {session && !isPresenter && (
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <span className="text-sm font-medium text-gray-300">Follow presenter</span>
-                <p className="text-xs text-gray-500">Sync your view automatically</p>
-              </div>
-              <Toggle
-                checked={isFollowing}
-                onChange={setIsFollowing}
-                aria-label="Follow presenter"
-                size="sm"
-              />
-            </div>
+            <FollowModeIndicator isFollowing={isFollowing} onFollowChange={setIsFollowing} />
           )}
 
           {/* Connection status */}
@@ -827,7 +449,9 @@ export function Session() {
               <ConnectionBadge status={connectionStatus} />
               <span className="text-gray-400 italic text-sm">
                 {connectionStatus === 'connected'
-                  ? 'You are connected'
+                  ? isPresenter
+                    ? 'You are presenting'
+                    : 'You are following'
                   : connectionStatus === 'connecting'
                     ? 'Connecting...'
                     : connectionStatus === 'reconnecting'
@@ -864,8 +488,8 @@ export function Session() {
             </div>
           )}
 
-          {/* Share Link section */}
-          {slide && !isSoloMode && (
+          {/* Share Link section (presenter only) */}
+          {slide && !isSoloMode && isPresenter && (
             <div className="mb-4">
               <p className="font-bold text-gray-300 mb-2" style={{ fontSize: '1rem' }}>
                 Share Link
@@ -923,26 +547,44 @@ export function Session() {
               <div className="flex flex-col gap-1">
                 <div
                   className="flex items-center gap-2 px-2 py-1.5 rounded text-sm"
-                  style={{ backgroundColor: '#3C3C3C' }}
+                  style={{ backgroundColor: 'var(--color-gray-700)' }}
                 >
                   <span
                     className="h-2 w-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: session.presenter.color }}
+                    aria-hidden="true"
                   />
-                  <span className="text-gray-300">{session.presenter.name}</span>
-                  <span className="text-gray-500 ml-auto">(host)</span>
+                  <span className="text-gray-300">
+                    {session.presenter.name}
+                    {currentUser?.id === session.presenter.id && (
+                      <span className="text-gray-400 ml-1">(you)</span>
+                    )}
+                  </span>
+                  <span
+                    className="ml-auto flex items-center gap-1"
+                    style={{ color: 'var(--color-accent-purple)' }}
+                  >
+                    <span className="text-xs">★</span>
+                    <span className="text-gray-500">host</span>
+                  </span>
                 </div>
                 {session.followers.map((f) => (
                   <div
                     key={f.id}
                     className="flex items-center gap-2 px-2 py-1.5 rounded text-sm"
-                    style={{ backgroundColor: '#3C3C3C' }}
+                    style={{ backgroundColor: 'var(--color-gray-700)' }}
                   >
                     <span
                       className="h-2 w-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: f.color }}
+                      aria-hidden="true"
                     />
-                    <span className="text-gray-300">{f.name}</span>
+                    <span className="text-gray-300">
+                      {f.name}
+                      {currentUser?.id === f.id && (
+                        <span className="text-gray-400 ml-1">(you)</span>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -950,117 +592,30 @@ export function Session() {
           )}
 
 
-          {/* Layer controls */}
-          <SidebarSection title="Layers">
-            {/* No overlay available message */}
-            {slide && !slide.hasOverlay && !overlayId && (
-              <div className="text-sm text-gray-500 py-2">
-                No overlay available for this slide.
-              </div>
-            )}
-
-            {/* Loading overlay message */}
-            {isLoadingOverlay && (
-              <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
-                <span className="animate-spin">⏳</span>
-                Loading overlay...
-              </div>
-            )}
-
-            {/* Load overlay button (when available but not loaded) */}
-            {slide?.hasOverlay && !overlayId && !isLoadingOverlay && session && (
-              <button
-                onClick={() => loadOverlay(slide.id, session.id)}
-                className="w-full px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-              >
-                Load Overlay
-              </button>
-            )}
-
-            {/* Layer controls (when overlay is loaded) */}
-            {overlayId && (
-              <div className="space-y-3">
-                {/* Tissue heatmap controls */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-sm text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={tissueEnabled}
-                        onChange={(e) => handleTissueEnabledChange(e.target.checked)}
-                        disabled={layerControlsDisabled}
-                        className="rounded"
-                      />
-                      Tissue Heatmap
-                    </label>
-                    {tissueEnabled && (
-                      <span className="text-xs text-gray-500">
-                        {Math.round(tissueOpacity * 100)}%
-                      </span>
-                    )}
-                  </div>
-                  {tissueEnabled && (
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={tissueOpacity * 100}
-                      onChange={(e) => handleTissueOpacityChange(Number(e.target.value) / 100)}
-                      className="w-full h-1"
-                      disabled={layerControlsDisabled}
-                    />
-                  )}
-                </div>
-                {/* Cell overlay controls */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-sm text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={overlayEnabled}
-                        onChange={(e) => handleCellsEnabledChange(e.target.checked)}
-                        disabled={layerControlsDisabled}
-                        className="rounded"
-                      />
-                      Cell Polygons
-                    </label>
-                    {overlayEnabled && (
-                      <span className="text-xs text-gray-500">
-                        {Math.round(overlayOpacity * 100)}%
-                      </span>
-                    )}
-                  </div>
-                  {overlayEnabled && (
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={overlayOpacity * 100}
-                      onChange={(e) => handleCellsOpacityChange(Number(e.target.value) / 100)}
-                      className="w-full h-1"
-                      disabled={layerControlsDisabled}
-                    />
-                  )}
-                </div>
-                {/* Cell hover toggle */}
-                <label className="flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={cellHoverEnabled}
-                    onChange={(e) => handleCellHoverEnabledChange(e.target.checked)}
-                    disabled={layerControlsDisabled}
-                    className="rounded"
-                  />
-                  Show cell info on hover
-                </label>
-                {layerControlsDisabled && (
-                  <p className="text-xs text-gray-500 italic">
-                    Layer controls managed by presenter
-                  </p>
-                )}
-              </div>
-            )}
-          </SidebarSection>
+          {/* Layer controls (when overlay is loaded) */}
+          {overlayId && (
+            <SidebarSection title="Layers">
+              <LayerControls
+                tissueEnabled={tissueEnabled}
+                onTissueEnabledChange={handleTissueEnabledChange}
+                tissueOpacity={tissueOpacity}
+                onTissueOpacityChange={handleTissueOpacityChange}
+                tissueClasses={DEFAULT_TISSUE_CLASSES}
+                visibleTissueClasses={visibleTissueClasses}
+                onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
+                cellsEnabled={cellsEnabled}
+                onCellsEnabledChange={handleCellsEnabledChange}
+                cellsOpacity={cellsOpacity}
+                onCellsOpacityChange={handleCellsOpacityChange}
+                cellClasses={DEFAULT_CELL_CLASSES}
+                visibleCellClasses={visibleCellClasses}
+                onVisibleCellClassesChange={handleVisibleCellClassesChange}
+                cellHoverEnabled={cellHoverEnabled}
+                onCellHoverEnabledChange={handleCellHoverEnabledChange}
+                disabled={layerControlsDisabled}
+              />
+            </SidebarSection>
+          )}
 
           {/* About section */}
           <SidebarSection title="About">
@@ -1092,6 +647,7 @@ export function Session() {
           className="relative flex-1 overflow-hidden"
           ref={viewerContainerRef}
           onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
         >
           {/* Show loading or empty state while waiting for slide */}
           {!slide && (
@@ -1141,8 +697,8 @@ export function Session() {
               slideHeight={slide.height}
               cellClasses={DEFAULT_CELL_CLASSES}
               visibleClasses={visibleCellClasses}
-              opacity={overlayOpacity}
-              enabled={overlayEnabled && overlayCells.length > 0}
+              opacity={cellsOpacity}
+              enabled={cellsEnabled && overlayCells.length > 0}
             />
           )}
 
@@ -1155,7 +711,7 @@ export function Session() {
               viewport={currentViewport}
               slideWidth={slide.width}
               slideHeight={slide.height}
-              enabled={overlayEnabled && cellHoverEnabled}
+              enabled={cellsEnabled && cellHoverEnabled}
             />
           )}
 
@@ -1206,26 +762,11 @@ export function Session() {
             </div>
           )}
 
-          {/* Layer control panel (detailed class toggles) */}
-          {overlayId && (
-            <LayerPanel
-              tissueEnabled={tissueEnabled}
-              onTissueEnabledChange={handleTissueEnabledChange}
-              tissueOpacity={tissueOpacity}
-              onTissueOpacityChange={handleTissueOpacityChange}
-              tissueClasses={DEFAULT_TISSUE_CLASSES}
-              visibleTissueClasses={visibleTissueClasses}
-              onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
-              cellsEnabled={overlayEnabled}
-              onCellsEnabledChange={handleCellsEnabledChange}
-              cellsOpacity={overlayOpacity}
-              onCellsOpacityChange={handleCellsOpacityChange}
-              cellClasses={DEFAULT_CELL_CLASSES}
-              visibleCellClasses={visibleCellClasses}
-              onVisibleCellClassesChange={handleVisibleCellClassesChange}
-              cellHoverEnabled={cellHoverEnabled}
-              onCellHoverEnabledChange={handleCellHoverEnabledChange}
-              disabled={layerControlsDisabled}
+          {/* Return to presenter floating button (followers only, when diverged) */}
+          {session && !isPresenter && hasDiverged && (
+            <ReturnToPresenterButton
+              onClick={handleReturnToPresenter}
+              presenterName={session.presenter.name}
             />
           )}
 
@@ -1241,38 +782,13 @@ export function Session() {
         </main>
       </div>
 
-      {/* Bottom status bar (VS Code style) */}
-      <footer className="flex items-center h-6 text-xs" style={{ backgroundColor: '#181818' }}>
-        {/* Left section with blue background */}
-        <div
-          className="flex items-center gap-1.5 px-2 h-full"
-          style={{ backgroundColor: '#007ACC' }}
-        >
-          {/* Connected icon */}
-          <svg
-            stroke="currentColor"
-            fill="currentColor"
-            strokeWidth="0"
-            viewBox="0 0 16 16"
-            focusable="false"
-            className="text-white"
-            height="1em"
-            width="1em"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M12.904 9.57L8.928 5.596l3.976-3.976-.619-.62L8 5.286v.619l4.285 4.285.62-.618zM3 5.62l4.072 4.07L3 13.763l.619.618L8 10v-.619L3.619 5 3 5.619z"
-            />
-          </svg>
-          <span className="text-white font-medium">
-            {session ? session.id.slice(0, 8) : 'No Session'}
-          </span>
-        </div>
-        {/* Right section - black background (flex-1 fills the rest) */}
-        <div className="flex-1 px-2" />
-      </footer>
+      <SessionFooter
+        session={session}
+        connectionStatus={connectionStatus}
+        latency={latency}
+        currentViewport={currentViewport}
+        footerCursorPos={footerCursorPos}
+      />
 
       {/* Keyboard shortcuts help modal */}
       {showHelp && (

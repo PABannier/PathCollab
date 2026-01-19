@@ -1,49 +1,165 @@
 # PathCollab
 
-A web-based collaborative viewer for digital pathology, enabling real-time multi-user sessions for viewing and annotating whole-slide images (WSI) with AI-generated overlays.
+<div align="center">
 
-## Features
-
-- **Real-time Collaboration**: Presenter-led sessions with up to 20 concurrent followers
-- **Cursor Presence**: See where other participants are looking in real-time
-- **Viewport Sync**: Followers can snap to the presenter's view with smooth animations
-- **AI Overlay Support**: Visualize cell segmentation and tissue classification from pre-deployed protobuf overlay files
-- **WebGL2 Rendering**: High-performance rendering of millions of polygons
-- **Zero-Auth Sessions**: Ephemeral shareable links with no account required
-- **Docker-Native**: Single `docker run` command to start everything
-
-## Quick Start
-
-### Prerequisites
-
-- Docker 20.10+
-- 4GB RAM minimum (8GB recommended for large overlays)
-
-### Single Command Deployment (Recommended)
-
-The simplest way to run PathCollab - a single Docker image with everything included:
-
-```bash
-# Run PathCollab with your slides directory
-docker run -p 8080:8080 \
-  -v /path/to/your/slides:/slides:ro \
-  ghcr.io/pabannier/pathcollab:latest
-
-# With overlays directory for AI visualization
-docker run -p 8080:8080 \
-  -v /path/to/your/slides:/slides:ro \
-  -v /path/to/your/overlays:/overlays:ro \
-  ghcr.io/pabannier/pathcollab:latest
+```
+    ┌─────────────────────────────────────────────────────────────┐
+    │                                                             │
+    │     🔬  PathCollab — See Together, Diagnose Faster  🔬      │
+    │                                                             │
+    │   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐       │
+    │   │ ● ● ● ● │  │ ● ● ● ● │  │ ● ● ● ● │  │ ● ● ● ● │       │
+    │   │ ● ● ● ● │  │ ● ◉ ● ● │  │ ● ● ● ● │  │ ● ● ● ● │       │
+    │   │ ● ● ● ● │→ │ ● ● ● ● │→ │ ● ● ◉ ● │→ │ ● ● ● ● │       │
+    │   │ ● ● ● ● │  │ ● ● ● ● │  │ ● ● ● ● │  │ ● ● ● ◉ │       │
+    │   └─────────┘  └─────────┘  └─────────┘  └─────────┘       │
+    │    Presenter      You        Colleague     Remote MD        │
+    │                                                             │
+    │        Real-time cursors · Synced viewports · AI overlays   │
+    │                                                             │
+    └─────────────────────────────────────────────────────────────┘
 ```
 
-Open your browser to **http://localhost:8080** - that's it!
+**Collaborative whole-slide image viewer with real-time cursor presence and AI overlay rendering**
 
-The unified image (~150MB) contains both the React frontend and Rust backend. No nginx, no docker-compose, no configuration required.
+[![CI](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml/badge.svg)](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpabannier%2Fpathcollab-blue)](https://ghcr.io/pabannier/pathcollab)
 
-#### Options
+<h3>One Command. Zero Auth. Everyone Sees the Same Slide.</h3>
 
 ```bash
-# With overlays and persistent cache
+docker run -p 8080:8080 -v /path/to/slides:/slides ghcr.io/pabannier/pathcollab:latest
+```
+
+Open **http://localhost:8080** → Create session → Share link → Collaborate instantly
+
+</div>
+
+---
+
+## TL;DR
+
+**The Problem**: Pathologists and ML scientists need to review slides together—but they're in different cities. Current options force a brutal tradeoff:
+
+| Option | Fast Rendering | Real-time Collab | AI Overlays | Setup Time |
+|--------|:--------------:|:----------------:|:-----------:|:----------:|
+| Local viewers (PathView, QuPath) | ✅ | ❌ | ⚠️ | Minutes |
+| Screen sharing (Zoom, Teams) | ❌ Laggy | ⚠️ One-way | ❌ | Seconds |
+| Enterprise pathology platforms | ✅ | ✅ | ✅ | Weeks + $$$$ |
+
+**The Solution**: PathCollab is a **presenter-led collaborative viewer** where one host guides up to 20 followers through a whole-slide image. Everyone sees real-time cursors, can snap to the presenter's view, and overlay millions of AI-detected cells—all from a shareable link with **no accounts required**.
+
+### Why PathCollab?
+
+| Feature | What It Does |
+|---------|--------------|
+| **Zero-Auth Sessions** | Share a link, start collaborating. No logins, no invites, no IT tickets. Sessions auto-expire in 4 hours. |
+| **Real-Time Presence** | See where everyone is looking—cursors update at 30Hz, viewports at 10Hz. "Follow me here..." actually works. |
+| **Million-Polygon Overlays** | Upload 300MB protobuf files with cell segmentation. Server indexes spatially; client renders via WebGL2. |
+| **Snap to Presenter** | One click to jump to exactly what the presenter sees—smooth 300ms animation, not jarring teleport. |
+| **Docker-Native** | Single `docker run` command. 150MB image. No nginx, no Redis, no docker-compose required. |
+
+---
+
+## Quick Example
+
+```bash
+# 1. Start PathCollab with your slides directory
+docker run -p 8080:8080 -v ~/slides:/slides ghcr.io/pabannier/pathcollab:latest
+
+# 2. Open browser
+open http://localhost:8080
+
+# 3. Create a session (click "Create Session" or "Try Demo")
+#    → Select a slide from your /slides directory
+#    → Get a shareable link like: http://localhost:8080/s/k3m9p2qdx7#join=...
+
+# 4. Share the link with colleagues
+#    → They open it, instantly see the slide
+#    → Their cursor appears on your screen (and yours on theirs)
+
+# 5. Upload an AI overlay (presenter only)
+#    → Drag a .pb file onto the viewer
+#    → Cell polygons and tissue heatmaps appear for everyone
+
+# 6. Followers click "Snap to Presenter" to jump to your view
+```
+
+**What it looks like:**
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  PathCollab                          🔗 Share   👥 3 viewers       │
+├──────────────────────────────────────┬─────────────────────────────┤
+│                                      │  Layers                     │
+│                                      │  ├─ ☑ Tissue Heatmap  ████  │
+│    [Whole Slide Image]               │  │   ├─ ☑ Tumor             │
+│                                      │  │   ├─ ☑ Stroma            │
+│         ◉ Dr. Smith (presenting)     │  │   └─ ☐ Necrosis          │
+│                 ↘                    │  │                          │
+│              ◉ You                   │  └─ ☑ Cell Polygons   ████  │
+│                                      │      ├─ ☑ Cancer cells      │
+│                    ◉ Dr. Lee         │      ├─ ☑ Lymphocytes       │
+│                                      │      └─ ☐ Fibroblasts       │
+│                                      │                             │
+├──────────────────────────────────────┤  [Snap to Presenter]        │
+│ ┌──────────────────┐                 │                             │
+│ │ ▓▓░░░░░░░░░░░░░░ │ ← Minimap      │  Participants               │
+│ │ ▓▓░░░░░░░░░░░░░░ │   (presenter   │  ● Dr. Smith (presenter)    │
+│ │ ░░░░░░░░░░░░░░░░ │    viewport    │  ● You                      │
+│ └──────────────────┘    shown)      │  ● Dr. Lee                  │
+└──────────────────────────────────────┴─────────────────────────────┘
+```
+
+---
+
+## Design Philosophy
+
+| Principle | Why | How |
+|-----------|-----|-----|
+| **Tiles Are Sacred** | Tile latency = perceived performance. Never block rendering for overlay operations. | OpenSeadragon manages tiles independently; overlay is a separate WebGL2 canvas. |
+| **Server Owns Truth** | Distributed state is hard. One source of truth prevents sync bugs. | Session state lives on server; clients receive snapshots and deltas. |
+| **Progressive Disclosure** | Don't overwhelm users with complexity on first load. | Sidebar collapsed by default; hover info appears on demand; advanced features hidden until needed. |
+| **Graceful Degradation** | Networks fail. Browsers vary. The app should limp, not crash. | Reconnection with exponential backoff; WebGL2 fallback to Canvas2D; presenter grace period on disconnect. |
+| **One Command Deploy** | Adoption = f(ease of setup). Every dependency is a barrier. | Single Docker image bundles frontend + backend. No external services required. |
+
+---
+
+## How PathCollab Compares
+
+| Capability | PathCollab | QuPath | ASAP Viewer | Commercial LIMS |
+|------------|:----------:|:------:|:-----------:|:---------------:|
+| Real-time multi-user | ✅ 20 users | ❌ | ❌ | ✅ |
+| Cursor presence | ✅ 30Hz | ❌ | ❌ | ⚠️ Varies |
+| AI overlay rendering | ✅ WebGL2, 1M+ polygons | ✅ Local only | ⚠️ Limited | ✅ |
+| Setup time | ✅ 30 seconds | ⚠️ 5 min | ⚠️ 5 min | ❌ Weeks |
+| Auth required | ✅ None | ✅ None | ✅ None | ❌ SSO/LDAP |
+| Self-hostable | ✅ Docker | ✅ | ✅ | ⚠️ Varies |
+| Cost | ✅ Free | ✅ Free | ✅ Free | ❌ $10K+/year |
+
+**When to use PathCollab:**
+- Teaching sessions where a pathologist guides students through a case
+- Remote tumor board reviews with distributed participants
+- ML scientist demonstrating cell detection results to clinical collaborators
+- Quick "can you look at this?" consultations without formal case submission
+
+**When PathCollab might not be ideal:**
+- Formal clinical sign-off requiring audit trails (use your LIMS)
+- Offline viewing without network access (use QuPath)
+- Annotation/markup workflows (coming in v2)
+
+---
+
+## Installation
+
+### Docker (Recommended)
+
+```bash
+# Quick start — slides from local directory
+docker run -p 8080:8080 -v /path/to/slides:/slides ghcr.io/pabannier/pathcollab:latest
+
+# With persistent overlay cache
 docker run -p 8080:8080 \
   -v /path/to/slides:/slides:ro \
   -v /path/to/overlays:/overlays:ro \
@@ -59,265 +175,214 @@ docker run -p 8080:8080 \
   ghcr.io/pabannier/pathcollab:latest
 ```
 
-### Stopping the Server
+### Docker Compose (Production)
+
+```yaml
+# docker-compose.yml
+services:
+  pathcollab:
+    image: ghcr.io/pabannier/pathcollab:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - /path/to/slides:/slides:ro
+      - pathcollab-cache:/data
+    environment:
+      - RUST_LOG=pathcollab=info
+      - MAX_FOLLOWERS=20
+      - SESSION_MAX_DURATION_HOURS=4
+    restart: unless-stopped
+
+volumes:
+  pathcollab-cache:
+```
 
 ```bash
-docker stop <container-id>
+docker-compose up -d
 ```
+
+### From Source
+
+```bash
+# Prerequisites: Rust 1.85+, Bun 1.3+, protobuf-compiler
+
+# Clone
+git clone https://github.com/pabannier/pathcollab.git
+cd pathcollab
+
+# Quick start (handles everything)
+./scripts/dev-local.sh
+
+# Or manually:
+cd server && cargo build --release
+cd ../web && bun install && bun run build
+./target/release/pathcollab --slides-dir /path/to/slides
+```
+
+---
+
+## Quick Start
+
+### 1. Start the Server
+
+```bash
+docker run -p 8080:8080 -v ~/slides:/slides ghcr.io/pabannier/pathcollab:latest
+```
+
+### 2. Create a Session
+
+1. Open http://localhost:8080
+2. Click **"Create Session"** (or **"Try Demo"** for a sample slide)
+3. Select a slide from the file browser
+4. You're now the **presenter**
+
+### 3. Share with Collaborators
+
+1. Click the **🔗 Share** button
+2. Copy the link (includes a secret token in the URL fragment)
+3. Send to colleagues via Slack, email, etc.
+4. They open the link → instantly join as **followers**
+
+### 4. Upload an AI Overlay (Optional)
+
+1. Drag a `.pb` protobuf file onto the viewer (presenter only)
+2. Wait for processing (progress bar shows status)
+3. Overlay appears for all participants
+4. Use the **Layers** panel to toggle tissue heatmap and cell polygons
+
+### 5. Guide the Session
+
+- **Pan/zoom** normally—followers see your cursor in real-time
+- **Followers** can explore independently, then click **"Snap to Presenter"** to rejoin
+- **Hover** over cells to see class labels and confidence scores
+
+---
+
+## Session Roles
+
+| Role | How Assigned | Capabilities |
+|------|--------------|--------------|
+| **Presenter** | First user to create/join | Upload overlays, toggle layer visibility, set view for "snap" |
+| **Follower** | Subsequent joiners | View slide, see cursors, explore independently, snap to presenter |
+
+The presenter's viewport is broadcast at 10Hz. Followers can wander off but always have a "home base" to return to.
+
+---
 
 ## Configuration
 
 ### Environment Variables
 
-Copy the example environment file and customize as needed:
-
-```bash
-cp .env.example .env
-```
-
-#### Server Configuration
-
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RUST_LOG` | `pathcollab=info,tower_http=info` | Log level configuration |
+| `RUST_LOG` | `pathcollab=info,tower_http=info` | Log level (trace/debug/info/warn/error) |
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `8080` | Server port |
 | `SLIDES_DIR` | `/slides` | Directory containing WSI files |
-| `STATIC_FILES_DIR` | `/app/static` (Docker) | Frontend static files directory (unified image only) |
-
-#### Session Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
 | `MAX_FOLLOWERS` | `20` | Maximum followers per session |
-| `SESSION_MAX_DURATION_HOURS` | `4` | Session expiry time |
+| `SESSION_MAX_DURATION_HOURS` | `4` | Session auto-expiry time |
 | `PRESENTER_GRACE_PERIOD_SECS` | `30` | Time before session ends after presenter disconnects |
-
-#### Overlay Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OVERLAY_DIR` | `/overlays` | Directory containing overlay files (pattern: `<slide_name>/overlays.bin`) |
 | `OVERLAY_MAX_SIZE_MB` | `500` | Maximum overlay file size |
 | `OVERLAY_CACHE_DIR` | `/var/lib/pathcollab/overlays` | Overlay cache directory |
-| `OVERLAY_CACHE_MAX_GB` | `50` | Maximum cache size |
+| `OVERLAY_CACHE_MAX_GB` | `50` | Maximum cache size before eviction |
 
-### Slides Directory
+### Supported Slide Formats
 
-Place your whole-slide images in the `data/slides` directory. Supported formats depend on your WSIStreamer configuration but typically include:
-- Aperio SVS (.svs)
-- Hamamatsu (.ndpi, .vms)
-- Leica (.scn)
-- MIRAX (.mrxs)
-- Generic tiled TIFF
+PathCollab reads slides via OpenSlide. Supported formats:
 
-## Usage
+| Format | Extension | Vendor |
+|--------|-----------|--------|
+| Aperio SVS | `.svs` | Leica |
+| Hamamatsu | `.ndpi`, `.vms` | Hamamatsu |
+| Leica SCN | `.scn` | Leica |
+| MIRAX | `.mrxs` | 3DHistech |
+| Generic tiled TIFF | `.tif`, `.tiff` | Various |
+| Ventana BIF | `.bif` | Roche |
+| Philips TIFF | `.tiff` | Philips |
 
-### Creating a Session
+### Overlay Protobuf Format
 
-1. Navigate to the home page
-2. Click "Create Session" or "Try Demo"
-3. Select a slide from the available list
-4. Share the generated URL with collaborators
+PathCollab expects overlays in a specific protobuf format:
 
-### Session Roles
+```protobuf
+// See server/proto/overlay.proto for full schema
+message Overlay {
+  repeated TissueTile tissue_tiles = 1;  // 224x224 heatmap tiles
+  repeated Cell cells = 2;                // Polygon boundaries + class
+}
 
-- **Presenter**: First user to create or join a session. Can load overlays, control layer visibility, and lead navigation.
-- **Follower**: Subsequent users who join. Can view the slide, see the presenter's cursor and viewport, and explore independently.
-
-### Overlay Files
-
-PathCollab supports protobuf overlay files containing:
-- **Tissue segmentation**: Heatmap tiles with class predictions
-- **Cell detection**: Polygon boundaries with class labels and confidence scores
-
-Overlays are deployed alongside slides in a directory structure:
-```
-/overlays/
-  slide_name_1/
-    overlays.bin
-  slide_name_2/
-    overlays.bin
+message Cell {
+  uint32 class_id = 1;                    // 0-14 for 15 classes
+  float confidence = 2;                   // 0.0-1.0
+  Point centroid = 3;
+  repeated Point vertices = 4;            // Polygon boundary
+}
 ```
 
-The overlay directory (`OVERLAY_DIR`) is scanned at startup to detect which slides have overlays available. Overlays are loaded on-demand when users toggle layers in the session.
-
-The protobuf schema is defined in `server/proto/overlay.proto`.
-
-## Development
-
-> **Environment Guide**: See [docs/ENV_MATRIX.md](docs/ENV_MATRIX.md) for detailed differences between development, Docker, and production environments.
-
-### Quick Start
-
-The fastest way to start developing:
-
-```bash
-./scripts/dev-local.sh
-```
-
-This single command:
-- Checks for required dependencies (Rust, Bun)
-- Creates data directories (./data/slides, ./data/overlays)
-- Builds and starts the backend
-- Starts the frontend dev server
-
-No external services required. Open http://localhost:3000 when ready.
-
-### Prerequisites
-
-- Rust 1.85+ with protobuf-compiler
-- Bun 1.3+ (or Node.js 20+)
-
-### Backend Development
-
-```bash
-cd server
-
-# Install protobuf compiler (Ubuntu/Debian)
-sudo apt-get install protobuf-compiler
-
-# Run the server
-cargo run
-
-# Run tests
-cargo test
-
-# Format and lint
-cargo fmt && cargo clippy
-```
-
-### Frontend Development
-
-```bash
-cd web
-
-# Install dependencies
-bun install
-
-# Start development server
-bun run dev
-
-# Run tests
-bun run test
-
-# Build for production
-bun run build
-```
-
-### Running E2E Tests
-
-```bash
-cd web
-
-# Install Playwright browsers
-bun run test:e2e:install
-
-# Run E2E tests
-bun run test:e2e
-```
+---
 
 ## Architecture
 
 ```
-                    ┌─────────────────┐
-                    │    Clients      │
-                    │  (React + OSD)  │
-                    └────────┬────────┘
-                             │ HTTPS + WebSocket
-                             ▼
-                    ┌─────────────────┐
-                    │  Reverse Proxy  │
-                    │  (nginx/Caddy)  │
-                    └────────┬────────┘
-              ┌──────────────┼──────────────┐
-              │              │              │
-              ▼              ▼              ▼
-     ┌────────────┐  ┌────────────┐  ┌────────────┐
-     │ PathCollab │  │ PathCollab │  │WSIStreamer │
-     │  Frontend  │  │   Server   │  │ Tile Server│
-     │   (React)  │  │   (Rust)   │  │            │
-     └────────────┘  └────────────┘  └──────┬─────┘
-                                            │
-                                            ▼
-                                    ┌────────────┐
-                                    │  S3/Local  │
-                                    │   Slides   │
-                                    └────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                   BROWSER                                        │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │  React App                                                                │   │
+│  │  ├─ OpenSeadragon (tile rendering, pan/zoom)                             │   │
+│  │  ├─ WebGL2 Canvas (cell polygons, tissue heatmap)                        │   │
+│  │  ├─ SVG Layer (cursors, viewport indicators)                             │   │
+│  │  └─ WebSocket Client (presence, session state)                           │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       │ HTTPS + WebSocket (same port)
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              PATHCOLLAB SERVER (Rust)                            │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐  ┌──────────────┐  │
+│  │ WebSocket      │  │ Session        │  │ Presence       │  │ Overlay      │  │
+│  │ Gateway        │  │ Manager        │  │ Engine         │  │ Manager      │  │
+│  │                │  │                │  │                │  │              │  │
+│  │ • Connections  │  │ • Create/join  │  │ • Cursor agg   │  │ • PB parsing │  │
+│  │ • Routing      │  │ • Lifecycle    │  │ • 30Hz/10Hz    │  │ • R-tree idx │  │
+│  │ • Rate limits  │  │ • Expiry       │  │ • Broadcast    │  │ • Tile query │  │
+│  └────────────────┘  └────────────────┘  └────────────────┘  └──────────────┘  │
+│           │                  │                   │                  │           │
+│           └──────────────────┴───────────────────┴──────────────────┘           │
+│                                       │                                          │
+│                              ┌────────┴────────┐                                │
+│                              │  In-Memory State │                                │
+│                              │  + Disk Cache    │                                │
+│                              └─────────────────┘                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       │ HTTP (tile requests)
+                                       ▼
+                              ┌─────────────────┐
+                              │  /slides volume │
+                              │  (WSI files)    │
+                              └─────────────────┘
 ```
 
-### Key Components
+### Data Flow
 
-- **Session Manager**: Handles session lifecycle, participant tracking, and role assignment
-- **Presence Engine**: Aggregates cursor positions and viewport updates at 30Hz/10Hz
-- **Overlay Manager**: Parses protobuf files, builds spatial indices, serves tiles
-- **WebSocket Gateway**: Connection management, message routing, broadcast
+| Flow | Frequency | Payload | Transport |
+|------|-----------|---------|-----------|
+| Slide tiles | On viewport change | JPEG/PNG, ~50KB | HTTP GET (cached) |
+| Cursor position | 30Hz | 32 bytes JSON | WebSocket |
+| Presenter viewport | 10Hz | 48 bytes JSON | WebSocket |
+| Overlay tiles | On viewport change | WebP/zstd, varies | HTTP GET (ETag cached) |
+| Layer visibility | On change | ~100 bytes JSON | WebSocket |
 
-## Deployment
-
-### Production Recommendations
-
-1. **TLS Termination**: Use Caddy, nginx, or a cloud load balancer for HTTPS
-2. **Sticky Sessions**: Required for WebSocket connections in multi-instance deployments
-3. **Session Persistence**: Configure Redis for session state to survive restarts
-4. **Monitoring**: Add Prometheus metrics endpoint and Grafana dashboards
-
-### Example Production docker-compose.yml
-
-```yaml
-services:
-  web:
-    image: pathcollab/web:latest
-    restart: always
-
-  server:
-    image: pathcollab/server:latest
-    environment:
-      - RUST_LOG=pathcollab=info
-      - REDIS_URL=redis://redis:6379
-    restart: always
-
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis-data:/data
-    restart: always
-
-  wsistreamer:
-    image: ghcr.io/wsistreamer/wsistreamer:latest
-    volumes:
-      - /path/to/slides:/slides:ro
-    restart: always
-
-volumes:
-  redis-data:
-```
-
-### Reverse Proxy Configuration (Caddy)
-
-```caddyfile
-pathcollab.example.com {
-    handle /ws {
-        reverse_proxy server:8080
-    }
-
-    handle /api/* {
-        reverse_proxy server:8080
-    }
-
-    handle {
-        reverse_proxy web:80
-    }
-}
-```
+---
 
 ## API Reference
 
 ### WebSocket Protocol
 
-Connect to `/ws` for real-time communication. Messages are JSON-encoded.
+Connect to `/ws` for real-time communication. Messages are JSON.
 
-#### Client Messages
+#### Client → Server
 
 ```typescript
 // Create a new session
@@ -326,74 +391,238 @@ Connect to `/ws` for real-time communication. Messages are JSON-encoded.
 // Join an existing session
 { "type": "join_session", "session_id": "abc123", "join_secret": "...", "seq": 2 }
 
-// Update cursor position
+// Update cursor position (30Hz)
 { "type": "cursor_update", "x": 1000, "y": 2000, "seq": 3 }
 
-// Update viewport (presenter only)
+// Update viewport (presenter: 10Hz, follower: 2Hz)
 { "type": "viewport_update", "center_x": 5000, "center_y": 5000, "zoom": 0.5, "seq": 4 }
+
+// Toggle layer visibility (presenter only)
+{ "type": "layer_update", "visibility": { "cell_polygons_visible": true, ... }, "seq": 5 }
+
+// Keepalive
+{ "type": "ping", "seq": 6 }
 ```
 
-#### Server Messages
+#### Server → Client
 
 ```typescript
-// Session created (presenter only)
+// Session created (returns secrets)
 { "type": "session_created", "session": {...}, "join_secret": "...", "presenter_key": "..." }
 
-// Participant joined
-{ "type": "participant_joined", "participant": {...} }
+// Someone joined
+{ "type": "participant_joined", "participant": { "id": "...", "name": "Swift Falcon", "color": "#3B82F6" } }
 
-// Presence updates (30Hz aggregated)
+// Cursor positions (batched, 30Hz)
 { "type": "presence_delta", "changed": [...], "removed": [...], "server_ts": 1234567890 }
 
 // Presenter viewport (10Hz)
-{ "type": "presenter_viewport", "viewport": {...} }
+{ "type": "presenter_viewport", "viewport": { "center_x": 5000, "center_y": 5000, "zoom": 0.5 } }
+
+// Overlay ready
+{ "type": "overlay_loaded", "overlay": {...}, "overlay_order": ["overlay-1"] }
+
+// Keepalive response
+{ "type": "pong" }
 ```
 
 ### HTTP Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/health` | Health check endpoint |
-| `POST` | `/api/overlay/load?slide_id=...&session_id=...` | Load overlay from server for a slide |
-| `GET` | `/api/overlay/:id/manifest` | Get overlay manifest |
-| `GET` | `/api/overlay/:id/raster/:z/:x/:y` | Get raster tile |
-| `GET` | `/api/overlay/:id/vec/:z/:x/:y` | Get vector chunk |
+| `GET` | `/health` | Health check (returns 200 if healthy) |
+| `POST` | `/api/overlay/upload?session_id=...` | Upload overlay protobuf (presenter only) |
+| `GET` | `/api/overlay/:id/manifest` | Get overlay metadata and tile URLs |
+| `GET` | `/api/overlay/:id/raster/:z/:x/:y.webp` | Get tissue heatmap tile |
+| `GET` | `/api/overlay/:id/vec/:z/:x/:y.bin` | Get vector cell data for tile |
+
+---
 
 ## Troubleshooting
 
-### Common Issues
-
-**Tiles not loading**
-- Verify slide files are in `data/slides` directory
-- Check server logs: `docker-compose logs -f server`
-- Ensure OpenSlide is installed in the server container
-- Check browser console for errors
-
-**WebSocket connection fails**
-- Ensure server is running: `curl http://localhost:8080/health`
-- Check nginx/proxy configuration for WebSocket upgrade headers
-
-**Overlay not showing for slide**
-- Verify overlay file exists at `<OVERLAY_DIR>/<slide_name>/overlays.bin`
-- Slide name must match exactly (without file extension)
-- Check file size is under 500MB limit
-- Verify protobuf format matches expected schema
-- Check server logs for parsing errors
-
-### Viewing Logs
+### "Tiles not loading"
 
 ```bash
-# All services
-docker-compose logs -f
+# Check server can read slides directory
+docker exec -it <container> ls -la /slides
 
-# Specific service
-docker-compose logs -f server
+# Check server logs
+docker logs <container> 2>&1 | grep -i error
+
+# Verify slide format is supported
+file /path/to/your/slide.svs
 ```
 
-## License
+### "WebSocket connection failed"
 
-MIT License - see [LICENSE](LICENSE) for details.
+```bash
+# Check server is running
+curl http://localhost:8080/health
+
+# Check for port conflicts
+lsof -i :8080
+
+# If behind reverse proxy, ensure WebSocket upgrade headers:
+# Upgrade: websocket
+# Connection: upgrade
+```
+
+### "Overlay upload stuck at 0%"
+
+```bash
+# Check file size (max 500MB by default)
+ls -lh overlay.pb
+
+# Check server logs for parsing errors
+docker logs <container> 2>&1 | grep -i overlay
+
+# Verify protobuf format matches expected schema
+protoc --decode=Overlay server/proto/overlay.proto < overlay.pb
+```
+
+### "Cursors are laggy"
+
+- Check network latency: `ping <server-ip>`
+- If > 100ms, latency is network-bound (expected behavior)
+- If < 50ms but still laggy, check browser dev tools for WebSocket backpressure
+
+### "Session expired unexpectedly"
+
+Sessions expire after 4 hours (configurable via `SESSION_MAX_DURATION_HOURS`). If the presenter disconnects, followers have a 30-second grace period before the session ends.
+
+---
+
+## Limitations
+
+### What PathCollab Doesn't Do (Yet)
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| Annotations/markup | ❌ Not supported | Planned for v2 |
+| Session recording | ❌ Not supported | Export viewport history planned |
+| Multi-slide comparison | ⚠️ Single slide per session | Open multiple sessions as workaround |
+| Offline mode | ❌ Requires network | Use QuPath for offline viewing |
+| Mobile support | ⚠️ Works but not optimized | Touch gestures need work |
+
+### Known Constraints
+
+- **Max 20 followers per session**: WebSocket fan-out becomes expensive beyond this
+- **4-hour session limit**: Prevents resource leaks; can be increased via config
+- **500MB overlay limit**: Server memory bounded; larger files need chunked processing
+- **WebGL2 required**: Falls back to Canvas2D but performance degrades significantly
+- **No persistence**: Sessions and overlays are ephemeral (by design)
+
+---
+
+## FAQ
+
+### Is my slide data sent to external servers?
+
+**No.** PathCollab is fully self-hosted. Your slides stay on your server. The only network traffic is between your server and your users' browsers.
+
+### Can I use this for clinical diagnosis?
+
+PathCollab is intended for **education, research, and informal consultation**. It doesn't have audit trails, formal case management, or regulatory compliance features required for clinical sign-off. Use your validated LIMS for that.
+
+### Why ephemeral sessions instead of persistent rooms?
+
+1. **Simplicity**: No user accounts, no database, no state to manage
+2. **Security**: Links auto-expire; no orphaned sessions with sensitive data
+3. **Use case fit**: Tumor boards and teaching sessions are inherently time-bounded
+
+### How do I add more than 20 followers?
+
+Increase `MAX_FOLLOWERS` env var. Be aware this increases server memory and WebSocket fan-out load. Test before deploying to production.
+
+```bash
+docker run -e MAX_FOLLOWERS=50 ...
+```
+
+### Can I run multiple instances behind a load balancer?
+
+Yes, but you need **sticky sessions** (route by session_id) because session state is in-memory. For production HA, see the `redis_url` config option to share state across instances.
+
+### Why WebGL2 instead of Canvas2D?
+
+Rendering 1M+ cell polygons at 60fps requires GPU acceleration. Canvas2D works for < 100K shapes but becomes unusable beyond that. We fall back to Canvas2D when WebGL2 isn't available, with reduced polygon budgets.
+
+---
+
+## Development
+
+### Quick Start
+
+```bash
+./scripts/dev-local.sh
+```
+
+This handles dependency checks, builds, and starts both backend and frontend.
+
+### Manual Setup
+
+```bash
+# Backend (Rust)
+cd server
+sudo apt-get install protobuf-compiler  # Ubuntu/Debian
+cargo run
+
+# Frontend (React)
+cd web
+bun install
+bun run dev
+
+# Tests
+cargo test              # Backend
+bun run test           # Frontend unit tests
+bun run test:e2e       # Playwright E2E tests
+```
+
+### Project Structure
+
+```
+pathcollab/
+├── server/                 # Rust backend
+│   ├── src/
+│   │   ├── main.rs
+│   │   ├── session/       # Session management
+│   │   ├── presence/      # Cursor/viewport sync
+│   │   ├── overlay/       # Protobuf parsing, spatial index
+│   │   └── protocol/      # WebSocket messages
+│   └── proto/             # Protobuf schemas
+├── web/                   # React frontend
+│   ├── src/
+│   │   ├── components/    # UI components
+│   │   ├── hooks/         # React hooks
+│   │   ├── webgl/         # Polygon/heatmap renderers
+│   │   └── lib/           # Utilities
+│   └── tests/             # Vitest + Playwright
+├── scripts/               # Dev scripts
+└── docker/                # Docker build files
+```
+
+---
 
 ## Contributing
 
-Contributions are welcome! Please read our contributing guidelines and submit pull requests to the main branch.
+Contributions welcome! Please:
+
+1. Open an issue to discuss before large PRs
+2. Follow existing code style (Prettier, rustfmt)
+3. Add tests for new functionality
+4. Update docs if behavior changes
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+[Report Bug](https://github.com/pabannier/pathcollab/issues) · [Request Feature](https://github.com/pabannier/pathcollab/issues) · [Documentation](docs/)
+
+</div>
