@@ -61,13 +61,6 @@ export const mockViewport: Viewport = {
   timestamp: Date.now(),
 }
 
-export const mockZoomedViewport: Viewport = {
-  center_x: 0.3,
-  center_y: 0.4,
-  zoom: 4.0,
-  timestamp: Date.now(),
-}
-
 export function createMockViewport(overrides: Partial<Viewport> = {}): Viewport {
   return {
     center_x: 0.5,

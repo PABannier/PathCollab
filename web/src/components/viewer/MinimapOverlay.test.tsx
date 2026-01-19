@@ -1,15 +1,5 @@
 /**
  * MinimapOverlay Component Tests
- *
- * Tests for Phase 1 (Core Viewing) requirements from IMPLEMENTATION_PLAN.md.
- * Tests are written against the SPECIFICATION, not the implementation.
- * If a test fails, the implementation has a bug (not the test).
- *
- * Phase 1 Requirements Tested:
- * - Navigator overlay (bottom-right position) - IMPLEMENTATION_PLAN.md Week 1, Day 5
- * - Current viewport indicator
- * - Presenter viewport rectangle for followers
- * - Cursor dots on minimap
  */
 
 import { describe, it, expect } from 'vitest'
@@ -41,10 +31,6 @@ const testCursors = [
 ]
 
 describe('MinimapOverlay', () => {
-  /**
-   * Phase 1 spec: Followers see presenter's viewport on minimap
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 5 (viewport indicator)
-   */
   it('renders presenter viewport rectangle for followers', () => {
     render(
       <MinimapOverlay
@@ -62,10 +48,6 @@ describe('MinimapOverlay', () => {
     expect(screen.getByText('Presenter')).toBeTruthy()
   })
 
-  /**
-   * Phase 1 spec: Presenter does NOT see their own viewport rectangle
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 5
-   */
   it('does not render viewport rectangle when isPresenter is true', () => {
     render(
       <MinimapOverlay
@@ -83,10 +65,6 @@ describe('MinimapOverlay', () => {
     expect(screen.queryByText('Presenter')).toBeNull()
   })
 
-  /**
-   * Phase 1 spec: Viewport rectangle position is calculated correctly
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 5 (real-time updates)
-   */
   it('calculates correct viewport rectangle coordinates', () => {
     // With zoom=2, viewport width = 1/2 = 0.5
     // With center at (0.5, 0.5), left edge = 0.25, top edge = 0.25
@@ -115,10 +93,6 @@ describe('MinimapOverlay', () => {
     expect(style).toContain('height: 100')
   })
 
-  /**
-   * Phase 1 spec: Viewport rectangle uses presenter's color
-   * Reference: IMPLEMENTATION_PLAN.md Section 4.4 (12-color palette)
-   */
   it('uses presenter color for viewport rectangle', () => {
     const { container } = render(
       <MinimapOverlay
@@ -137,10 +111,6 @@ describe('MinimapOverlay', () => {
     expect(style).toContain('border-color: rgb(239, 68, 68)') // #EF4444
   })
 
-  /**
-   * Phase 1 spec: Cursor dots shown on minimap
-   * Reference: IMPLEMENTATION_PLAN.md Week 2 (cursor sync)
-   */
   it('renders cursor dots for participants', () => {
     const { container } = render(
       <MinimapOverlay
@@ -159,10 +129,6 @@ describe('MinimapOverlay', () => {
     expect(cursorDots.length).toBe(2)
   })
 
-  /**
-   * Phase 1 spec: Current user's cursor is filtered out
-   * Reference: IMPLEMENTATION_PLAN.md (don't show own cursor)
-   */
   it('filters out current user cursor from minimap', () => {
     const { container } = render(
       <MinimapOverlay
@@ -186,10 +152,6 @@ describe('MinimapOverlay', () => {
     expect(bobCursor).toBeTruthy()
   })
 
-  /**
-   * Phase 1 spec: Cursor positions mapped to minimap coordinates
-   * Reference: IMPLEMENTATION_PLAN.md Week 2 (coordinate systems)
-   */
   it('calculates correct cursor positions in minimap', () => {
     // Cursor at (0.3, 0.4) normalized should be at (60, 80) in 200x200 minimap
     const { container } = render(
@@ -212,10 +174,6 @@ describe('MinimapOverlay', () => {
     expect(style).toContain('top: 80')
   })
 
-  /**
-   * Phase 1 spec: Nothing renders when no data to show
-   * Reference: IMPLEMENTATION_PLAN.md (performance)
-   */
   it('returns null when nothing to display', () => {
     const { container } = render(
       <MinimapOverlay
@@ -233,10 +191,6 @@ describe('MinimapOverlay', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  /**
-   * Phase 1 spec: Minimap container has correct dimensions
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 5
-   */
   it('container matches specified minimap dimensions', () => {
     const { container } = render(
       <MinimapOverlay
@@ -257,10 +211,6 @@ describe('MinimapOverlay', () => {
     expect(overlay.style.height).toBe('100px')
   })
 
-  /**
-   * Phase 1 spec: Aspect ratio affects viewport calculation
-   * Reference: IMPLEMENTATION_PLAN.md (slide dimensions)
-   */
   it('accounts for slide aspect ratio in viewport calculation', () => {
     // With aspectRatio=2, viewport height = width / 2
     // zoom=2 -> vpWidth=0.5, vpHeight=0.25
@@ -287,10 +237,6 @@ describe('MinimapOverlay', () => {
 })
 
 describe('MinimapOverlay coordinate calculations', () => {
-  /**
-   * Phase 1 spec: Viewport at edge cases
-   * Reference: IMPLEMENTATION_PLAN.md (viewport constraints)
-   */
   it('handles viewport at top-left edge', () => {
     const { container } = render(
       <MinimapOverlay
@@ -311,10 +257,6 @@ describe('MinimapOverlay coordinate calculations', () => {
     expect(style).toContain('top: 0')
   })
 
-  /**
-   * Phase 1 spec: Minimap shows participant names on hover
-   * Reference: IMPLEMENTATION_PLAN.md (participant info)
-   */
   it('cursor dots have title attribute with participant name', () => {
     render(
       <MinimapOverlay
@@ -333,10 +275,6 @@ describe('MinimapOverlay coordinate calculations', () => {
     expect(screen.getByTitle('Bob')).toBeTruthy()
   })
 
-  /**
-   * Phase 1 spec: Viewport rectangle has presenter name tooltip
-   * Reference: IMPLEMENTATION_PLAN.md (presenter info)
-   */
   it('viewport rectangle has presenter name in title', () => {
     const { container } = render(
       <MinimapOverlay

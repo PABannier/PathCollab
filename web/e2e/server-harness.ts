@@ -2,7 +2,6 @@
  * Server Harness for E2E Tests
  *
  * Spawns a real pathcollab-server process for integration testing.
- * Tests verify against the IMPLEMENTATION_PLAN.md specification.
  *
  * Phase 1 Requirements Tested:
  * - Server runs on port 8080 (configurable)

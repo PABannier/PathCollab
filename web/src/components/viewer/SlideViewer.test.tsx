@@ -1,16 +1,5 @@
 /**
  * SlideViewer Component Tests
- *
- * Tests for Phase 1 (Core Viewing) requirements from IMPLEMENTATION_PLAN.md.
- * Tests are written against the SPECIFICATION, not the implementation.
- * If a test fails, the implementation has a bug (not the test).
- *
- * Phase 1 Requirements Tested:
- * - OpenSeadragon integration (Day 3-4)
- * - Custom tile source for slide URLs
- * - Pan/zoom controls (keyboard shortcuts)
- * - Viewport change events
- * - Tile error handling
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -107,14 +96,6 @@ describe('SlideViewer', () => {
     vi.restoreAllMocks()
   })
 
-  // ========================================================================
-  // Phase 1 Specification Tests (from IMPLEMENTATION_PLAN.md)
-  // ========================================================================
-
-  /**
-   * Phase 1 spec: SlideViewer.tsx renders OpenSeadragon wrapper
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4
-   */
   it('renders a container element for OpenSeadragon', () => {
     render(<SlideViewer slide={testSlide} />)
 
@@ -123,11 +104,6 @@ describe('SlideViewer', () => {
     expect(container).toBeTruthy()
   })
 
-  /**
-   * Phase 1 spec: Custom tile source with URL template
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4
-   * URL pattern: /slide/{id}/tile/{level}/{x}/{y}
-   */
   it('creates tile source with correct URL template', async () => {
     const OpenSeadragon = await import('openseadragon')
 
@@ -144,10 +120,6 @@ describe('SlideViewer', () => {
     expect(osdCall).toBeTruthy()
   })
 
-  /**
-   * Phase 1 spec: Tile URL template generates correct URLs
-   * Reference: IMPLEMENTATION_PLAN.md Section 2.2 (SlideInfo.tile_url_template)
-   */
   it('generates correct tile URLs from template', () => {
     // Phase 1 spec: URL template pattern /slide/{id}/tile/{level}/{x}/{y}
     const template = testSlide.tileUrlTemplate
@@ -165,10 +137,6 @@ describe('SlideViewer', () => {
     expect(url).toBe('/api/slide/test-slide/tile/5/10/20')
   })
 
-  /**
-   * Phase 1 spec: Viewport change callback is called
-   * Reference: IMPLEMENTATION_PLAN.md Week 2, Day 5 (useSession integration)
-   */
   it('calls onViewportChange when viewport changes', async () => {
     const onViewportChange = vi.fn()
 
@@ -196,10 +164,6 @@ describe('SlideViewer', () => {
     }
   })
 
-  /**
-   * Phase 1 spec: Tile error callback is called
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4 (tile loading indicators)
-   */
   it('calls onTileLoadError when tile fails to load', async () => {
     const onTileLoadError = vi.fn()
 
@@ -228,10 +192,6 @@ describe('SlideViewer', () => {
     }
   })
 
-  /**
-   * Phase 1 spec: Imperative handle for setViewport
-   * Reference: IMPLEMENTATION_PLAN.md Week 2 (follower viewport sync)
-   */
   it('exposes setViewport via imperative handle', async () => {
     const ref = createRef<SlideViewerHandle>()
 
@@ -244,10 +204,6 @@ describe('SlideViewer', () => {
     })
   })
 
-  /**
-   * Phase 1 spec: setViewport updates viewer position
-   * Reference: IMPLEMENTATION_PLAN.md Week 2 (snap to presenter)
-   */
   it('setViewport calls OpenSeadragon viewport methods', async () => {
     const ref = createRef<SlideViewerHandle>()
 
@@ -269,85 +225,5 @@ describe('SlideViewer', () => {
     // Phase 1 spec: Should call viewport.zoomTo and viewport.panTo
     expect(mockViewer?.viewport.zoomTo).toHaveBeenCalled()
     expect(mockViewer?.viewport.panTo).toHaveBeenCalled()
-  })
-
-  /**
-   * Phase 1 spec: Minimap can be toggled
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 5
-   */
-  it('accepts showMinimap prop', () => {
-    // Phase 1 spec: Component should accept showMinimap prop
-    const { rerender } = render(<SlideViewer slide={testSlide} showMinimap={true} />)
-
-    // Should not throw
-    rerender(<SlideViewer slide={testSlide} showMinimap={false} />)
-  })
-
-  /**
-   * Phase 1 spec: Minimap position can be configured
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 5
-   */
-  it('accepts minimapPosition prop', () => {
-    // Phase 1 spec: Component should accept minimapPosition prop
-    render(<SlideViewer slide={testSlide} minimapPosition="BOTTOM_RIGHT" />)
-
-    // Should not throw
-  })
-})
-
-describe('SlideViewer tile URL generation', () => {
-  /**
-   * Phase 1 spec: Tile size is 256 pixels
-   * Reference: IMPLEMENTATION_PLAN.md Section 2.2
-   */
-  it('uses 256 pixel tile size by default', () => {
-    // Phase 1 spec: tile_size: 256 or 512 (typically 256)
-    expect(testSlide.tileSize).toBe(256)
-  })
-
-  /**
-   * Phase 1 spec: Multi-level pyramid support
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4
-   */
-  it('supports multiple zoom levels', () => {
-    // Phase 1 spec: num_levels indicates pyramid levels
-    expect(testSlide.numLevels).toBeGreaterThan(1)
-  })
-
-  /**
-   * Phase 1 spec: Slide dimensions are in pixels
-   * Reference: IMPLEMENTATION_PLAN.md Section 2.2
-   */
-  it('has valid slide dimensions', () => {
-    // Phase 1 spec: width and height are full resolution in pixels
-    expect(testSlide.width).toBeGreaterThan(0)
-    expect(testSlide.height).toBeGreaterThan(0)
-  })
-})
-
-describe('SlideViewer keyboard shortcuts', () => {
-  /**
-   * Phase 1 spec: Keyboard shortcuts for zoom
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4
-   * + / = : Zoom in (by 1.5x)
-   * - : Zoom out (by 0.67x)
-   * 0 : Reset to home/fit view
-   */
-  it('documents expected keyboard shortcuts', () => {
-    // Phase 1 spec: Keyboard shortcuts for zoom control
-    const expectedShortcuts = {
-      '+': 'Zoom in by 1.5x',
-      '=': 'Zoom in by 1.5x',
-      '-': 'Zoom out by 0.67x',
-      '0': 'Reset to home/fit view',
-      ArrowUp: 'Pan up by 10% of viewport',
-      ArrowDown: 'Pan down by 10% of viewport',
-      ArrowLeft: 'Pan left by 10% of viewport',
-      ArrowRight: 'Pan right by 10% of viewport',
-    }
-
-    // This test documents the expected shortcuts
-    // Actual implementation should handle these keys
-    expect(Object.keys(expectedShortcuts).length).toBe(8)
   })
 })

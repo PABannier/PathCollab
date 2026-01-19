@@ -1,7 +1,6 @@
 /**
  * Phase 1 End-to-End Tests
  *
- * Comprehensive tests for Phase 1 (Core Viewing) requirements from IMPLEMENTATION_PLAN.md.
  * Tests are written against the SPECIFICATION, not the implementation.
  * If a test fails, the implementation has a bug (not the test).
  *

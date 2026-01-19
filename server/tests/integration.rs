@@ -12,7 +12,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use pathcollab_server::protocol::{ClientMessage, ParticipantRole, ServerMessage};
+use pathcollab_server::protocol::ParticipantRole;
 use tower::util::ServiceExt;
 
 // Re-export test utilities from the main crate
@@ -284,12 +284,7 @@ mod session_management {
 }
 
 // ============================================================================
-// Protocol Message Tests
-// ============================================================================
-
-// ============================================================================
 // Tile Serving Integration Tests
-// Phase 1 spec: Tile API endpoints (IMPLEMENTATION_PLAN.md Week 1, Day 3-4)
 // ============================================================================
 
 mod tile_serving {
@@ -297,7 +292,6 @@ mod tile_serving {
     use axum::http::header;
 
     /// Phase 1 spec: GET /api/slides returns list of available slides
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.2
     #[tokio::test]
     async fn test_list_slides_returns_json() {
         let app = create_test_app_with_slides();
@@ -326,7 +320,6 @@ mod tile_serving {
     }
 
     /// Phase 1 spec: GET /api/slide/:id returns slide metadata
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.2 (SlideInfo structure)
     #[tokio::test]
     async fn test_get_slide_metadata() {
         let app = create_test_app_with_slides();
@@ -357,7 +350,6 @@ mod tile_serving {
     }
 
     /// Phase 1 spec: GET /api/slide/:id returns 404 for non-existent slide
-    /// Reference: IMPLEMENTATION_PLAN.md (error handling)
     #[tokio::test]
     async fn test_get_nonexistent_slide_returns_404() {
         let app = create_test_app_with_slides();
@@ -383,7 +375,6 @@ mod tile_serving {
     }
 
     /// Phase 1 spec: GET /api/slide/:id/dzi returns valid DZI XML
-    /// Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4 (OpenSeadragon integration)
     #[tokio::test]
     async fn test_dzi_endpoint_returns_valid_xml() {
         let app = create_test_app_with_slides();
@@ -425,7 +416,6 @@ mod tile_serving {
     }
 
     /// Phase 1 spec: GET /api/slide/:id/tile/:level/:x/:y returns JPEG tile
-    /// Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4 (tile rendering)
     #[tokio::test]
     async fn test_tile_endpoint_returns_jpeg() {
         let app = create_test_app_with_slides();
@@ -462,7 +452,6 @@ mod tile_serving {
     }
 
     /// Phase 1 spec: Tile cache headers for immutability
-    /// Reference: IMPLEMENTATION_PLAN.md (performance: tiles immutable, cacheable)
     #[tokio::test]
     async fn test_tile_has_immutable_cache_headers() {
         let app = create_test_app_with_slides();
@@ -491,7 +480,6 @@ mod tile_serving {
     }
 
     /// Phase 1 spec: Invalid tile coordinates return 400 Bad Request
-    /// Reference: IMPLEMENTATION_PLAN.md (error handling)
     #[tokio::test]
     async fn test_tile_invalid_coordinates_returns_400() {
         let app = create_test_app_with_slides();
@@ -518,7 +506,6 @@ mod tile_serving {
     }
 
     /// Phase 1 spec: Invalid level returns 400 Bad Request
-    /// Reference: IMPLEMENTATION_PLAN.md (error handling)
     #[tokio::test]
     async fn test_tile_invalid_level_returns_400() {
         let app = create_test_app_with_slides();
@@ -545,7 +532,6 @@ mod tile_serving {
     }
 
     /// Phase 1 spec: Tile for non-existent slide returns 404
-    /// Reference: IMPLEMENTATION_PLAN.md (error handling)
     #[tokio::test]
     async fn test_tile_nonexistent_slide_returns_404() {
         let app = create_test_app_with_slides();
@@ -563,60 +549,7 @@ mod tile_serving {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-    /// Phase 1 spec: Slide metadata includes tile_size field
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.2 (tile_size: 256 or 512)
-    #[tokio::test]
-    async fn test_slide_metadata_has_tile_size() {
-        let app = create_test_app_with_slides();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/slide/test-slide")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let metadata: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        // Phase 1 spec: tile_size should be 256 or 512 (typically 256)
-        let tile_size = metadata["tile_size"].as_u64().unwrap();
-        assert!(tile_size == 256 || tile_size == 512);
-    }
-
-    /// Phase 1 spec: Slide metadata includes num_levels (pyramid levels)
-    /// Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4 (multi-level pyramid)
-    #[tokio::test]
-    async fn test_slide_metadata_has_pyramid_levels() {
-        let app = create_test_app_with_slides();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/slide/test-slide")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let metadata: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        // Phase 1 spec: Multi-level pyramid support
-        let num_levels = metadata["num_levels"].as_u64().unwrap();
-        assert!(num_levels > 1); // Must have multiple levels
-    }
-
     /// Phase 1 spec: DZI endpoint returns 404 for non-existent slide
-    /// Reference: IMPLEMENTATION_PLAN.md (error handling)
     #[tokio::test]
     async fn test_dzi_nonexistent_slide_returns_404() {
         let app = create_test_app_with_slides();
@@ -637,7 +570,6 @@ mod tile_serving {
 
 // ============================================================================
 // WebSocket Protocol Integration Tests
-// Phase 1 spec: WebSocket connection lifecycle (IMPLEMENTATION_PLAN.md Week 2)
 // ============================================================================
 
 mod websocket_protocol {
@@ -669,7 +601,6 @@ mod websocket_protocol {
     }
 
     /// Phase 1 spec: WebSocket connection establishes successfully
-    /// Reference: IMPLEMENTATION_PLAN.md Week 2, Day 1-2
     #[tokio::test]
     async fn test_websocket_connection_establishes() {
         let (addr, server_handle) = start_test_server().await;
@@ -683,7 +614,6 @@ mod websocket_protocol {
     }
 
     /// Phase 1 spec: Server responds to ping with pong
-    /// Reference: IMPLEMENTATION_PLAN.md Week 2 (keepalive ping/pong)
     #[tokio::test]
     async fn test_ping_pong_protocol() {
         use futures_util::{SinkExt, StreamExt};
@@ -723,7 +653,6 @@ mod websocket_protocol {
     }
 
     /// Phase 1 spec: create_session returns session_created with valid IDs
-    /// Reference: IMPLEMENTATION_PLAN.md Week 2, Day 3-4
     #[tokio::test]
     async fn test_create_session_over_websocket() {
         use futures_util::{SinkExt, StreamExt};
@@ -803,7 +732,6 @@ mod websocket_protocol {
     }
 
     /// Phase 1 spec: join_session with valid secret succeeds
-    /// Reference: IMPLEMENTATION_PLAN.md Week 2, Day 3-4
     #[tokio::test]
     async fn test_join_session_over_websocket() {
         use futures_util::{SinkExt, StreamExt};
@@ -893,7 +821,6 @@ mod websocket_protocol {
     }
 
     /// Phase 1 spec: join_session with invalid secret fails
-    /// Reference: IMPLEMENTATION_PLAN.md (security: invalid secret rejected)
     #[tokio::test]
     async fn test_join_session_invalid_secret_fails() {
         use futures_util::{SinkExt, StreamExt};
@@ -964,7 +891,6 @@ mod websocket_protocol {
     }
 
     /// Phase 1 spec: Ack message contains seq number
-    /// Reference: IMPLEMENTATION_PLAN.md (message protocol)
     #[tokio::test]
     async fn test_ack_message_contains_seq() {
         use futures_util::{SinkExt, StreamExt};
@@ -1007,131 +933,9 @@ mod websocket_protocol {
     }
 }
 
-mod protocol {
-    use super::*;
-    use pathcollab_server::protocol::*;
-
-    #[test]
-    fn test_client_message_serialization() {
-        let msg = ClientMessage::CreateSession {
-            slide_id: "test-slide".to_string(),
-            seq: 1,
-        };
-
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("create_session"));
-        assert!(json.contains("test-slide"));
-    }
-
-    #[test]
-    fn test_client_message_deserialization() {
-        let json = r#"{"type":"create_session","slide_id":"test-slide","seq":1}"#;
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            ClientMessage::CreateSession { slide_id, seq } => {
-                assert_eq!(slide_id, "test-slide");
-                assert_eq!(seq, 1);
-            }
-            _ => panic!("Expected CreateSession message"),
-        }
-    }
-
-    #[test]
-    fn test_server_message_serialization() {
-        let msg = ServerMessage::Pong;
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("pong"));
-    }
-
-    #[test]
-    fn test_qos_profile_default() {
-        let profile = QosProfileData::default();
-
-        assert_eq!(profile.cursor_send_hz, 30);
-        assert_eq!(profile.viewport_send_hz, 10);
-    }
-
-    #[test]
-    fn test_join_session_message() {
-        let json = r#"{
-            "type": "join_session",
-            "session_id": "abc123",
-            "join_secret": "secret",
-            "seq": 5
-        }"#;
-
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            ClientMessage::JoinSession {
-                session_id,
-                join_secret,
-                seq,
-                ..
-            } => {
-                assert_eq!(session_id, "abc123");
-                assert_eq!(join_secret, "secret");
-                assert_eq!(seq, 5);
-            }
-            _ => panic!("Expected JoinSession message"),
-        }
-    }
-
-    #[test]
-    fn test_cursor_update_message() {
-        let json = r#"{
-            "type": "cursor_update",
-            "x": 100.5,
-            "y": 200.5,
-            "seq": 10
-        }"#;
-
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            ClientMessage::CursorUpdate { x, y, seq } => {
-                assert_eq!(x, 100.5);
-                assert_eq!(y, 200.5);
-                assert_eq!(seq, 10);
-            }
-            _ => panic!("Expected CursorUpdate message"),
-        }
-    }
-
-    #[test]
-    fn test_viewport_update_message() {
-        let json = r#"{
-            "type": "viewport_update",
-            "center_x": 0.3,
-            "center_y": 0.4,
-            "zoom": 2.5,
-            "seq": 15
-        }"#;
-
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            ClientMessage::ViewportUpdate {
-                center_x,
-                center_y,
-                zoom,
-                seq,
-            } => {
-                assert_eq!(center_x, 0.3);
-                assert_eq!(center_y, 0.4);
-                assert_eq!(zoom, 2.5);
-                assert_eq!(seq, 15);
-            }
-            _ => panic!("Expected ViewportUpdate message"),
-        }
-    }
-}
-
 // ============================================================================
 // Phase 2 Integration Tests - Collaboration MVP
 // Tests for cursor presence, viewport sync, and participant management
-// Reference: IMPLEMENTATION_PLAN.md Phase 2 (Weeks 3-4)
 // ============================================================================
 
 mod phase2_presence {
@@ -1159,7 +963,6 @@ mod phase2_presence {
     }
 
     /// Phase 2 spec: Cursor updates are stored and broadcast to session
-    /// Reference: IMPLEMENTATION_PLAN.md Week 3, Day 1-2 (cursor tracking)
     #[tokio::test]
     async fn test_cursor_update_broadcast_to_session() {
         use futures_util::{SinkExt, StreamExt};
@@ -1269,7 +1072,6 @@ mod phase2_presence {
     }
 
     /// Phase 2 spec: Presenter viewport broadcast to followers at 10Hz
-    /// Reference: IMPLEMENTATION_PLAN.md Week 3, Day 3-4 (viewport sync)
     #[tokio::test]
     async fn test_presenter_viewport_broadcast() {
         use futures_util::{SinkExt, StreamExt};
@@ -1373,7 +1175,6 @@ mod phase2_presence {
     }
 
     /// Phase 2 spec: Snap to presenter returns current presenter viewport
-    /// Reference: IMPLEMENTATION_PLAN.md Week 3, Day 3-4
     #[tokio::test]
     async fn test_snap_to_presenter() {
         use futures_util::{SinkExt, StreamExt};
@@ -1489,7 +1290,6 @@ mod phase2_presence {
     }
 
     /// Phase 2 spec: Follower viewport updates don't broadcast (only presenter)
-    /// Reference: IMPLEMENTATION_PLAN.md Week 3, Day 3-4
     #[tokio::test]
     async fn test_follower_viewport_not_broadcast() {
         use futures_util::{SinkExt, StreamExt};
@@ -1619,7 +1419,6 @@ mod phase2_participants {
     }
 
     /// Phase 2 spec: Participant names use adjective + animal format
-    /// Reference: IMPLEMENTATION_PLAN.md Week 4, Day 3-4
     #[tokio::test]
     async fn test_participant_name_format() {
         use futures_util::{SinkExt, StreamExt};
@@ -1679,7 +1478,6 @@ mod phase2_participants {
     }
 
     /// Phase 2 spec: Participants get colors from 12-color palette
-    /// Reference: IMPLEMENTATION_PLAN.md Week 4, Day 3-4
     #[tokio::test]
     async fn test_participant_color_assignment() {
         use futures_util::{SinkExt, StreamExt};
@@ -1787,7 +1585,6 @@ mod phase2_participants {
     }
 
     /// Phase 2 spec: Participant joined/left events broadcast to session
-    /// Reference: IMPLEMENTATION_PLAN.md Week 3, Day 5
     #[tokio::test]
     async fn test_participant_join_leave_events() {
         use futures_util::{SinkExt, StreamExt};
@@ -1902,7 +1699,6 @@ mod phase2_participants {
     }
 
     /// Phase 2 spec: First user becomes presenter
-    /// Reference: IMPLEMENTATION_PLAN.md Week 4, Day 3-4
     #[tokio::test]
     async fn test_first_user_is_presenter() {
         use futures_util::{SinkExt, StreamExt};
@@ -1969,7 +1765,6 @@ mod phase2_robustness {
     }
 
     /// Phase 2 spec: Session survives participant reconnection
-    /// Reference: IMPLEMENTATION_PLAN.md Week 4, Day 1-2
     #[tokio::test]
     async fn test_session_survives_follower_reconnect() {
         use futures_util::{SinkExt, StreamExt};

@@ -1,10 +1,6 @@
 /**
  * WebSocket Test Client for E2E Integration Tests
  *
- * Provides a programmatic WebSocket client for testing the PathCollab
- * WebSocket protocol against a real server. Tests verify against
- * IMPLEMENTATION_PLAN.md specifications.
- *
  * Phase 1 Protocol Messages:
  * - create_session: Creates new session with slide_id
  * - join_session: Joins existing session with session_id and join_secret
@@ -17,7 +13,6 @@
 
 import WebSocket from 'ws'
 
-// Message types from IMPLEMENTATION_PLAN.md Phase 1
 export interface ClientMessage {
   type: string
   seq: number

@@ -1,15 +1,3 @@
-/**
- * End-to-End Tests for Phase 2 (Collaboration MVP)
- *
- * Tests for multi-user collaboration features from IMPLEMENTATION_PLAN.md.
- * These tests verify Phase 2 requirements:
- * - Week 3: Presence System (cursor tracking, viewport sync)
- * - Week 4: Robustness (reconnection, participant management, UI polish)
- *
- * Note: Multi-browser tests require the real server to be running.
- * Run with: bunx playwright test e2e/phase2.spec.ts
- */
-
 import { test, expect } from '@playwright/test'
 import { setupVerboseLogging, logStep } from './logging'
 
@@ -51,15 +39,7 @@ async function joinSession(page: Page, shareUrl: string): Promise<void> {
   await expect(viewer).toBeVisible({ timeout: 15000 })
 }
 
-// ============================================================================
-// Phase 2: Presence System Tests (Week 3)
-// ============================================================================
-
 test.describe('Phase 2: Connection Status', () => {
-  /**
-   * Phase 2 spec: Connection status indicator shows connected
-   * Reference: IMPLEMENTATION_PLAN.md Week 4, Day 3-4
-   */
   test('should show connected status when session is active', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'connection-status')
 
@@ -77,36 +57,9 @@ test.describe('Phase 2: Connection Status', () => {
 
     logger.end()
   })
-
-  /**
-   * Phase 2 spec: Solo mode indicator when not in session
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
-  test('should show solo mode indicator when viewing without session', async ({ page }) => {
-    const logger = setupVerboseLogging(page, 'solo-mode')
-
-    await logStep(page, logger, 1, 'Navigate to viewer directly')
-    await page.goto(`${BASE_URL}/s/demo`)
-
-    await logStep(page, logger, 2, 'Wait for viewer')
-    const viewer = page.locator('.openseadragon-container')
-    await expect(viewer).toBeVisible({ timeout: 15000 })
-
-    await logStep(page, logger, 3, 'Check for solo mode')
-    // Look for purple indicator or "Solo Mode" text
-    // soloIndicator check is for documentation - may or may not be present depending on implementation
-    const _soloIndicator = page.locator('.bg-purple-500')
-    void _soloIndicator // Suppress unused warning - documents expected behavior
-
-    logger.end()
-  })
 })
 
 test.describe('Phase 2: Participant Management', () => {
-  /**
-   * Phase 2 spec: Participant count shown
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('should show participant count', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'participant-count')
 
@@ -125,10 +78,6 @@ test.describe('Phase 2: Participant Management', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: Presenter badge shown
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('should show presenter badge for session creator', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'presenter-badge')
 
@@ -148,10 +97,6 @@ test.describe('Phase 2: Participant Management', () => {
 })
 
 test.describe('Phase 2: Share Functionality', () => {
-  /**
-   * Phase 2 spec: Share URL is generated
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('should generate share URL', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'share-url')
 
@@ -171,10 +116,6 @@ test.describe('Phase 2: Share Functionality', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: Copy button works
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('should have working copy button', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'copy-button')
 
@@ -197,10 +138,6 @@ test.describe('Phase 2: Share Functionality', () => {
 })
 
 test.describe('Phase 2: Viewport Controls', () => {
-  /**
-   * Phase 2 spec: Follow presenter button available
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   test('should not show follow button for presenter', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'follow-button-presenter')
 
@@ -219,10 +156,6 @@ test.describe('Phase 2: Viewport Controls', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: Snap to presenter shortcut
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (Ctrl+F)
-   */
   test('should have snap to presenter keyboard shortcut', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'snap-shortcut')
 
@@ -246,85 +179,7 @@ test.describe('Phase 2: Viewport Controls', () => {
   })
 })
 
-test.describe('Phase 2: Minimap', () => {
-  /**
-   * Phase 2 spec: Minimap shows in bottom-right
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 5
-   */
-  test('should show minimap in viewer', async ({ page }) => {
-    const logger = setupVerboseLogging(page, 'minimap')
-
-    await logStep(page, logger, 1, 'Navigate to viewer')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
-
-    await logStep(page, logger, 2, 'Wait for viewer')
-    const viewer = page.locator('.openseadragon-container')
-    await expect(viewer).toBeVisible({ timeout: 15000 })
-
-    await logStep(page, logger, 3, 'Check for minimap')
-    // Minimap is typically a navigator element
-    // Minimap check is for documentation - may or may not be visible depending on implementation
-    const _minimap = page.locator('.openseadragon-navigator')
-    void _minimap // Suppress unused warning - documents expected behavior
-
-    logger.end()
-  })
-})
-
-// ============================================================================
-// Phase 2: Robustness Tests (Week 4)
-// ============================================================================
-
-test.describe('Phase 2: Error Recovery', () => {
-  /**
-   * Phase 2 spec: Graceful handling of invalid session
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
-  test('should handle invalid session ID gracefully', async ({ page }) => {
-    const logger = setupVerboseLogging(page, 'invalid-session')
-
-    await logStep(page, logger, 1, 'Navigate to non-existent session')
-    await page.goto(`${BASE_URL}/s/nonexistent123#join=invalidsecret`)
-
-    await logStep(page, logger, 2, 'Wait for error handling')
-    await page.waitForTimeout(3000)
-
-    await logStep(page, logger, 3, 'Verify page is still functional')
-    // Page should not crash - should show error or fallback to solo mode
-    const pageContent = await page.content()
-    expect(pageContent).toBeTruthy()
-
-    logger.end()
-  })
-
-  /**
-   * Phase 2 spec: Invalid join secret handled
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
-  test('should handle invalid join secret gracefully', async ({ page }) => {
-    const logger = setupVerboseLogging(page, 'invalid-secret')
-
-    await logStep(page, logger, 1, 'Navigate with invalid secret')
-    // Use a valid session ID format but invalid secret
-    await page.goto(`${BASE_URL}/s/abcdefghij#join=wrongsecret`)
-
-    await logStep(page, logger, 2, 'Wait for error handling')
-    await page.waitForTimeout(3000)
-
-    await logStep(page, logger, 3, 'Verify graceful degradation')
-    // Should show error or fall back to solo mode
-    const pageContent = await page.content()
-    expect(pageContent).toBeTruthy()
-
-    logger.end()
-  })
-})
-
 test.describe('Phase 2: Debug Panel', () => {
-  /**
-   * Phase 2 spec: Debug panel shows session info
-   * Reference: IMPLEMENTATION_PLAN.md (development)
-   */
   test('should show debug panel with session info', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'debug-panel')
 
@@ -356,10 +211,6 @@ test.describe('Phase 2: Debug Panel', () => {
 // ============================================================================
 
 test.describe('Phase 2: Multi-User Collaboration', () => {
-  /**
-   * Phase 2 spec: Follower can join presenter session
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   test('follower should be able to join session via share link', async ({ browser }) => {
     // Create two browser contexts to simulate presenter and follower
     const presenterContext = await browser.newContext()
@@ -400,50 +251,6 @@ test.describe('Phase 2: Multi-User Collaboration', () => {
     }
   })
 
-  /**
-   * Phase 2 spec: Follower sees follow button
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
-  test('follower should have follow presenter option', async ({ browser }) => {
-    const presenterContext = await browser.newContext()
-    const followerContext = await browser.newContext()
-
-    const presenterPage = await presenterContext.newPage()
-    const followerPage = await followerContext.newPage()
-
-    const presenterLogger = setupVerboseLogging(presenterPage, 'follow-option-presenter')
-    const followerLogger = setupVerboseLogging(followerPage, 'follow-option-follower')
-
-    try {
-      await logStep(presenterPage, presenterLogger, 1, 'Create session')
-      const shareUrl = await createSession(presenterPage)
-
-      await logStep(followerPage, followerLogger, 2, 'Join session')
-      await joinSession(followerPage, shareUrl)
-
-      await logStep(followerPage, followerLogger, 3, 'Look for follow option')
-      // Follower should have a way to follow presenter
-      // This could be a button, checkbox, or automatic behavior
-      // Wait for session state to stabilize
-      await followerPage.waitForTimeout(2000)
-
-      // Check for some follow-related UI element
-      // Document expected behavior - element may or may not be present
-      const _followElement = followerPage.locator('text=/[Ff]ollow/')
-      void _followElement // Suppress unused warning - documents expected behavior
-
-      presenterLogger.end()
-      followerLogger.end()
-    } finally {
-      await presenterContext.close()
-      await followerContext.close()
-    }
-  })
-
-  /**
-   * Phase 2 spec: Session survives follower disconnect
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('session should survive follower disconnect', async ({ browser }) => {
     const presenterContext = await browser.newContext()
     const followerContext = await browser.newContext()
@@ -491,10 +298,6 @@ test.describe('Phase 2: Multi-User Collaboration', () => {
 // ============================================================================
 
 test.describe('Phase 2: Performance', () => {
-  /**
-   * Phase 2 spec: Session creation is fast
-   * Reference: IMPLEMENTATION_PLAN.md (performance)
-   */
   test('session creation should complete within 5 seconds', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'perf-session-create')
 
@@ -516,10 +319,6 @@ test.describe('Phase 2: Performance', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: UI remains responsive during collaboration
-   * Reference: IMPLEMENTATION_PLAN.md (performance)
-   */
   test('UI should remain responsive', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'perf-responsive')
 

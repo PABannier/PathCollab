@@ -7,7 +7,7 @@
  * User Preference: Verbose - log every HTTP/WS request, response, timing
  */
 
-import type { Page, BrowserContext, WebSocket as PlaywrightWebSocket } from '@playwright/test'
+import type { Page, WebSocket as PlaywrightWebSocket } from '@playwright/test'
 
 export interface LogEntry {
   timestamp: string
@@ -139,24 +139,6 @@ export function setupVerboseLogging(page: Page, testName: string): TestLogger {
 }
 
 /**
- * Setup logging for a browser context (all pages)
- */
-export function setupContextLogging(context: BrowserContext, contextName: string): TestLogger {
-  const logger = new TestLogger(`Context: ${contextName}`)
-
-  context.on('page', (page) => {
-    logger.log('Context', 'new-page', page.url())
-    setupVerboseLogging(page, `${contextName}:${page.url()}`)
-  })
-
-  context.on('close', () => {
-    logger.log('Context', 'close', contextName)
-  })
-
-  return logger
-}
-
-/**
  * Log a test step with screenshot capture
  */
 export async function logStep(
@@ -191,28 +173,4 @@ export async function measureAction<T>(
   logger.log('Performance', 'end', `Completed: ${actionName} (${durationMs}ms)`)
 
   return { result, durationMs }
-}
-
-/**
- * Assert with logging
- */
-export function loggedAssert(
-  logger: TestLogger,
-  condition: boolean,
-  requirement: string,
-  actual: unknown,
-  expected: unknown
-): void {
-  if (condition) {
-    logger.log('Assert', 'pass', `PASS: ${requirement}`)
-  } else {
-    logger.log('Assert', 'fail', `FAIL: ${requirement}`, { expected, actual })
-  }
-}
-
-/**
- * Format a summary of WebSocket messages for logging
- */
-export function formatWsMessages(messages: unknown[]): string {
-  return messages.map((msg, i) => `  [${i}] ${JSON.stringify(msg).substring(0, 100)}`).join('\n')
 }
