@@ -25,7 +25,6 @@ RUN apt-get update && apt-get install -y \
 
 COPY Cargo.toml Cargo.lock* ./
 COPY server/Cargo.toml ./server/
-COPY server/build.rs ./server/
 
 # Create dummy source files to cache dependencies
 RUN mkdir -p server/src \
