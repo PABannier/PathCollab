@@ -8,8 +8,10 @@ export {
   type EmptyStatePreset,
   type PresetEmptyStateProps,
 } from './EmptyState'
+export { ErrorBanner, type ErrorBannerProps } from './ErrorBanner'
 export { FollowModeIndicator } from './FollowModeIndicator'
 export { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
+export { KeyboardShortcutsHint, type KeyboardShortcutsHintProps } from './KeyboardShortcutsHint'
 export { NetworkErrorBanner } from './NetworkErrorBanner'
 export { ReturnToPresenterButton } from './ReturnToPresenterButton'
 export { Toggle } from './Toggle'

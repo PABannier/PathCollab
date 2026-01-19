@@ -23,3 +23,14 @@ export {
   type UseViewerViewportOptions,
   type UseViewerViewportReturn,
 } from './useViewerViewport'
+export { useHashParams, type HashParams } from './useHashParams'
+export {
+  useSlideInfo,
+  type UseSlideInfoOptions,
+  type SessionSlide,
+} from './useSlideInfo'
+export {
+  useAutoCreateSession,
+  type UseAutoCreateSessionOptions,
+  type UseAutoCreateSessionReturn,
+} from './useAutoCreateSession'
