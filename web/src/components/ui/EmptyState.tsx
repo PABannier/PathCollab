@@ -170,7 +170,6 @@ const Icons = {
 export type EmptyStatePreset =
   | 'no-slides'
   | 'solo-mode'
-  | 'no-overlay'
   | 'session-expired'
   | 'offline'
   | 'session-not-found'
@@ -204,16 +203,6 @@ const presetConfigs: Record<EmptyStatePreset, Omit<EmptyStateProps, 'action' | '
     icon: Icons.solo,
     title: 'Just You',
     description: 'You are viewing this slide in solo mode. Share to collaborate with others.',
-  },
-  'no-overlay': {
-    icon: Icons.layers,
-    title: 'No Overlay Loaded',
-    description:
-      'Upload an overlay to visualize cell segmentation and tissue classification results.',
-    secondary: {
-      label: 'Learn about overlays',
-      href: 'https://github.com/PABannier/PathCollab#overlays',
-    },
   },
   'session-expired': {
     icon: Icons.expired,

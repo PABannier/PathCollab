@@ -71,7 +71,7 @@ Object.defineProperty(navigator, 'clipboard', {
 })
 
 // ============================================================================
-// Mock WebGL (for OverlayCanvas and TissueHeatmapLayer tests)
+// Mock WebGL
 // ============================================================================
 
 // Create a mock WebGL2 context

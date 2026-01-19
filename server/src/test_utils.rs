@@ -6,7 +6,7 @@
 #![cfg(test)]
 
 use crate::protocol::{
-    ClientMessage, LayerVisibility, Participant, ParticipantRole, ServerMessage, SessionSnapshot,
+    ClientMessage, Participant, ParticipantRole, ServerMessage, SessionSnapshot,
     SlideInfo, Viewport,
 };
 use crate::server::AppState;
@@ -199,7 +199,6 @@ fn create_test_router(app_state: AppState) -> Router {
 
     Router::new()
         .route("/health", get(health_handler))
-        .nest("/api/overlay", crate::overlay::overlay_routes())
         .layer(cors)
         .with_state(app_state)
 }
@@ -270,11 +269,6 @@ pub fn create_test_viewport_at(center_x: f64, center_y: f64, zoom: f64) -> Viewp
     }
 }
 
-/// Create default layer visibility settings
-pub fn create_test_layer_visibility() -> LayerVisibility {
-    LayerVisibility::default()
-}
-
 /// Create a test participant
 pub fn create_test_participant(role: ParticipantRole) -> Participant {
     Participant {
@@ -330,8 +324,6 @@ pub enum ExpectedResponse {
     SessionError,
     /// Expect a PresenterViewport message
     PresenterViewport,
-    /// Expect a LayerState message
-    LayerState,
     /// Expect a Pong message
     Pong,
     /// Custom matcher
@@ -363,9 +355,6 @@ impl ExpectedResponse {
             }
             ExpectedResponse::PresenterViewport => {
                 matches!(msg, ServerMessage::PresenterViewport { .. })
-            }
-            ExpectedResponse::LayerState => {
-                matches!(msg, ServerMessage::LayerState { .. })
             }
             ExpectedResponse::Pong => {
                 matches!(msg, ServerMessage::Pong)
@@ -415,11 +404,6 @@ pub fn viewport_update_message(
         zoom,
         seq,
     }
-}
-
-/// Create a LayerUpdate client message
-pub fn layer_update_message(visibility: LayerVisibility, seq: u64) -> ClientMessage {
-    ClientMessage::LayerUpdate { visibility, seq }
 }
 
 /// Create a Ping client message
@@ -483,19 +467,6 @@ pub fn init_test_logging() {
         )
         .with(tracing_subscriber::fmt::layer().with_test_writer())
         .try_init();
-}
-
-// ============================================================================
-// Mock Protobuf Data
-// ============================================================================
-
-/// Create a minimal valid overlay protobuf for testing
-/// This creates a simple overlay with a few cells for testing upload/parsing
-pub fn create_test_overlay_bytes() -> Vec<u8> {
-    // For now, return empty bytes - the actual protobuf structure
-    // would need to match the schema defined in overlay.proto
-    // Tests using this should mock the parser behavior
-    Vec::new()
 }
 
 // ============================================================================

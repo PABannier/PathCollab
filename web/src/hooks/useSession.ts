@@ -19,16 +19,6 @@ export interface Viewport {
   timestamp: number
 }
 
-export interface LayerVisibility {
-  tissue_heatmap_visible: boolean
-  tissue_heatmap_opacity: number
-  tissue_classes_visible: number[]
-  cell_polygons_visible: boolean
-  cell_polygons_opacity: number
-  cell_classes_visible: number[]
-  cell_hover_enabled: boolean
-}
-
 export interface SlideInfo {
   id: string
   name: string
@@ -45,7 +35,6 @@ export interface SessionState {
   slide: SlideInfo
   presenter: Participant
   followers: Participant[]
-  layer_visibility: LayerVisibility
   presenter_viewport: Viewport
 }
 
@@ -58,21 +47,11 @@ interface CursorWithParticipant {
   y: number
 }
 
-export interface OverlayManifest {
-  overlay_id: string
-  content_sha256: string
-  raster_base_url: string
-  vec_base_url: string
-  tile_size: number
-  levels: number
-}
-
 interface UseSessionOptions {
   sessionId?: string
   joinSecret?: string
   presenterKey?: string
   onError?: (message: string) => void
-  onOverlayLoaded?: (overlayId: string, manifest: OverlayManifest) => void
   onSessionCreated?: (sessionId: string, joinSecret: string, presenterKey: string) => void
 }
 
@@ -100,7 +79,6 @@ interface UseSessionReturn {
   authenticatePresenter: () => void
   updateCursor: (x: number, y: number) => void
   updateViewport: (centerX: number, centerY: number, zoom: number) => void
-  updateLayerVisibility: (visibility: LayerVisibility) => void
   changeSlide: (slideId: string) => void
   snapToPresenter: () => void
   setIsFollowing: (following: boolean) => void
@@ -112,7 +90,6 @@ export function useSession({
   joinSecret,
   presenterKey,
   onError,
-  onOverlayLoaded,
   onSessionCreated,
 }: UseSessionOptions): UseSessionReturn {
   // All hooks must be called unconditionally to satisfy React's rules of hooks
@@ -233,15 +210,6 @@ export function useSession({
           break
         }
 
-        case 'layer_state': {
-          const visibility = message.visibility as LayerVisibility
-          setSession((prev) => {
-            if (!prev) return prev
-            return { ...prev, layer_visibility: visibility }
-          })
-          break
-        }
-
         case 'session_error': {
           setIsCreatingSession(false)
           onError?.(message.message as string)
@@ -275,13 +243,6 @@ export function useSession({
           break
         }
 
-        case 'overlay_loaded': {
-          const overlayId = message.overlay_id as string
-          const manifest = message.manifest as OverlayManifest
-          onOverlayLoaded?.(overlayId, manifest)
-          break
-        }
-
         case 'slide_changed': {
           const newSlide = message.slide as SlideInfo
           setSession((prev) => {
@@ -301,7 +262,7 @@ export function useSession({
         }
       }
     },
-    [onError, onOverlayLoaded, onSessionCreated]
+    [onError, onSessionCreated]
   )
 
   const { status, sendMessage, latency } = useWebSocket({
@@ -393,17 +354,6 @@ export function useSession({
     [sendMessage]
   )
 
-  // Update layer visibility
-  const updateLayerVisibility = useCallback(
-    (visibility: LayerVisibility) => {
-      sendMessage({
-        type: 'layer_update',
-        visibility,
-      })
-    },
-    [sendMessage]
-  )
-
   // Change slide (presenter only)
   const changeSlide = useCallback(
     (slideId: string) => {
@@ -474,7 +424,6 @@ export function useSession({
       authenticatePresenter,
       updateCursor,
       updateViewport,
-      updateLayerVisibility,
       changeSlide,
       snapToPresenter,
       setIsFollowing: handleSetIsFollowing,
@@ -499,7 +448,6 @@ export function useSession({
     authenticatePresenter,
     updateCursor,
     updateViewport,
-    updateLayerVisibility,
     changeSlide,
     snapToPresenter,
     setIsFollowing: handleSetIsFollowing,

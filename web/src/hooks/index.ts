@@ -3,7 +3,6 @@ export {
   useSession,
   type Participant,
   type Viewport,
-  type LayerVisibility,
   type SlideInfo,
   type SessionState,
 } from './useSession'
@@ -19,19 +18,6 @@ export {
   type SessionSecrets,
   type ShareableSlide,
 } from './useShareUrl'
-export {
-  useLayerVisibility,
-  type UseLayerVisibilityOptions,
-  type UseLayerVisibilityReturn,
-} from './useLayerVisibility'
-export {
-  useOverlayCells,
-  type UseOverlayCellsOptions,
-  type UseOverlayCellsReturn,
-  type CellPolygon,
-  type ViewportState,
-  type SlideForOverlay,
-} from './useOverlayCells'
 export {
   useViewerViewport,
   type UseViewerViewportOptions,

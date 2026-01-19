@@ -2,7 +2,6 @@ use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use pathcollab_server::SessionManager;
 use pathcollab_server::config::{Config, SlideSourceMode};
-use pathcollab_server::overlay::overlay_routes;
 use pathcollab_server::server::{AppState, ws_handler};
 use pathcollab_server::session::state::SessionConfig as SessionStateConfig;
 use pathcollab_server::slide::{LocalSlideService, SlideAppState, slide_routes};
@@ -182,16 +181,6 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let overlay_dir = Path::new(&config.overlay.cache_dir);
-    match ensure_directory(overlay_dir, "overlay cache") {
-        Ok(_) => {}
-        Err(e) => {
-            warn!(
-                "Failed to create overlay cache directory {:?}: {}",
-                overlay_dir, e
-            );
-        }
-    }
 
     // Initialize slide service based on configuration
     let slide_service: Arc<dyn pathcollab_server::SlideService> = match config.slide.source_mode {
@@ -266,7 +255,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/metrics", get(metrics))
         .route("/metrics/prometheus", get(prometheus_metrics))
         .route("/ws", get(ws_handler))
-        .nest("/api/overlay", overlay_routes())
         .with_state(app_state)
         // Merge slide routes after setting AppState (slide routes have their own state)
         .merge(Router::new().nest("/api", slide_api))

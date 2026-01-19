@@ -26,11 +26,6 @@ pub enum ClientMessage {
         zoom: f64,
         seq: u64,
     },
-    /// Update layer visibility (presenter only)
-    LayerUpdate {
-        visibility: LayerVisibility,
-        seq: u64,
-    },
     /// Snap to presenter viewport
     SnapToPresenter { seq: u64 },
     /// Change slide (presenter only)
@@ -79,30 +74,12 @@ pub enum ServerMessage {
     },
     /// Presenter viewport update
     PresenterViewport { viewport: Viewport },
-    /// Layer state update
-    LayerState { visibility: LayerVisibility },
-    /// Overlay loaded notification
-    OverlayLoaded {
-        overlay_id: String,
-        manifest: OverlayManifest,
-    },
     /// Slide changed notification (broadcast to all participants)
     SlideChanged { slide: SlideInfo },
     /// Ping for keepalive (server to client)
     Ping,
     /// Pong response (to client's Ping)
     Pong,
-}
-
-/// Overlay manifest sent to clients
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OverlayManifest {
-    pub overlay_id: String,
-    pub content_sha256: String,
-    pub raster_base_url: String,
-    pub vec_base_url: String,
-    pub tile_size: u32,
-    pub levels: u32,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -138,7 +115,6 @@ pub struct SessionSnapshot {
     pub slide: SlideInfo,
     pub presenter: Participant,
     pub followers: Vec<Participant>,
-    pub layer_visibility: LayerVisibility,
     pub presenter_viewport: Viewport,
 }
 
@@ -180,32 +156,6 @@ pub struct Viewport {
     pub timestamp: u64,
 }
 
-/// Layer visibility settings
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LayerVisibility {
-    pub tissue_heatmap_visible: bool,
-    pub tissue_heatmap_opacity: f32,
-    pub tissue_classes_visible: Vec<u8>,
-    pub cell_polygons_visible: bool,
-    pub cell_polygons_opacity: f32,
-    pub cell_classes_visible: Vec<u8>,
-    pub cell_hover_enabled: bool,
-}
-
-impl Default for LayerVisibility {
-    fn default() -> Self {
-        Self {
-            tissue_heatmap_visible: true,
-            tissue_heatmap_opacity: 0.5,
-            tissue_classes_visible: vec![0, 1, 2, 3, 4, 5, 6, 7],
-            cell_polygons_visible: true,
-            cell_polygons_opacity: 0.7,
-            cell_classes_visible: (0..15).collect(),
-            cell_hover_enabled: true,
-        }
-    }
-}
-
 /// Cursor with participant info for presence updates
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CursorWithParticipant {
@@ -222,16 +172,6 @@ pub struct CursorWithParticipant {
 pub struct QosProfileData {
     pub cursor_send_hz: u32,
     pub viewport_send_hz: u32,
-    pub overlay_batch_kb: u32,
-    pub overlay_mode: OverlayMode,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum OverlayMode {
-    RasterOnly,
-    Points,
-    Polygons,
 }
 
 impl Default for QosProfileData {
@@ -239,8 +179,6 @@ impl Default for QosProfileData {
         Self {
             cursor_send_hz: 30,
             viewport_send_hz: 10,
-            overlay_batch_kb: 256,
-            overlay_mode: OverlayMode::Polygons,
         }
     }
 }
@@ -254,7 +192,6 @@ impl ClientMessage {
             ClientMessage::PresenterAuth { .. } => "presenter_auth",
             ClientMessage::CursorUpdate { .. } => "cursor_update",
             ClientMessage::ViewportUpdate { .. } => "viewport_update",
-            ClientMessage::LayerUpdate { .. } => "layer_update",
             ClientMessage::SnapToPresenter { .. } => "snap_to_presenter",
             ClientMessage::ChangeSlide { .. } => "change_slide",
             ClientMessage::Ping { .. } => "ping",
@@ -276,8 +213,6 @@ impl ServerMessage {
             ServerMessage::ParticipantLeft { .. } => "participant_left",
             ServerMessage::PresenceDelta { .. } => "presence_delta",
             ServerMessage::PresenterViewport { .. } => "presenter_viewport",
-            ServerMessage::LayerState { .. } => "layer_state",
-            ServerMessage::OverlayLoaded { .. } => "overlay_loaded",
             ServerMessage::SlideChanged { .. } => "slide_changed",
             ServerMessage::Ping => "ping",
             ServerMessage::Pong => "pong",

@@ -4,7 +4,6 @@
 
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
-use pathcollab_server::overlay::overlay_routes;
 use pathcollab_server::protocol::SlideInfo;
 use pathcollab_server::server::AppState;
 use pathcollab_server::{
@@ -38,7 +37,6 @@ pub fn create_test_app_with_state() -> (Router, AppState) {
 
     let app = Router::new()
         .route("/health", get(health))
-        .nest("/api/overlay", overlay_routes())
         .layer(cors)
         .with_state(app_state.clone());
 

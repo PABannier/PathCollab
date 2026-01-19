@@ -5,19 +5,17 @@
  * - Session creation and joining
  * - Participant management
  * - Cursor and viewport updates
- * - Layer visibility synchronization
  * - Presenter authentication
  */
 
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { useSession, type LayerVisibility } from './useSession'
+import { useSession } from './useSession'
 import { installMockWebSocket, type MockWebSocketInstance } from '../test/utils'
 import {
   mockSession,
   mockFollower1,
   mockViewport,
-  mockLayerVisibility,
   mockCursors,
   createMockSlide,
 } from '../test/fixtures'
@@ -354,60 +352,6 @@ describe('useSession', () => {
     })
   })
 
-  describe('layer visibility', () => {
-    it('should update layer visibility on layer_state message', async () => {
-      const { result } = renderHook(() => useSession({}))
-
-      await act(async () => {
-        vi.advanceTimersByTime(10)
-        mockWs.getInstance()?.simulateOpen()
-        mockWs.getInstance()?.simulateMessage({
-          type: 'session_joined',
-          session: mockSession,
-          you: mockFollower1,
-        })
-      })
-
-      const newVisibility: LayerVisibility = {
-        ...mockLayerVisibility,
-        tissue_heatmap_visible: false,
-        cell_polygons_opacity: 0.9,
-      }
-
-      await act(async () => {
-        mockWs.getInstance()?.simulateMessage({
-          type: 'layer_state',
-          visibility: newVisibility,
-        })
-      })
-
-      expect(result.current.session?.layer_visibility).toEqual(newVisibility)
-    })
-
-    it('should send layer update when updateLayerVisibility is called', async () => {
-      const { result } = renderHook(() => useSession({}))
-
-      await act(async () => {
-        vi.advanceTimersByTime(10)
-        mockWs.getInstance()?.simulateOpen()
-      })
-
-      const newVisibility: LayerVisibility = {
-        ...mockLayerVisibility,
-        tissue_heatmap_visible: false,
-      }
-
-      act(() => {
-        result.current.updateLayerVisibility(newVisibility)
-      })
-
-      const sentMessages = mockWs.getInstance()?.getSentMessages()
-      const layerMessage = sentMessages?.find((m) => m.type === 'layer_update')
-      expect(layerMessage).toBeDefined()
-      expect(layerMessage?.visibility).toEqual(newVisibility)
-    })
-  })
-
   describe('presenter authentication', () => {
     it('should send presenter_auth when authenticatePresenter is called', async () => {
       const { result } = renderHook(() =>
@@ -561,38 +505,7 @@ describe('useSession', () => {
     })
   })
 
-  describe('overlay loading', () => {
-    it('should call onOverlayLoaded when overlay_loaded is received', async () => {
-      const onOverlayLoaded = vi.fn()
-
-      renderHook(() =>
-        useSession({
-          onOverlayLoaded,
-        })
-      )
-
-      const manifest = {
-        overlay_id: 'test-overlay',
-        content_sha256: 'abc123',
-        raster_base_url: '/api/overlay/test/raster',
-        vec_base_url: '/api/overlay/test/vec',
-        tile_size: 256,
-        levels: 10,
-      }
-
-      await act(async () => {
-        vi.advanceTimersByTime(10)
-        mockWs.getInstance()?.simulateOpen()
-        mockWs.getInstance()?.simulateMessage({
-          type: 'overlay_loaded',
-          overlay_id: 'test-overlay',
-          manifest,
-        })
-      })
-
-      expect(onOverlayLoaded).toHaveBeenCalledWith('test-overlay', manifest)
-    })
-  })
+  // Overlay loading tests removed - overlay functionality to be reimplemented
 
   describe('slide change', () => {
     it('should update session slide when slide_changed message is received', async () => {

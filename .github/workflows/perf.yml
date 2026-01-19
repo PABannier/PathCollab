@@ -60,7 +60,6 @@ jobs:
       - name: Create test directories
         run: |
           mkdir -p /tmp/pathcollab/slides
-          mkdir -p /tmp/pathcollab/overlay_cache
           mkdir -p bench/load_tests/results
 
       - name: Start server in background
@@ -68,7 +67,6 @@ jobs:
           HOST=127.0.0.1 \
           PORT=8080 \
           SLIDES_DIR=/tmp/pathcollab/slides \
-          OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
           DEMO_ENABLED=true \
           RUST_LOG=warn \
           ./target/release/pathcollab &

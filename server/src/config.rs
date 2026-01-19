@@ -33,9 +33,6 @@ pub struct Config {
     /// Session configuration
     pub session: SessionConfig,
 
-    /// Overlay configuration
-    pub overlay: OverlayConfig,
-
     /// Presence configuration
     pub presence: PresenceConfig,
 
@@ -62,23 +59,6 @@ pub struct SessionConfig {
     pub presenter_grace_period: Duration,
 }
 
-/// Overlay-related configuration
-#[derive(Debug, Clone)]
-pub struct OverlayConfig {
-    /// Maximum upload size in bytes
-    pub max_upload_size: usize,
-    /// Upload timeout
-    pub upload_timeout: Duration,
-    /// Cache directory path
-    pub cache_dir: String,
-    /// Maximum cache size in bytes
-    pub cache_max_size: usize,
-    /// Tile size for rendering
-    pub tile_size: u32,
-    /// Maximum concurrent processing jobs
-    pub max_jobs: usize,
-}
-
 /// Presence-related configuration
 #[derive(Debug, Clone)]
 pub struct PresenceConfig {
@@ -95,8 +75,6 @@ pub struct DemoConfig {
     pub enabled: bool,
     /// Demo slide ID
     pub slide_id: Option<String>,
-    /// Path to demo overlay file
-    pub overlay_path: Option<String>,
 }
 
 /// Slide source mode
@@ -155,7 +133,6 @@ impl Default for Config {
             behind_proxy: false,
             wsistreamer_url: "http://wsistreamer:3000".to_string(),
             session: SessionConfig::default(),
-            overlay: OverlayConfig::default(),
             presence: PresenceConfig::default(),
             demo: DemoConfig::default(),
             slide: SlideConfig::default(),
@@ -171,20 +148,6 @@ impl Default for SessionConfig {
             max_concurrent_sessions: 50,
             max_duration: Duration::from_secs(4 * 60 * 60), // 4 hours
             presenter_grace_period: Duration::from_secs(30),
-        }
-    }
-}
-
-impl Default for OverlayConfig {
-    fn default() -> Self {
-        Self {
-            max_upload_size: 500 * 1024 * 1024, // 500 MB
-            upload_timeout: Duration::from_secs(300),
-            // Use relative path for dev-friendly defaults (auto-created if missing)
-            cache_dir: "./data/overlays".to_string(),
-            cache_max_size: 50 * 1024 * 1024 * 1024, // 50 GB
-            tile_size: 256,
-            max_jobs: 2,
         }
     }
 }
@@ -262,36 +225,6 @@ impl Config {
             }
         }
 
-        // Overlay config
-        if let Ok(val) = env::var("OVERLAY_MAX_SIZE_MB") {
-            if let Ok(mb) = val.parse::<usize>() {
-                config.overlay.max_upload_size = mb * 1024 * 1024;
-            }
-        }
-        if let Ok(val) = env::var("OVERLAY_UPLOAD_TIMEOUT_SECS") {
-            if let Ok(secs) = val.parse::<u64>() {
-                config.overlay.upload_timeout = Duration::from_secs(secs);
-            }
-        }
-        if let Ok(path) = env::var("OVERLAY_CACHE_DIR") {
-            config.overlay.cache_dir = path;
-        }
-        if let Ok(val) = env::var("OVERLAY_CACHE_MAX_GB") {
-            if let Ok(gb) = val.parse::<usize>() {
-                config.overlay.cache_max_size = gb * 1024 * 1024 * 1024;
-            }
-        }
-        if let Ok(val) = env::var("TILE_SIZE") {
-            if let Ok(size) = val.parse() {
-                config.overlay.tile_size = size;
-            }
-        }
-        if let Ok(val) = env::var("OVERLAY_MAX_JOBS") {
-            if let Ok(jobs) = val.parse() {
-                config.overlay.max_jobs = jobs;
-            }
-        }
-
         // Presence config
         if let Ok(val) = env::var("CURSOR_BROADCAST_HZ") {
             if let Ok(hz) = val.parse() {
@@ -311,11 +244,6 @@ impl Config {
         if let Ok(id) = env::var("DEMO_SLIDE_ID") {
             if !id.is_empty() {
                 config.demo.slide_id = Some(id);
-            }
-        }
-        if let Ok(path) = env::var("DEMO_OVERLAY_PATH") {
-            if !path.is_empty() {
-                config.demo.overlay_path = Some(path);
             }
         }
 

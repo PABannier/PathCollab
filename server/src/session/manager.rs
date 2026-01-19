@@ -1,6 +1,4 @@
-use crate::protocol::{
-    LayerVisibility, Participant, ParticipantRole, SessionSnapshot, SlideInfo, Viewport,
-};
+use crate::protocol::{Participant, ParticipantRole, SessionSnapshot, SlideInfo, Viewport};
 use crate::session::state::{
     Session, SessionConfig, SessionId, SessionParticipant, SessionState, generate_participant_name,
     generate_secret, generate_session_id, get_participant_color, now_millis,
@@ -115,7 +113,6 @@ impl SessionManager {
             presenter_id,
             participants,
             slide,
-            layer_visibility: LayerVisibility::default(),
             presenter_viewport: Viewport {
                 center_x: 0.5,
                 center_y: 0.5,
@@ -273,24 +270,6 @@ impl SessionManager {
         Ok(session.rev)
     }
 
-    /// Update layer visibility
-    pub async fn update_layer_visibility(
-        &self,
-        session_id: &str,
-        visibility: LayerVisibility,
-    ) -> Result<u64, SessionError> {
-        let mut sessions = self.sessions.write().await;
-
-        let session = sessions
-            .get_mut(session_id)
-            .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
-
-        session.layer_visibility = visibility;
-        session.rev += 1;
-
-        Ok(session.rev)
-    }
-
     /// Change the slide for a session (presenter only)
     pub async fn change_slide(
         &self,
@@ -443,7 +422,6 @@ impl Clone for Session {
             presenter_id: self.presenter_id,
             participants: self.participants.clone(),
             slide: self.slide.clone(),
-            layer_visibility: self.layer_visibility.clone(),
             presenter_viewport: self.presenter_viewport.clone(),
         }
     }
@@ -476,7 +454,6 @@ fn create_session_snapshot(session: &Session) -> SessionSnapshot {
         slide: session.slide.clone(),
         presenter,
         followers,
-        layer_visibility: session.layer_visibility.clone(),
         presenter_viewport: session.presenter_viewport.clone(),
     }
 }
