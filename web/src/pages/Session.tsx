@@ -102,7 +102,6 @@ export function Session() {
     sessionSlide: session?.slide,
     defaultSlide,
     isWaitingForSession,
-    isLoadingDefaultSlide,
   })
 
   // Share URL management

@@ -20,8 +20,6 @@ export interface UseSlideInfoOptions {
   defaultSlide: DefaultSlide | null
   /** Whether we're waiting for session to be created */
   isWaitingForSession: boolean
-  /** Whether default slide is still loading */
-  isLoadingDefaultSlide: boolean
 }
 
 /**
@@ -37,7 +35,6 @@ export function useSlideInfo({
   sessionSlide,
   defaultSlide,
   isWaitingForSession,
-  isLoadingDefaultSlide,
 }: UseSlideInfoOptions): SlideInfo | null {
   return useMemo((): SlideInfo | null => {
     // 1. Use session slide if available
@@ -74,7 +71,7 @@ export function useSlideInfo({
       }
     }
 
-    // 4. Show loading state while fetching default slide, or null if no slides available
+    // 4. No slide available
     return null
-  }, [sessionSlide, defaultSlide, isWaitingForSession, isLoadingDefaultSlide])
+  }, [sessionSlide, defaultSlide, isWaitingForSession])
 }

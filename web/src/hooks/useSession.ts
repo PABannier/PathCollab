@@ -187,19 +187,20 @@ export function useSession({
           const removed = (message.removed || []) as string[]
 
           setCursors((prev) => {
+            // Use a Map for O(1) lookups instead of O(n) findIndex in a loop
+            const cursorMap = new Map(prev.map((c) => [c.participant_id, c]))
+
             // Remove cursors for removed participants
-            let next = prev.filter((c) => !removed.includes(c.participant_id))
+            for (const id of removed) {
+              cursorMap.delete(id)
+            }
+
             // Update or add changed cursors
             for (const cursor of changed) {
-              const idx = next.findIndex((c) => c.participant_id === cursor.participant_id)
-              if (idx >= 0) {
-                // Create new array to avoid mutation
-                next = [...next.slice(0, idx), cursor, ...next.slice(idx + 1)]
-              } else {
-                next = [...next, cursor]
-              }
+              cursorMap.set(cursor.participant_id, cursor)
             }
-            return next
+
+            return Array.from(cursorMap.values())
           })
           break
         }

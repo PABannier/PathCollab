@@ -2,4 +2,7 @@ export { SessionFooter, type SessionFooterProps } from './SessionFooter'
 export { SlideSelector, type SlideSelectorProps } from './SlideSelector'
 export { ShareLinkSection, type ShareLinkSectionProps } from './ShareLinkSection'
 export { ActiveUsersList, type ActiveUsersListProps } from './ActiveUsersList'
-export { SessionConnectionStatus, type SessionConnectionStatusProps } from './SessionConnectionStatus'
+export {
+  SessionConnectionStatus,
+  type SessionConnectionStatusProps,
+} from './SessionConnectionStatus'
