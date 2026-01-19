@@ -4,7 +4,6 @@
 //! where the presenter sends 30Hz cursor updates and 10Hz viewport updates.
 //! All followers should receive broadcasts with P99 < 100ms for cursors.
 
-#![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 
 use super::super::client::{ClientEvent, LoadTestClient, ServerMessage, spawn_update_client};
@@ -133,12 +132,8 @@ impl FanOutScenario {
                                     .await;
                             }
                             Ok(None) => {}
-                            Err(e) => {
-                                let _ = follower_tx
-                                    .send(ClientEvent::Error {
-                                        message: e.to_string(),
-                                    })
-                                    .await;
+                            Err(_) => {
+                                let _ = follower_tx.send(ClientEvent::Error).await;
                             }
                         }
                     }
@@ -166,10 +161,7 @@ impl FanOutScenario {
         while collect_start.elapsed() < collect_duration {
             match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    ClientEvent::MessageSent {
-                        seq: _,
-                        msg_type: _,
-                    } => {
+                    ClientEvent::MessageSent => {
                         messages_sent.fetch_add(1, Ordering::SeqCst);
                     }
                     ClientEvent::MessageReceived { latency, msg_type } => {
@@ -183,7 +175,7 @@ impl FanOutScenario {
                             }
                         }
                     }
-                    ClientEvent::Error { message: _ } => {
+                    ClientEvent::Error => {
                         connection_errors.fetch_add(1, Ordering::SeqCst);
                     }
                 },

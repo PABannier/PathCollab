@@ -4,7 +4,6 @@
 //! that PathCollab can handle activity spikes with 20 followers
 //! per session at 30Hz cursor + 10Hz viewport updates.
 
-#![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 
 pub mod client;
@@ -24,9 +23,6 @@ pub mod budgets {
 
     /// Maximum acceptable message handling time
     pub const MESSAGE_HANDLING_MAX: Duration = Duration::from_millis(10);
-
-    /// Maximum memory per session (bytes)
-    pub const MEMORY_PER_SESSION_MAX: usize = 1024 * 1024; // 1MB
 }
 
 /// Load test configuration
@@ -102,20 +98,6 @@ impl LatencyStats {
     /// Calculate P99
     pub fn p99(&self) -> Option<Duration> {
         self.percentile(99.0)
-    }
-
-    /// Calculate mean latency
-    pub fn mean(&self) -> Option<Duration> {
-        if self.samples.is_empty() {
-            return None;
-        }
-        let sum: Duration = self.samples.iter().sum();
-        Some(sum / self.samples.len() as u32)
-    }
-
-    /// Get total sample count
-    pub fn count(&self) -> usize {
-        self.samples.len()
     }
 }
 

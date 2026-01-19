@@ -52,7 +52,6 @@ pub fn generate_secret(bits: usize) -> String {
 
 /// Session state
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Variants used when session management is fully integrated
 pub enum SessionState {
     Active,
     PresenterDisconnected { disconnect_at: u64 },
@@ -89,7 +88,6 @@ pub struct Session {
 
 /// Participant within a session (extended data)
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Used when session management is fully integrated
 pub struct SessionParticipant {
     pub id: Uuid,
     pub name: String,
@@ -103,7 +101,6 @@ pub struct SessionParticipant {
 }
 
 impl SessionParticipant {
-    #[allow(dead_code)] // Used when session management is fully integrated
     pub fn to_participant(&self) -> Participant {
         Participant {
             id: self.id,
@@ -116,7 +113,6 @@ impl SessionParticipant {
 }
 
 /// Session configuration
-#[allow(dead_code)] // Used when session management is fully integrated
 pub struct SessionConfig {
     pub max_duration: Duration,
     pub presenter_grace_period: Duration,
@@ -134,7 +130,6 @@ impl Default for SessionConfig {
 }
 
 /// Validation rules
-#[allow(dead_code)] // Used in tests and when validation is fully integrated
 pub fn validate_session_id(id: &str) -> bool {
     if id.len() != SESSION_ID_LENGTH {
         return false;
@@ -143,7 +138,6 @@ pub fn validate_session_id(id: &str) -> bool {
 }
 
 /// Get current timestamp in milliseconds
-#[allow(dead_code)] // Used when session management is fully integrated
 pub fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -152,19 +146,16 @@ pub fn now_millis() -> u64 {
 }
 
 /// Random name generation for participants
-#[allow(dead_code)] // Used when session management is fully integrated
 const ADJECTIVES: &[&str] = &[
     "Swift", "Bright", "Calm", "Deft", "Eager", "Fair", "Gentle", "Happy", "Keen", "Lively",
     "Merry", "Noble", "Polite", "Quick", "Serene", "Tidy", "Vivid", "Warm", "Zesty", "Bold",
 ];
 
-#[allow(dead_code)] // Used when session management is fully integrated
 const ANIMALS: &[&str] = &[
     "Falcon", "Otter", "Panda", "Robin", "Tiger", "Whale", "Zebra", "Koala", "Eagle", "Dolphin",
     "Fox", "Owl", "Wolf", "Bear", "Hawk", "Seal", "Crane", "Deer", "Lynx", "Swan",
 ];
 
-#[allow(dead_code)] // Used when session management is fully integrated
 pub fn generate_participant_name() -> String {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
@@ -181,7 +172,6 @@ pub fn generate_participant_name() -> String {
 }
 
 /// Participant color palette (12 visually distinct colors)
-#[allow(dead_code)] // Used when session management is fully integrated
 const PARTICIPANT_COLORS: &[&str] = &[
     "#3B82F6", // Blue
     "#EF4444", // Red
@@ -197,7 +187,6 @@ const PARTICIPANT_COLORS: &[&str] = &[
     "#84CC16", // Lime
 ];
 
-#[allow(dead_code)] // Used when session management is fully integrated
 pub fn get_participant_color(index: usize) -> &'static str {
     PARTICIPANT_COLORS[index % PARTICIPANT_COLORS.len()]
 }

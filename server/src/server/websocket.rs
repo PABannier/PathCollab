@@ -19,7 +19,6 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 /// Connection state for a single client
-#[allow(dead_code)] // Fields used when session management is fully integrated
 pub struct Connection {
     pub id: Uuid,
     pub session_id: Option<String>,
@@ -130,7 +129,6 @@ impl Default for AppState {
 }
 
 /// Configuration for WebSocket connections
-#[allow(dead_code)] // Fields used when configuration is fully integrated
 pub struct WsConfig {
     pub ping_interval: Duration,
     pub ping_timeout: Duration,
