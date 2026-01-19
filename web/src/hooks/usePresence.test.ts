@@ -1,15 +1,5 @@
 /**
  * usePresence Hook Tests
- *
- * Tests for Phase 2 (Collaboration MVP) requirements from IMPLEMENTATION_PLAN.md.
- * Tests are written against the SPECIFICATION, not the implementation.
- * If a test fails, the implementation has a bug (not the test).
- *
- * Phase 2 Requirements Tested:
- * - Cursor tracking at 30Hz (Week 3, Day 1-2)
- * - Coordinate conversion (slide to screen and back)
- * - Throttled updates
- * - Start/stop tracking lifecycle
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -39,10 +29,6 @@ describe('usePresence', () => {
     vi.useRealTimers()
   })
 
-  /**
-   * Phase 2 spec: Default cursor update rate is 30Hz
-   * Reference: IMPLEMENTATION_PLAN.md Week 3, Day 1-2
-   */
   it('defaults to 30Hz cursor update rate', () => {
     const onCursorUpdate = vi.fn()
 
@@ -82,10 +68,6 @@ describe('usePresence', () => {
     })
   })
 
-  /**
-   * Phase 2 spec: Custom cursor update rate can be specified
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (configurable)
-   */
   it('respects custom cursorUpdateHz setting', () => {
     const onCursorUpdate = vi.fn()
 
@@ -123,10 +105,6 @@ describe('usePresence', () => {
     })
   })
 
-  /**
-   * Phase 2 spec: Cursor updates are throttled
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (performance)
-   */
   it('throttles cursor updates to configured rate', () => {
     const onCursorUpdate = vi.fn()
 
@@ -162,10 +140,6 @@ describe('usePresence', () => {
     })
   })
 
-  /**
-   * Phase 2 spec: Cursor position is latest when update is sent
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   it('sends latest cursor position on each update', () => {
     const onCursorUpdate = vi.fn()
 
@@ -210,10 +184,6 @@ describe('usePresence', () => {
     })
   })
 
-  /**
-   * Phase 2 spec: Tracking can be started and stopped
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   it('start/stop tracking lifecycle works correctly', () => {
     const onCursorUpdate = vi.fn()
 
@@ -254,10 +224,6 @@ describe('usePresence', () => {
     expect(onCursorUpdate).not.toHaveBeenCalled()
   })
 
-  /**
-   * Phase 2 spec: No updates sent when disabled
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   it('does not send updates when enabled is false', () => {
     const onCursorUpdate = vi.fn()
 
@@ -294,10 +260,6 @@ describe('usePresence', () => {
     })
   })
 
-  /**
-   * Phase 2 spec: Cleanup on unmount
-   * Reference: IMPLEMENTATION_PLAN.md (memory management)
-   */
   it('cleans up interval on unmount', () => {
     const onCursorUpdate = vi.fn()
 
@@ -327,10 +289,6 @@ describe('usePresence', () => {
 })
 
 describe('usePresence coordinate conversion', () => {
-  /**
-   * Phase 2 spec: Convert client coords to slide coords
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (coordinate systems)
-   */
   it('converts center of viewport to center of slide', () => {
     const { result } = renderHook(() =>
       usePresence({
@@ -351,10 +309,6 @@ describe('usePresence coordinate conversion', () => {
     expect(coords!.y).toBeCloseTo(5000, 0)
   })
 
-  /**
-   * Phase 2 spec: Zoom affects coordinate calculation
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   it('accounts for zoom level in coordinate conversion', () => {
     const { result } = renderHook(() =>
       usePresence({
@@ -377,10 +331,6 @@ describe('usePresence coordinate conversion', () => {
     expect(leftCoords!.x).toBeCloseTo(2500, 0)
   })
 
-  /**
-   * Phase 2 spec: Viewport offset affects coordinate calculation
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   it('accounts for viewport center offset', () => {
     const { result } = renderHook(() =>
       usePresence({
@@ -403,10 +353,6 @@ describe('usePresence coordinate conversion', () => {
     expect(coords!.y).toBeCloseTo(7500, 0)
   })
 
-  /**
-   * Phase 2 spec: Coordinates clamped to slide bounds
-   * Reference: IMPLEMENTATION_PLAN.md (edge handling)
-   */
   it('clamps coordinates to slide bounds', () => {
     const { result } = renderHook(() =>
       usePresence({
@@ -431,10 +377,6 @@ describe('usePresence coordinate conversion', () => {
     expect(coords!.y).toBeLessThanOrEqual(10000)
   })
 
-  /**
-   * Phase 2 spec: Returns null for invalid inputs
-   * Reference: IMPLEMENTATION_PLAN.md (error handling)
-   */
   it('returns null for invalid viewer bounds', () => {
     const { result } = renderHook(() =>
       usePresence({
@@ -451,10 +393,6 @@ describe('usePresence coordinate conversion', () => {
     ).toBeNull()
   })
 
-  /**
-   * Phase 2 spec: Returns null for zero zoom
-   * Reference: IMPLEMENTATION_PLAN.md (edge cases)
-   */
   it('returns null for zero or negative zoom', () => {
     const { result } = renderHook(() =>
       usePresence({
@@ -482,10 +420,6 @@ describe('usePresence coordinate conversion', () => {
     ).toBeNull()
   })
 
-  /**
-   * Phase 2 spec: Aspect ratio handled in conversion
-   * Reference: IMPLEMENTATION_PLAN.md (slide dimensions)
-   */
   it('handles non-square aspect ratios', () => {
     const { result } = renderHook(() =>
       usePresence({

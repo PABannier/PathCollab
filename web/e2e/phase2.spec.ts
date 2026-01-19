@@ -1,15 +1,3 @@
-/**
- * End-to-End Tests for Phase 2 (Collaboration MVP)
- *
- * Tests for multi-user collaboration features from IMPLEMENTATION_PLAN.md.
- * These tests verify Phase 2 requirements:
- * - Week 3: Presence System (cursor tracking, viewport sync)
- * - Week 4: Robustness (reconnection, participant management, UI polish)
- *
- * Note: Multi-browser tests require the real server to be running.
- * Run with: bunx playwright test e2e/phase2.spec.ts
- */
-
 import { test, expect } from '@playwright/test'
 import { setupVerboseLogging, logStep } from './logging'
 
@@ -51,15 +39,7 @@ async function joinSession(page: Page, shareUrl: string): Promise<void> {
   await expect(viewer).toBeVisible({ timeout: 15000 })
 }
 
-// ============================================================================
-// Phase 2: Presence System Tests (Week 3)
-// ============================================================================
-
 test.describe('Phase 2: Connection Status', () => {
-  /**
-   * Phase 2 spec: Connection status indicator shows connected
-   * Reference: IMPLEMENTATION_PLAN.md Week 4, Day 3-4
-   */
   test('should show connected status when session is active', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'connection-status')
 
@@ -80,10 +60,6 @@ test.describe('Phase 2: Connection Status', () => {
 })
 
 test.describe('Phase 2: Participant Management', () => {
-  /**
-   * Phase 2 spec: Participant count shown
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('should show participant count', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'participant-count')
 
@@ -102,10 +78,6 @@ test.describe('Phase 2: Participant Management', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: Presenter badge shown
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('should show presenter badge for session creator', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'presenter-badge')
 
@@ -125,10 +97,6 @@ test.describe('Phase 2: Participant Management', () => {
 })
 
 test.describe('Phase 2: Share Functionality', () => {
-  /**
-   * Phase 2 spec: Share URL is generated
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('should generate share URL', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'share-url')
 
@@ -148,10 +116,6 @@ test.describe('Phase 2: Share Functionality', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: Copy button works
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('should have working copy button', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'copy-button')
 
@@ -174,10 +138,6 @@ test.describe('Phase 2: Share Functionality', () => {
 })
 
 test.describe('Phase 2: Viewport Controls', () => {
-  /**
-   * Phase 2 spec: Follow presenter button available
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   test('should not show follow button for presenter', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'follow-button-presenter')
 
@@ -196,10 +156,6 @@ test.describe('Phase 2: Viewport Controls', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: Snap to presenter shortcut
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (Ctrl+F)
-   */
   test('should have snap to presenter keyboard shortcut', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'snap-shortcut')
 
@@ -223,16 +179,7 @@ test.describe('Phase 2: Viewport Controls', () => {
   })
 })
 
-// ============================================================================
-// Phase 2: Robustness Tests (Week 4)
-// Note: Basic error recovery tests are in phase1.spec.ts
-// ============================================================================
-
 test.describe('Phase 2: Debug Panel', () => {
-  /**
-   * Phase 2 spec: Debug panel shows session info
-   * Reference: IMPLEMENTATION_PLAN.md (development)
-   */
   test('should show debug panel with session info', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'debug-panel')
 
@@ -264,10 +211,6 @@ test.describe('Phase 2: Debug Panel', () => {
 // ============================================================================
 
 test.describe('Phase 2: Multi-User Collaboration', () => {
-  /**
-   * Phase 2 spec: Follower can join presenter session
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   test('follower should be able to join session via share link', async ({ browser }) => {
     // Create two browser contexts to simulate presenter and follower
     const presenterContext = await browser.newContext()
@@ -308,10 +251,6 @@ test.describe('Phase 2: Multi-User Collaboration', () => {
     }
   })
 
-  /**
-   * Phase 2 spec: Session survives follower disconnect
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
   test('session should survive follower disconnect', async ({ browser }) => {
     const presenterContext = await browser.newContext()
     const followerContext = await browser.newContext()
@@ -359,10 +298,6 @@ test.describe('Phase 2: Multi-User Collaboration', () => {
 // ============================================================================
 
 test.describe('Phase 2: Performance', () => {
-  /**
-   * Phase 2 spec: Session creation is fast
-   * Reference: IMPLEMENTATION_PLAN.md (performance)
-   */
   test('session creation should complete within 5 seconds', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'perf-session-create')
 
@@ -384,10 +319,6 @@ test.describe('Phase 2: Performance', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: UI remains responsive during collaboration
-   * Reference: IMPLEMENTATION_PLAN.md (performance)
-   */
   test('UI should remain responsive', async ({ page }) => {
     const logger = setupVerboseLogging(page, 'perf-responsive')
 

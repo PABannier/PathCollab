@@ -557,14 +557,6 @@ mod tests {
         assert_eq!(manager.session_count_async().await, 0);
     }
 
-    // ========================================================================
-    // Phase 1 Specification Tests (from IMPLEMENTATION_PLAN.md)
-    // Tests verify requirements, not implementation. Failures indicate bugs.
-    // ========================================================================
-
-    /// Phase 1 spec: Session ID is 10-character base32 (lowercase, avoids ambiguous chars)
-    /// Pattern: /^[a-z2-7]{10}$/
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.1, Appendix C
     #[tokio::test]
     async fn test_session_id_is_10_char_base32() {
         let manager = SessionManager::new();
@@ -607,8 +599,6 @@ mod tests {
         }
     }
 
-    /// Phase 1 spec: join_secret has 128+ bits of entropy
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.6 (JOIN_SECRET_MIN_BITS)
     #[tokio::test]
     async fn test_join_secret_has_128_bits_entropy() {
         let manager = SessionManager::new();
@@ -635,8 +625,6 @@ mod tests {
         );
     }
 
-    /// Phase 1 spec: presenter_key has 192+ bits of entropy
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.6 (PRESENTER_KEY_MIN_BITS)
     #[tokio::test]
     async fn test_presenter_key_has_192_bits_entropy() {
         let manager = SessionManager::new();
@@ -662,8 +650,6 @@ mod tests {
         );
     }
 
-    /// Phase 1 spec: Session expires after 4 hours (SESSION_MAX_DURATION_MS = 14,400,000)
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.6
     #[tokio::test]
     async fn test_session_expires_after_4_hours() {
         let manager = SessionManager::new();
@@ -685,8 +671,6 @@ mod tests {
         );
     }
 
-    /// Phase 1 spec: Max 20 followers per session (MAX_FOLLOWERS = 20)
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.6
     #[tokio::test]
     async fn test_session_rejects_21st_follower() {
         let manager = SessionManager::new();
@@ -716,8 +700,6 @@ mod tests {
         );
     }
 
-    /// Phase 1 spec: Participant colors from 12-color palette
-    /// Reference: IMPLEMENTATION_PLAN.md Appendix A
     #[tokio::test]
     async fn test_participant_colors_from_palette() {
         use crate::session::state::get_participant_color;
@@ -748,8 +730,6 @@ mod tests {
         }
     }
 
-    /// Phase 1 spec: Colors cycle through palette as participants join
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.1
     #[tokio::test]
     async fn test_colors_cycle_through_palette() {
         let manager = SessionManager::new();
@@ -803,8 +783,6 @@ mod tests {
         }
     }
 
-    /// Phase 1 spec: Participant names are adjective + animal format
-    /// Reference: IMPLEMENTATION_PLAN.md Appendix B
     #[tokio::test]
     async fn test_participant_names_adjective_animal_format() {
         use crate::session::state::generate_participant_name;
@@ -849,8 +827,6 @@ mod tests {
         }
     }
 
-    /// Phase 1 spec: Presenter grace period is 30 seconds
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.6 (PRESENTER_GRACE_PERIOD_MS)
     #[tokio::test]
     async fn test_presenter_grace_period_is_30_seconds() {
         let config = SessionConfig::default();
@@ -989,8 +965,6 @@ mod tests {
         );
     }
 
-    /// Phase 1 spec: Session state transitions correctly
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.1
     #[tokio::test]
     async fn test_session_state_transitions() {
         let manager = SessionManager::new();

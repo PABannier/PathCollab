@@ -1,16 +1,5 @@
 /**
  * CursorLayer Component Tests
- *
- * Tests for Phase 2 (Collaboration MVP) requirements from IMPLEMENTATION_PLAN.md.
- * Tests are written against the SPECIFICATION, not the implementation.
- * If a test fails, the implementation has a bug (not the test).
- *
- * Phase 2 Requirements Tested:
- * - Cursor rendering (Week 3, Day 1-2)
- * - Cursor position calculation (slide to screen coords)
- * - Presenter indicator (star symbol)
- * - Current user cursor filtered out
- * - Cursors outside viewport not shown
  */
 
 import { describe, it, expect } from 'vitest'
@@ -55,10 +44,6 @@ const testCursors = [
 ]
 
 describe('CursorLayer', () => {
-  /**
-   * Phase 2 spec: Cursors are rendered for remote participants
-   * Reference: IMPLEMENTATION_PLAN.md Week 3, Day 1-2
-   */
   it('renders cursor SVG elements for each participant', () => {
     const { container } = render(
       <CursorLayer
@@ -83,10 +68,6 @@ describe('CursorLayer', () => {
     expect(cursors.length).toBeGreaterThanOrEqual(2)
   })
 
-  /**
-   * Phase 2 spec: Participant names shown with cursor
-   * Reference: IMPLEMENTATION_PLAN.md Week 3, Day 1-2
-   */
   it('shows participant names next to cursors', () => {
     render(
       <CursorLayer
@@ -103,10 +84,6 @@ describe('CursorLayer', () => {
     expect(screen.getByText('Bob')).toBeTruthy()
   })
 
-  /**
-   * Phase 2 spec: Presenter cursor has special indicator
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (presenter identification)
-   */
   it('shows presenter indicator (star) for presenter cursor', () => {
     render(
       <CursorLayer
@@ -125,10 +102,6 @@ describe('CursorLayer', () => {
     expect(bobText.textContent).not.toContain('★')
   })
 
-  /**
-   * Phase 2 spec: Current user's cursor not shown
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
   it('filters out current user cursor', () => {
     render(
       <CursorLayer
@@ -147,10 +120,6 @@ describe('CursorLayer', () => {
     expect(screen.getByText('Bob')).toBeTruthy()
   })
 
-  /**
-   * Phase 2 spec: Cursors use participant color
-   * Reference: IMPLEMENTATION_PLAN.md Section 4.4
-   */
   it('uses participant color for cursor styling', () => {
     const { container } = render(
       <CursorLayer
@@ -168,10 +137,6 @@ describe('CursorLayer', () => {
     expect(path?.getAttribute('fill')).toBe('#10B981')
   })
 
-  /**
-   * Phase 2 spec: Cursors outside viewport not rendered
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (performance)
-   */
   it('does not render cursors outside viewport', () => {
     const outsideCursor = {
       participant_id: 'user-3',
@@ -199,10 +164,6 @@ describe('CursorLayer', () => {
     expect(screen.queryByText('Charlie')).toBeNull()
   })
 
-  /**
-   * Phase 2 spec: Returns null when no viewer bounds
-   * Reference: IMPLEMENTATION_PLAN.md (graceful handling)
-   */
   it('returns null when viewerBounds is null', () => {
     const { container } = render(
       <CursorLayer
@@ -217,10 +178,6 @@ describe('CursorLayer', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  /**
-   * Phase 2 spec: Handles empty cursors array
-   * Reference: IMPLEMENTATION_PLAN.md (no participants)
-   */
   it('renders empty SVG with no cursors', () => {
     const { container } = render(
       <CursorLayer
@@ -238,10 +195,6 @@ describe('CursorLayer', () => {
     expect(svg?.children.length).toBe(0)
   })
 
-  /**
-   * Phase 2 spec: Invalid zoom handled gracefully
-   * Reference: IMPLEMENTATION_PLAN.md (edge cases)
-   */
   it('handles zero or negative zoom gracefully', () => {
     const { container } = render(
       <CursorLayer
@@ -261,10 +214,6 @@ describe('CursorLayer', () => {
 })
 
 describe('CursorLayer coordinate calculations', () => {
-  /**
-   * Phase 2 spec: Cursor at center of viewport is centered on screen
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (coordinate systems)
-   */
   it('positions cursor at center when in center of viewport', () => {
     const centerCursor = {
       participant_id: 'user-1',
@@ -307,10 +256,6 @@ describe('CursorLayer coordinate calculations', () => {
     }
   })
 
-  /**
-   * Phase 2 spec: Cursor position updates with viewport zoom
-   * Reference: IMPLEMENTATION_PLAN.md Week 3 (zoom affects visible cursors)
-   */
   it('cursor visible at different zoom levels', () => {
     const cursor = {
       participant_id: 'user-1',
@@ -349,10 +294,6 @@ describe('CursorLayer coordinate calculations', () => {
     expect(screen.getByText('Test')).toBeTruthy()
   })
 
-  /**
-   * Phase 2 spec: Aspect ratio preserved in coordinate calculation
-   * Reference: IMPLEMENTATION_PLAN.md (slide dimensions)
-   */
   it('handles non-square aspect ratios correctly', () => {
     const cursor = {
       participant_id: 'user-1',
