@@ -60,7 +60,20 @@ impl LocalSlideService {
     }
 
     /// Scan the slides directory for slide files
-    fn scan_slides(&self) -> Vec<(String, PathBuf)> {
+    async fn scan_slides_cached(&self) -> Vec<(String, PathBuf)> {
+        // Check if we have a valid cached list
+        if let Some(cached) = self.cache.get_slide_list().await {
+            return cached;
+        }
+
+        // Scan directory and cache the result
+        let slides = self.scan_slides_inner();
+        self.cache.set_slide_list(slides.clone()).await;
+        slides
+    }
+
+    /// Scan the slides directory for slide files (internal, synchronous)
+    fn scan_slides_inner(&self) -> Vec<(String, PathBuf)> {
         let mut slides = Vec::new();
 
         let entries = match std::fs::read_dir(&self.slides_dir) {
@@ -103,9 +116,8 @@ impl LocalSlideService {
     }
 
     /// Find slide path by ID
-    fn find_slide_path(&self, id: &str) -> Option<PathBuf> {
-        // Scan and find matching ID
-        for (slide_id, path) in self.scan_slides() {
+    async fn find_slide_path(&self, id: &str) -> Option<PathBuf> {
+        for (slide_id, path) in self.scan_slides_cached().await {
             if slide_id == id {
                 return Some(path);
             }
@@ -255,96 +267,120 @@ impl LocalSlideService {
     }
 
     /// Read a tile from the slide and encode as JPEG
+    ///
+    /// This operation is CPU-bound (image decoding/encoding) and involves blocking I/O
+    /// (OpenSlide file reads), so we run it in spawn_blocking to avoid starving the
+    /// async executor.
     async fn read_tile_jpeg(
         &self,
-        slide: &OpenSlide,
+        slide: std::sync::Arc<OpenSlide>,
         metadata: &SlideMetadata,
         level: u32,
         x: u32,
         y: u32,
     ) -> Result<Vec<u8>, SlideError> {
         let (os_level, x_l0, y_l0, read_w, read_h, scale_factor, target_w, target_h) =
-            self.dzi_to_openslide_params(slide, metadata, level, x, y)?;
+            self.dzi_to_openslide_params(&slide, metadata, level, x, y)?;
 
         debug!(
             "Reading tile: level={}, x={}, y={} -> os_level={}, pos=({},{}), read={}x{}, target={}x{}, scale={}",
             level, x, y, os_level, x_l0, y_l0, read_w, read_h, target_w, target_h, scale_factor
         );
 
-        // Read the region from OpenSlide
-        let read_start = Instant::now();
-        let region = Region {
-            address: Address { x: x_l0, y: y_l0 },
-            level: os_level,
-            size: Size {
-                w: read_w,
-                h: read_h,
-            },
-        };
+        // Clone values needed for the blocking task
+        let jpeg_quality = self.jpeg_quality;
 
-        let rgba_image: RgbaImage = slide.read_image_rgba(&region).map_err(|e| {
-            SlideError::TileError(format!(
-                "Failed to read region at level {} ({},{}): {}",
-                level, x, y, e
-            ))
-        })?;
-        histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "read")
-            .record(read_start.elapsed());
+        // Run the blocking I/O and CPU-intensive work in spawn_blocking
+        let result = tokio::task::spawn_blocking(move || {
+            // Read the region from OpenSlide
+            let read_start = Instant::now();
+            let region = Region {
+                address: Address { x: x_l0, y: y_l0 },
+                level: os_level,
+                size: Size {
+                    w: read_w,
+                    h: read_h,
+                },
+            };
 
-        // Resize if we need to scale down
-        let final_image = if scale_factor > 1.001 {
-            let resize_start = Instant::now();
-            let resized = image::imageops::resize(
-                &rgba_image,
-                target_w,
-                target_h,
-                image::imageops::FilterType::Lanczos3,
-            );
-            histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "resize")
-                .record(resize_start.elapsed());
-            resized
-        } else {
-            rgba_image
-        };
+            let rgba_image: RgbaImage = slide.read_image_rgba(&region).map_err(|e| {
+                SlideError::TileError(format!(
+                    "Failed to read region at level {} ({},{}): {}",
+                    level, x, y, e
+                ))
+            })?;
+            histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "read")
+                .record(read_start.elapsed());
 
-        // Encode to JPEG
-        let encode_start = Instant::now();
-        let result = self.encode_jpeg(&final_image);
-        histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "encode")
-            .record(encode_start.elapsed());
+            // Resize if we need to scale down
+            let final_image = if scale_factor > 1.001 {
+                let resize_start = Instant::now();
+                let resized = image::imageops::resize(
+                    &rgba_image,
+                    target_w,
+                    target_h,
+                    image::imageops::FilterType::Lanczos3,
+                );
+                histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "resize")
+                    .record(resize_start.elapsed());
+                resized
+            } else {
+                rgba_image
+            };
 
-        result
+            // Encode to JPEG
+            let encode_start = Instant::now();
+            let result = encode_jpeg_inner(&final_image, jpeg_quality);
+            histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "encode")
+                .record(encode_start.elapsed());
+
+            result
+        })
+        .await
+        .map_err(|e| SlideError::TileError(format!("Task join error: {}", e)))??;
+
+        Ok(result)
+    }
+}
+
+/// Encode RGBA image to JPEG
+///
+/// Converts RGBA to RGB without cloning the entire image - we only allocate
+/// the RGB buffer needed for JPEG encoding.
+fn encode_jpeg_inner(rgba: &RgbaImage, jpeg_quality: u8) -> Result<Vec<u8>, SlideError> {
+    let (width, height) = rgba.dimensions();
+
+    // Convert RGBA to RGB without cloning - preallocate exact size needed
+    // Each pixel: 4 bytes RGBA -> 3 bytes RGB
+    let rgba_raw = rgba.as_raw();
+    let mut rgb_data: Vec<u8> = Vec::with_capacity((width * height * 3) as usize);
+
+    // Copy RGB channels, skipping alpha (every 4th byte)
+    for chunk in rgba_raw.chunks_exact(4) {
+        rgb_data.push(chunk[0]); // R
+        rgb_data.push(chunk[1]); // G
+        rgb_data.push(chunk[2]); // B
+        // Skip chunk[3] (alpha)
     }
 
-    /// Encode RGBA image to JPEG
-    fn encode_jpeg(&self, rgba: &RgbaImage) -> Result<Vec<u8>, SlideError> {
-        // Convert RGBA to RGB (JPEG doesn't support alpha)
-        let rgb = image::DynamicImage::ImageRgba8(rgba.clone()).into_rgb8();
+    let mut buffer = Vec::new();
+    let encoder = JpegEncoder::new_with_quality(&mut buffer, jpeg_quality);
+    encoder
+        .write_image(&rgb_data, width, height, image::ExtendedColorType::Rgb8)
+        .map_err(|e| SlideError::TileError(format!("JPEG encoding failed: {}", e)))?;
 
-        let mut buffer = Vec::new();
-        let encoder = JpegEncoder::new_with_quality(&mut buffer, self.jpeg_quality);
-        encoder
-            .write_image(
-                rgb.as_raw(),
-                rgb.width(),
-                rgb.height(),
-                image::ExtendedColorType::Rgb8,
-            )
-            .map_err(|e| SlideError::TileError(format!("JPEG encoding failed: {}", e)))?;
-
-        Ok(buffer)
-    }
+    Ok(buffer)
 }
 
 #[async_trait]
 impl SlideService for LocalSlideService {
     async fn list_slides(&self) -> Result<Vec<SlideMetadata>, SlideError> {
-        let slides = self.scan_slides();
+        let slides = self.scan_slides_cached().await;
         let mut metadata_list = Vec::new();
 
         for (id, path) in slides {
             // Check cache first
-            if let Some(meta) = self.cache.get_metadata(&id).await {
+            if let Some(meta) = self.cache.get_metadata(&id) {
                 metadata_list.push(meta);
                 continue;
             }
@@ -353,7 +389,7 @@ impl SlideService for LocalSlideService {
             match self.cache.get_or_open(&id, &path).await {
                 Ok(slide) => {
                     let meta = self.extract_metadata(&id, &path, &slide);
-                    self.cache.set_metadata(&id, meta.clone()).await;
+                    self.cache.set_metadata(&id, meta.clone());
                     metadata_list.push(meta);
                 }
                 Err(e) => {
@@ -368,19 +404,20 @@ impl SlideService for LocalSlideService {
 
     async fn get_slide(&self, id: &str) -> Result<SlideMetadata, SlideError> {
         // Check cache first
-        if let Some(meta) = self.cache.get_metadata(id).await {
+        if let Some(meta) = self.cache.get_metadata(id) {
             return Ok(meta);
         }
 
         // Find the slide path
         let path = self
             .find_slide_path(id)
+            .await
             .ok_or_else(|| SlideError::NotFound(id.to_string()))?;
 
         // Open and extract metadata
         let slide = self.cache.get_or_open(id, &path).await?;
         let meta = self.extract_metadata(id, &path, &slide);
-        self.cache.set_metadata(id, meta.clone()).await;
+        self.cache.set_metadata(id, meta.clone());
 
         Ok(meta)
     }
@@ -420,7 +457,7 @@ impl SlideService for LocalSlideService {
 
         // Read and encode the tile
         let result = self
-            .read_tile_jpeg(&slide, &metadata, request.level, request.x, request.y)
+            .read_tile_jpeg(slide, &metadata, request.level, request.x, request.y)
             .await;
 
         // Record overall tile latency
