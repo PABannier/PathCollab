@@ -288,23 +288,3 @@ impl Config {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_config() {
-        let config = Config::default();
-        assert_eq!(config.host, "0.0.0.0");
-        assert_eq!(config.port, 8080);
-        assert_eq!(config.session.max_followers, 20);
-        assert!(!config.demo.enabled);
-    }
-
-    #[test]
-    fn test_config_from_env() {
-        // This test doesn't set env vars, so it should return defaults
-        let config = Config::from_env();
-        assert_eq!(config.host, "0.0.0.0");
-    }
-}

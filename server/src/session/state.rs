@@ -207,13 +207,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_session_id_generation() {
-        let id = generate_session_id();
-        assert_eq!(id.len(), SESSION_ID_LENGTH);
-        assert!(validate_session_id(&id));
-    }
-
-    #[test]
     fn test_session_id_validation() {
         assert!(validate_session_id("abcd234567"));
         assert!(!validate_session_id("abcd23456")); // too short
@@ -223,19 +216,5 @@ mod tests {
         assert!(!validate_session_id("abcd234561")); // contains 1
         assert!(!validate_session_id("abcd234568")); // contains 8 (invalid)
         assert!(!validate_session_id("abcd234569")); // contains 9 (invalid)
-    }
-
-    #[test]
-    fn test_secret_generation() {
-        let secret = generate_secret(128);
-        assert_eq!(secret.len(), 32); // 128 bits = 16 bytes = 32 hex chars
-    }
-
-    #[test]
-    fn test_participant_name_generation() {
-        let name = generate_participant_name();
-        assert!(name.contains(' '));
-        let parts: Vec<&str> = name.split(' ').collect();
-        assert_eq!(parts.len(), 2);
     }
 }

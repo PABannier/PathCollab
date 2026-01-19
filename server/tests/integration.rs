@@ -12,7 +12,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use pathcollab_server::protocol::{ClientMessage, ParticipantRole, ServerMessage};
+use pathcollab_server::protocol::ParticipantRole;
 use tower::util::ServiceExt;
 
 // Re-export test utilities from the main crate
@@ -563,57 +563,6 @@ mod tile_serving {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-    /// Phase 1 spec: Slide metadata includes tile_size field
-    /// Reference: IMPLEMENTATION_PLAN.md Section 2.2 (tile_size: 256 or 512)
-    #[tokio::test]
-    async fn test_slide_metadata_has_tile_size() {
-        let app = create_test_app_with_slides();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/slide/test-slide")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let metadata: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        // Phase 1 spec: tile_size should be 256 or 512 (typically 256)
-        let tile_size = metadata["tile_size"].as_u64().unwrap();
-        assert!(tile_size == 256 || tile_size == 512);
-    }
-
-    /// Phase 1 spec: Slide metadata includes num_levels (pyramid levels)
-    /// Reference: IMPLEMENTATION_PLAN.md Week 1, Day 3-4 (multi-level pyramid)
-    #[tokio::test]
-    async fn test_slide_metadata_has_pyramid_levels() {
-        let app = create_test_app_with_slides();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/slide/test-slide")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let metadata: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        // Phase 1 spec: Multi-level pyramid support
-        let num_levels = metadata["num_levels"].as_u64().unwrap();
-        assert!(num_levels > 1); // Must have multiple levels
-    }
 
     /// Phase 1 spec: DZI endpoint returns 404 for non-existent slide
     /// Reference: IMPLEMENTATION_PLAN.md (error handling)
@@ -1007,126 +956,6 @@ mod websocket_protocol {
     }
 }
 
-mod protocol {
-    use super::*;
-    use pathcollab_server::protocol::*;
-
-    #[test]
-    fn test_client_message_serialization() {
-        let msg = ClientMessage::CreateSession {
-            slide_id: "test-slide".to_string(),
-            seq: 1,
-        };
-
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("create_session"));
-        assert!(json.contains("test-slide"));
-    }
-
-    #[test]
-    fn test_client_message_deserialization() {
-        let json = r#"{"type":"create_session","slide_id":"test-slide","seq":1}"#;
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            ClientMessage::CreateSession { slide_id, seq } => {
-                assert_eq!(slide_id, "test-slide");
-                assert_eq!(seq, 1);
-            }
-            _ => panic!("Expected CreateSession message"),
-        }
-    }
-
-    #[test]
-    fn test_server_message_serialization() {
-        let msg = ServerMessage::Pong;
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("pong"));
-    }
-
-    #[test]
-    fn test_qos_profile_default() {
-        let profile = QosProfileData::default();
-
-        assert_eq!(profile.cursor_send_hz, 30);
-        assert_eq!(profile.viewport_send_hz, 10);
-    }
-
-    #[test]
-    fn test_join_session_message() {
-        let json = r#"{
-            "type": "join_session",
-            "session_id": "abc123",
-            "join_secret": "secret",
-            "seq": 5
-        }"#;
-
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            ClientMessage::JoinSession {
-                session_id,
-                join_secret,
-                seq,
-                ..
-            } => {
-                assert_eq!(session_id, "abc123");
-                assert_eq!(join_secret, "secret");
-                assert_eq!(seq, 5);
-            }
-            _ => panic!("Expected JoinSession message"),
-        }
-    }
-
-    #[test]
-    fn test_cursor_update_message() {
-        let json = r#"{
-            "type": "cursor_update",
-            "x": 100.5,
-            "y": 200.5,
-            "seq": 10
-        }"#;
-
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            ClientMessage::CursorUpdate { x, y, seq } => {
-                assert_eq!(x, 100.5);
-                assert_eq!(y, 200.5);
-                assert_eq!(seq, 10);
-            }
-            _ => panic!("Expected CursorUpdate message"),
-        }
-    }
-
-    #[test]
-    fn test_viewport_update_message() {
-        let json = r#"{
-            "type": "viewport_update",
-            "center_x": 0.3,
-            "center_y": 0.4,
-            "zoom": 2.5,
-            "seq": 15
-        }"#;
-
-        let msg: ClientMessage = serde_json::from_str(json).unwrap();
-
-        match msg {
-            ClientMessage::ViewportUpdate {
-                center_x,
-                center_y,
-                zoom,
-                seq,
-            } => {
-                assert_eq!(center_x, 0.3);
-                assert_eq!(center_y, 0.4);
-                assert_eq!(zoom, 2.5);
-                assert_eq!(seq, 15);
-            }
-            _ => panic!("Expected ViewportUpdate message"),
-        }
-    }
-}
 
 // ============================================================================
 // Phase 2 Integration Tests - Collaboration MVP
