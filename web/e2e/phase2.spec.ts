@@ -78,28 +78,6 @@ test.describe('Phase 2: Connection Status', () => {
     logger.end()
   })
 
-  /**
-   * Phase 2 spec: Solo mode indicator when not in session
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
-  test('should show solo mode indicator when viewing without session', async ({ page }) => {
-    const logger = setupVerboseLogging(page, 'solo-mode')
-
-    await logStep(page, logger, 1, 'Navigate to viewer directly')
-    await page.goto(`${BASE_URL}/s/demo`)
-
-    await logStep(page, logger, 2, 'Wait for viewer')
-    const viewer = page.locator('.openseadragon-container')
-    await expect(viewer).toBeVisible({ timeout: 15000 })
-
-    await logStep(page, logger, 3, 'Check for solo mode')
-    // Look for purple indicator or "Solo Mode" text
-    // soloIndicator check is for documentation - may or may not be present depending on implementation
-    const _soloIndicator = page.locator('.bg-purple-500')
-    void _soloIndicator // Suppress unused warning - documents expected behavior
-
-    logger.end()
-  })
 })
 
 test.describe('Phase 2: Participant Management', () => {
@@ -246,79 +224,10 @@ test.describe('Phase 2: Viewport Controls', () => {
   })
 })
 
-test.describe('Phase 2: Minimap', () => {
-  /**
-   * Phase 2 spec: Minimap shows in bottom-right
-   * Reference: IMPLEMENTATION_PLAN.md Week 1, Day 5
-   */
-  test('should show minimap in viewer', async ({ page }) => {
-    const logger = setupVerboseLogging(page, 'minimap')
-
-    await logStep(page, logger, 1, 'Navigate to viewer')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
-
-    await logStep(page, logger, 2, 'Wait for viewer')
-    const viewer = page.locator('.openseadragon-container')
-    await expect(viewer).toBeVisible({ timeout: 15000 })
-
-    await logStep(page, logger, 3, 'Check for minimap')
-    // Minimap is typically a navigator element
-    // Minimap check is for documentation - may or may not be visible depending on implementation
-    const _minimap = page.locator('.openseadragon-navigator')
-    void _minimap // Suppress unused warning - documents expected behavior
-
-    logger.end()
-  })
-})
-
 // ============================================================================
 // Phase 2: Robustness Tests (Week 4)
+// Note: Basic error recovery tests are in phase1.spec.ts
 // ============================================================================
-
-test.describe('Phase 2: Error Recovery', () => {
-  /**
-   * Phase 2 spec: Graceful handling of invalid session
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
-  test('should handle invalid session ID gracefully', async ({ page }) => {
-    const logger = setupVerboseLogging(page, 'invalid-session')
-
-    await logStep(page, logger, 1, 'Navigate to non-existent session')
-    await page.goto(`${BASE_URL}/s/nonexistent123#join=invalidsecret`)
-
-    await logStep(page, logger, 2, 'Wait for error handling')
-    await page.waitForTimeout(3000)
-
-    await logStep(page, logger, 3, 'Verify page is still functional')
-    // Page should not crash - should show error or fallback to solo mode
-    const pageContent = await page.content()
-    expect(pageContent).toBeTruthy()
-
-    logger.end()
-  })
-
-  /**
-   * Phase 2 spec: Invalid join secret handled
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
-  test('should handle invalid join secret gracefully', async ({ page }) => {
-    const logger = setupVerboseLogging(page, 'invalid-secret')
-
-    await logStep(page, logger, 1, 'Navigate with invalid secret')
-    // Use a valid session ID format but invalid secret
-    await page.goto(`${BASE_URL}/s/abcdefghij#join=wrongsecret`)
-
-    await logStep(page, logger, 2, 'Wait for error handling')
-    await page.waitForTimeout(3000)
-
-    await logStep(page, logger, 3, 'Verify graceful degradation')
-    // Should show error or fall back to solo mode
-    const pageContent = await page.content()
-    expect(pageContent).toBeTruthy()
-
-    logger.end()
-  })
-})
 
 test.describe('Phase 2: Debug Panel', () => {
   /**
@@ -391,46 +300,6 @@ test.describe('Phase 2: Multi-User Collaboration', () => {
       // Follower should not see "Presenter" badge
       const presenterBadge = followerPage.locator('.bg-blue-600:has-text("Presenter")')
       await expect(presenterBadge).not.toBeVisible({ timeout: 2000 })
-
-      presenterLogger.end()
-      followerLogger.end()
-    } finally {
-      await presenterContext.close()
-      await followerContext.close()
-    }
-  })
-
-  /**
-   * Phase 2 spec: Follower sees follow button
-   * Reference: IMPLEMENTATION_PLAN.md Week 3
-   */
-  test('follower should have follow presenter option', async ({ browser }) => {
-    const presenterContext = await browser.newContext()
-    const followerContext = await browser.newContext()
-
-    const presenterPage = await presenterContext.newPage()
-    const followerPage = await followerContext.newPage()
-
-    const presenterLogger = setupVerboseLogging(presenterPage, 'follow-option-presenter')
-    const followerLogger = setupVerboseLogging(followerPage, 'follow-option-follower')
-
-    try {
-      await logStep(presenterPage, presenterLogger, 1, 'Create session')
-      const shareUrl = await createSession(presenterPage)
-
-      await logStep(followerPage, followerLogger, 2, 'Join session')
-      await joinSession(followerPage, shareUrl)
-
-      await logStep(followerPage, followerLogger, 3, 'Look for follow option')
-      // Follower should have a way to follow presenter
-      // This could be a button, checkbox, or automatic behavior
-      // Wait for session state to stabilize
-      await followerPage.waitForTimeout(2000)
-
-      // Check for some follow-related UI element
-      // Document expected behavior - element may or may not be present
-      const _followElement = followerPage.locator('text=/[Ff]ollow/')
-      void _followElement // Suppress unused warning - documents expected behavior
 
       presenterLogger.end()
       followerLogger.end()

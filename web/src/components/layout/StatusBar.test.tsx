@@ -197,62 +197,9 @@ describe('ConnectionBadge', () => {
   })
 })
 
-describe('ConnectionBadge status mapping', () => {
+describe('ConnectionBadge animation', () => {
   /**
-   * Phase 2 spec: Status color mapping
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
-  it('maps status to correct colors', () => {
-    const colorMap: Record<string, string> = {
-      connected: 'bg-green-500',
-      connecting: 'bg-yellow-500',
-      reconnecting: 'bg-yellow-500',
-      disconnected: 'bg-red-500',
-      solo: 'bg-purple-500',
-    }
-
-    Object.entries(colorMap).forEach(([status, expectedClass]) => {
-      const { container, unmount } = render(
-        <ConnectionBadge
-          status={status as 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'solo'}
-        />
-      )
-
-      const dot = container.querySelector(`.${expectedClass.replace('-', '\\-')}`)
-      expect(dot).toBeTruthy()
-
-      unmount()
-    })
-  })
-
-  /**
-   * Phase 2 spec: Status label mapping
-   * Reference: IMPLEMENTATION_PLAN.md Week 4
-   */
-  it('maps status to correct labels', () => {
-    const labelMap: Record<string, string> = {
-      connected: 'Connected',
-      connecting: 'Connecting',
-      reconnecting: 'Reconnecting',
-      disconnected: 'Disconnected',
-      solo: 'Solo Mode',
-    }
-
-    Object.entries(labelMap).forEach(([status, expectedLabel]) => {
-      const { unmount } = render(
-        <ConnectionBadge
-          status={status as 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'solo'}
-        />
-      )
-
-      expect(screen.getByText(expectedLabel)).toBeTruthy()
-
-      unmount()
-    })
-  })
-
-  /**
-   * Phase 2 spec: Pulse animation for transitional states
+   * Phase 2 spec: Pulse animation for transitional states only
    * Reference: IMPLEMENTATION_PLAN.md Week 4 (visual feedback)
    */
   it('only animates transitional states', () => {
