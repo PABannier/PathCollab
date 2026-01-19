@@ -43,8 +43,6 @@ metrics-exporter-prometheus = "0.16"
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"
-criterion = { version = "0.5", features = ["html_reports"] }
-rand = "0.8"
 
 [build-dependencies]
 prost-build = "0.13"
