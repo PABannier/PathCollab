@@ -61,35 +61,7 @@ server/benches/                  # Criterion micro-benchmarks
 
 ## Running Benchmarks
 
-### 1. Micro-benchmarks (Criterion)
-
-Isolated benchmarks for CPU-intensive functions:
-
-```bash
-cd server
-
-# Run all micro-benchmarks
-cargo bench
-
-# Run specific benchmark
-cargo bench --bench tile_encoding
-
-# Quick mode (fewer iterations)
-cargo bench -- --quick
-
-# Generate HTML report
-cargo bench
-# Open target/criterion/report/index.html
-```
-
-**What's benchmarked:**
-- JPEG encoding at various quality levels
-- Image resizing with different filter types
-- RGBA to RGB conversion
-- R-tree spatial queries
-- JSON message serialization
-
-### 2. HTTP Tile Load Tests
+### 1. HTTP Tile Load Tests
 
 Stress test the tile serving endpoint:
 
@@ -114,7 +86,7 @@ Stress test the tile serving endpoint:
     --step 10
 ```
 
-### 3. WebSocket Load Tests
+### 2. WebSocket Load Tests
 
 Test session broadcasting under load:
 
@@ -131,7 +103,7 @@ cargo test --test perf_tests test_fanout_standard --release -- --ignored --nocap
 cargo test --test perf_tests test_fanout_extended --release -- --ignored --nocapture
 ```
 
-### 4. Combined Load Test
+### 3. Combined Load Test
 
 Simulate realistic production load with both HTTP and WebSocket traffic:
 
@@ -143,7 +115,7 @@ Simulate realistic production load with both HTTP and WebSocket traffic:
     --duration 30
 ```
 
-### 5. Full Benchmark Suite
+### 4. Full Benchmark Suite
 
 Run everything with a single command:
 
@@ -328,29 +300,6 @@ Check that:
 3. Sufficient file descriptors (`ulimit -n`)
 
 ## Adding New Benchmarks
-
-### New Criterion Benchmark
-
-1. Create file in `server/benches/`:
-```rust
-use criterion::{criterion_group, criterion_main, Criterion};
-
-fn my_benchmark(c: &mut Criterion) {
-    c.bench_function("my_function", |b| {
-        b.iter(|| my_function())
-    });
-}
-
-criterion_group!(benches, my_benchmark);
-criterion_main!(benches);
-```
-
-2. Add to `server/Cargo.toml`:
-```toml
-[[bench]]
-name = "my_benchmark"
-harness = false
-```
 
 ### New Load Test Scenario
 

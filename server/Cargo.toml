@@ -48,15 +48,3 @@ rand = "0.8"
 
 [build-dependencies]
 prost-build = "0.13"
-
-[[bench]]
-name = "tile_encoding"
-harness = false
-
-[[bench]]
-name = "spatial_index"
-harness = false
-
-[[bench]]
-name = "message_serialization"
-harness = false

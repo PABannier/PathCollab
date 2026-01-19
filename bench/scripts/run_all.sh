@@ -192,37 +192,12 @@ done
 log_success "Warmup complete"
 
 # Track overall results
-MICRO_PASSED=true
 LOAD_PASSED=true
 WS_PASSED=true
 
-# Phase 1: Criterion micro-benchmarks
-if [[ "$SKIP_MICRO" != "true" ]]; then
-    log_header "Phase 1: Criterion Micro-Benchmarks"
-
-    cd "$PROJECT_ROOT/server"
-
-    if [[ "$QUICK_MODE" == "true" ]]; then
-        # Quick mode: only run a subset
-        log_info "Running quick micro-benchmarks (tile encoding only)..."
-        cargo bench --bench tile_encoding -- --quick 2>&1 | tee "$RUN_DIR/micro_benchmarks.txt" || MICRO_PASSED=false
-    else
-        log_info "Running all micro-benchmarks..."
-        cargo bench 2>&1 | tee "$RUN_DIR/micro_benchmarks.txt" || MICRO_PASSED=false
-    fi
-
-    if [[ "$MICRO_PASSED" == "true" ]]; then
-        log_success "Micro-benchmarks complete"
-    else
-        log_warn "Micro-benchmarks had issues (continuing)"
-    fi
-else
-    log_info "Skipping micro-benchmarks (--skip-micro)"
-fi
-
-# Phase 2: HTTP load tests
+# Phase 1: HTTP load tests
 if [[ "$SKIP_LOAD" != "true" ]]; then
-    log_header "Phase 2: HTTP Load Tests"
+    log_header "Phase 1: HTTP Load Tests"
 
     cd "$PROJECT_ROOT"
 
@@ -255,9 +230,9 @@ else
     log_info "Skipping HTTP load tests (--skip-load)"
 fi
 
-# Phase 3: WebSocket load tests
+# Phase 2: WebSocket load tests
 if [[ "$SKIP_WEBSOCKET" != "true" ]]; then
-    log_header "Phase 3: WebSocket Load Tests"
+    log_header "Phase 2: WebSocket Load Tests"
 
     cd "$PROJECT_ROOT/server"
 
@@ -277,16 +252,16 @@ else
     log_info "Skipping WebSocket load tests (--skip-websocket)"
 fi
 
-# Phase 4: Collect metrics
-log_header "Phase 4: Collecting Metrics"
+# Phase 3: Collect metrics
+log_header "Phase 3: Collecting Metrics"
 
 log_info "Fetching server metrics..."
 curl -sf "$SERVER_URL/metrics" > "$RUN_DIR/server_metrics.json" 2>/dev/null || true
 curl -sf "$SERVER_URL/metrics/prometheus" > "$RUN_DIR/prometheus_metrics.txt" 2>/dev/null || true
 log_success "Metrics collected"
 
-# Phase 5: Generate report
-log_header "Phase 5: Generating Report"
+# Phase 4: Generate report
+log_header "Phase 4: Generating Report"
 
 python3 "$BENCH_DIR/scripts/generate_report.py" \
     --input-dir "$RUN_DIR" \
@@ -296,9 +271,9 @@ if [[ -f "$RUN_DIR/REPORT.md" ]]; then
     log_success "Report generated: $RUN_DIR/REPORT.md"
 fi
 
-# Phase 6: Baseline comparison (if requested)
+# Phase 5: Baseline comparison (if requested)
 if [[ "$COMPARE_BASELINE" == "true" ]] && [[ -f "$RUN_DIR/tile_stress.json" ]]; then
-    log_header "Phase 6: Baseline Comparison"
+    log_header "Phase 5: Baseline Comparison"
 
     BASELINE_FILE="$BENCH_DIR/baselines/tile_baseline.json"
 
@@ -332,7 +307,6 @@ log_header "Summary"
 echo "Results saved to: $RUN_DIR"
 echo ""
 echo "Test Results:"
-echo "  Micro-benchmarks: $([ "$MICRO_PASSED" == "true" ] && echo "✅ PASS" || echo "⚠️  ISSUES")"
 echo "  HTTP load tests:  $([ "$LOAD_PASSED" == "true" ] && echo "✅ PASS" || echo "❌ FAIL")"
 echo "  WebSocket tests:  $([ "$WS_PASSED" == "true" ] && echo "✅ PASS" || echo "⚠️  ISSUES")"
 echo ""
