@@ -19,7 +19,6 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
-    protobuf-compiler \
     libopenslide-dev \
     libclang-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -27,7 +26,6 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock* ./
 COPY server/Cargo.toml ./server/
 COPY server/build.rs ./server/
-COPY server/proto ./server/proto
 
 # Create dummy source files to cache dependencies
 RUN mkdir -p server/src \
