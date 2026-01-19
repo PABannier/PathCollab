@@ -1,0 +1,27 @@
+{
+    "hooks": {
+      "PostToolUse": [
+        {
+          "matcher": "Write|Edit",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "cargo fmt"
+            },
+            {
+              "type": "command",
+              "command": "cargo clippy --all-targets --all-features -- -Dwarnings"
+            },
+            {
+                "type": "command",
+                "command": "jq -r '.tool_input.file_path' | { read file_path; if echo \"$file_path\" | grep -q '\\.ts$'; then bun run lint --fix \"$file_path\"; fi; }"
+            },
+            {
+                "type": "command",
+                "command": "jq -r '.tool_input.file_path' | { read file_path; if echo \"$file_path\" | grep -q '\\.tsx$'; then bun run lint --fix \"$file_path\"; fi; }"
+            }
+          ]
+        }
+      ]
+    }
+  }
