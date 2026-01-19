@@ -42,5 +42,14 @@ metrics-exporter-prometheus = "0.16"
 indexmap = "2"
 dashmap = "6"
 
+# Protobuf parsing for overlays
+prost = "0.13"
+
+# Spatial indexing for region queries
+rstar = "0.12"
+
+[build-dependencies]
+prost-build = "0.13"
+
 [dev-dependencies]
 tokio-tungstenite = "0.26"
