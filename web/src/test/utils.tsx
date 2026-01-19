@@ -323,14 +323,6 @@ export function createMockFile(
   return new File([blob], name, { type })
 }
 
-/**
- * Create a mock protobuf file for testing uploads
- */
-export function createMockProtobufFile(sizeBytes = 1024): File {
-  const content = new ArrayBuffer(sizeBytes)
-  return createMockFile('test-overlay.pb', content, 'application/octet-stream')
-}
-
 // ============================================================================
 // Timer Helpers
 // ============================================================================

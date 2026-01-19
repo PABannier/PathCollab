@@ -1,4 +1,3 @@
-use crate::overlay::routes::OverlayStore;
 use crate::protocol::{ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport};
 use crate::session::manager::{SessionError, SessionManager};
 use crate::slide::SlideService;
@@ -46,7 +45,6 @@ pub struct AppState {
     pub connections: ConnectionRegistry,
     pub session_manager: Arc<SessionManager>,
     pub session_broadcasters: SessionBroadcasters,
-    pub overlay_store: OverlayStore,
     pub slide_service: Option<Arc<dyn SlideService>>,
     /// Public base URL for link generation (e.g., "https://pathcollab.example.com")
     pub public_base_url: Option<String>,
@@ -58,7 +56,6 @@ impl AppState {
             connections: Arc::new(RwLock::new(HashMap::new())),
             session_manager: Arc::new(SessionManager::new()),
             session_broadcasters: Arc::new(RwLock::new(HashMap::new())),
-            overlay_store: crate::overlay::routes::new_overlay_store(),
             slide_service: None,
             public_base_url: None,
         }
@@ -859,57 +856,6 @@ async fn handle_client_message(
                         })
                         .await;
                 }
-            }
-        }
-        ClientMessage::LayerUpdate { visibility, seq } => {
-            let (session_id, is_presenter) = {
-                let connections = state.connections.read().await;
-                let conn = connections.get(&connection_id);
-                (
-                    conn.and_then(|c| c.session_id.clone()),
-                    conn.is_some_and(|c| c.is_presenter),
-                )
-            };
-
-            if !is_presenter {
-                let _ = tx
-                    .send(ServerMessage::Ack {
-                        ack_seq: seq,
-                        status: crate::protocol::AckStatus::Rejected,
-                        reason: Some("Only presenter can update layers".to_string()),
-                    })
-                    .await;
-                return;
-            }
-
-            if let Some(session_id) = session_id {
-                if let Err(e) = state
-                    .session_manager
-                    .update_layer_visibility(&session_id, visibility.clone())
-                    .await
-                {
-                    let _ = tx
-                        .send(ServerMessage::Ack {
-                            ack_seq: seq,
-                            status: crate::protocol::AckStatus::Rejected,
-                            reason: Some(e.to_string()),
-                        })
-                        .await;
-                    return;
-                }
-
-                // Broadcast layer state to all participants
-                state
-                    .broadcast_to_session(&session_id, ServerMessage::LayerState { visibility })
-                    .await;
-
-                let _ = tx
-                    .send(ServerMessage::Ack {
-                        ack_seq: seq,
-                        status: crate::protocol::AckStatus::Ok,
-                        reason: None,
-                    })
-                    .await;
             }
         }
         ClientMessage::SnapToPresenter { seq } => {

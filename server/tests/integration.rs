@@ -25,7 +25,6 @@ use common::*;
 
 mod http_routes {
     use super::*;
-    use uuid::Uuid;
 
     #[tokio::test]
     async fn test_health_endpoint_returns_ok() {
@@ -50,168 +49,6 @@ mod http_routes {
 
         assert_eq!(json["status"], "ok");
         assert!(json["version"].is_string());
-    }
-
-    #[tokio::test]
-    async fn test_overlay_upload_requires_valid_session() {
-        let app = create_test_app();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/overlay/upload?session_id=nonexistent")
-                    .header("Content-Type", "application/octet-stream")
-                    .body(Body::from(vec![0u8; 100]))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        // Should return 404 for non-existent session
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn test_overlay_upload_requires_presenter_key() {
-        let (app, state) = create_test_app_with_state();
-        let (session, _, _) = state
-            .session_manager
-            .create_session(create_test_slide_info(), Uuid::new_v4())
-            .await
-            .unwrap();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!("/api/overlay/upload?session_id={}", session.id))
-                    .header("Content-Type", "application/octet-stream")
-                    .body(Body::from(vec![0u8; 10]))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn test_overlay_upload_rejects_invalid_presenter_key() {
-        let (app, state) = create_test_app_with_state();
-        let (session, _, _) = state
-            .session_manager
-            .create_session(create_test_slide_info(), Uuid::new_v4())
-            .await
-            .unwrap();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!("/api/overlay/upload?session_id={}", session.id))
-                    .header("Content-Type", "application/octet-stream")
-                    .header("x-presenter-key", "invalid")
-                    .body(Body::from(vec![0u8; 10]))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn test_overlay_upload_accepts_presenter_key() {
-        let (app, state) = create_test_app_with_state();
-        let (session, _, presenter_key) = state
-            .session_manager
-            .create_session(create_test_slide_info(), Uuid::new_v4())
-            .await
-            .unwrap();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(format!("/api/overlay/upload?session_id={}", session.id))
-                    .header("Content-Type", "application/octet-stream")
-                    .header("x-presenter-key", presenter_key)
-                    .body(Body::from(vec![0u8; 10]))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn test_overlay_manifest_not_found() {
-        let app = create_test_app();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/overlay/nonexistent/manifest")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn test_raster_tile_not_found() {
-        let app = create_test_app();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/overlay/nonexistent/raster/0/0/0")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn test_vector_chunk_not_found() {
-        let app = create_test_app();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/overlay/nonexistent/vec/0/0/0")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn test_viewport_query_not_found() {
-        let app = create_test_app();
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/overlay/nonexistent/query?min_x=0&min_y=0&max_x=100&max_y=100")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
 
@@ -370,39 +207,6 @@ mod session_management {
         // Verify revision incremented
         let updated_snapshot = manager.get_session(&session.id).await.unwrap();
         assert_eq!(updated_snapshot.rev, initial_rev + 1);
-    }
-
-    #[tokio::test]
-    async fn test_layer_visibility_update() {
-        let manager = SessionManager::new();
-        let presenter_id = Uuid::new_v4();
-
-        // Create session
-        let (session, _, _) = manager
-            .create_session(create_test_slide_info(), presenter_id)
-            .await
-            .unwrap();
-
-        // Update layer visibility
-        let new_visibility = pathcollab_server::protocol::LayerVisibility {
-            tissue_heatmap_visible: false,
-            tissue_heatmap_opacity: 0.8,
-            tissue_classes_visible: vec![0, 1, 2],
-            cell_polygons_visible: true,
-            cell_polygons_opacity: 0.6,
-            cell_classes_visible: vec![0, 1, 2, 3, 4],
-            cell_hover_enabled: false,
-        };
-
-        manager
-            .update_layer_visibility(&session.id, new_visibility.clone())
-            .await
-            .unwrap();
-
-        // Verify update
-        let snapshot = manager.get_session(&session.id).await.unwrap();
-        assert!(!snapshot.layer_visibility.tissue_heatmap_visible);
-        assert!(!snapshot.layer_visibility.cell_hover_enabled);
     }
 
     #[tokio::test]
@@ -1241,22 +1045,11 @@ mod protocol {
     }
 
     #[test]
-    fn test_layer_visibility_default() {
-        let visibility = LayerVisibility::default();
-
-        assert!(visibility.tissue_heatmap_visible);
-        assert!(visibility.cell_polygons_visible);
-        assert!(visibility.cell_hover_enabled);
-        assert_eq!(visibility.tissue_heatmap_opacity, 0.5);
-    }
-
-    #[test]
     fn test_qos_profile_default() {
         let profile = QosProfileData::default();
 
         assert_eq!(profile.cursor_send_hz, 30);
         assert_eq!(profile.viewport_send_hz, 10);
-        assert_eq!(profile.overlay_batch_kb, 256);
     }
 
     #[test]
@@ -2173,109 +1966,6 @@ mod phase2_robustness {
 
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         (addr, handle)
-    }
-
-    /// Phase 2 spec: Layer updates only from presenter
-    /// Reference: IMPLEMENTATION_PLAN.md (presenter-only actions)
-    #[tokio::test]
-    async fn test_layer_update_presenter_only() {
-        use futures_util::{SinkExt, StreamExt};
-        use pathcollab_server::protocol::{AckStatus, LayerVisibility};
-
-        let (addr, server_handle) = start_test_server().await;
-        let ws_url = format!("ws://{}/ws", addr);
-
-        // Create session
-        let (mut presenter, _) = connect_async(&ws_url).await.unwrap();
-        presenter
-            .send(Message::Text(
-                serde_json::to_string(&ClientMessage::CreateSession {
-                    slide_id: "test-slide".to_string(),
-                    seq: 1,
-                })
-                .unwrap()
-                .into(),
-            ))
-            .await
-            .unwrap();
-
-        let mut session_id = String::new();
-        let mut join_secret = String::new();
-        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while let Some(msg) = presenter.next().await {
-                if let Ok(Message::Text(text)) = msg {
-                    if let Ok(ServerMessage::SessionCreated {
-                        session,
-                        join_secret: js,
-                        ..
-                    }) = serde_json::from_str(&text)
-                    {
-                        session_id = session.id;
-                        join_secret = js;
-                        break;
-                    }
-                }
-            }
-        });
-        let _ = timeout.await;
-
-        // Follower joins
-        let (mut follower, _) = connect_async(&ws_url).await.unwrap();
-        follower
-            .send(Message::Text(
-                serde_json::to_string(&ClientMessage::JoinSession {
-                    session_id: session_id.clone(),
-                    join_secret: join_secret.clone(),
-                    last_seen_rev: None,
-                    seq: 1,
-                })
-                .unwrap()
-                .into(),
-            ))
-            .await
-            .unwrap();
-
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-        // Follower tries to update layers (should be rejected)
-        let layer_msg = ClientMessage::LayerUpdate {
-            visibility: LayerVisibility::default(),
-            seq: 2,
-        };
-        follower
-            .send(Message::Text(
-                serde_json::to_string(&layer_msg).unwrap().into(),
-            ))
-            .await
-            .unwrap();
-
-        // Should receive rejected ack
-        let mut rejected = false;
-        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while let Some(msg) = follower.next().await {
-                if let Ok(Message::Text(text)) = msg {
-                    if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
-                        if let ServerMessage::Ack {
-                            ack_seq,
-                            status,
-                            reason,
-                        } = server_msg
-                        {
-                            if ack_seq == 2 && status == AckStatus::Rejected {
-                                assert!(reason.is_some());
-                                rejected = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        let _ = timeout.await;
-
-        assert!(rejected, "Follower's layer update should be rejected");
-
-        server_handle.abort();
     }
 
     /// Phase 2 spec: Session survives participant reconnection

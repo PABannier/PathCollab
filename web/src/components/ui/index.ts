@@ -10,7 +10,6 @@ export {
 } from './EmptyState'
 export { FollowModeIndicator } from './FollowModeIndicator'
 export { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
-export { LayerControls, type LayerControlsProps, type ClassInfo } from './LayerControls'
 export { NetworkErrorBanner } from './NetworkErrorBanner'
 export { ReturnToPresenterButton } from './ReturnToPresenterButton'
 export { Toggle } from './Toggle'

@@ -35,7 +35,6 @@ export interface SessionSnapshot {
   slide: SlideInfo
   presenter: Participant
   followers: Participant[]
-  layer_visibility: LayerVisibility
   presenter_viewport: Viewport
 }
 
@@ -62,16 +61,6 @@ export interface Viewport {
   center_y: number
   zoom: number
   timestamp: number
-}
-
-export interface LayerVisibility {
-  tissue_heatmap_visible: boolean
-  tissue_heatmap_opacity: number
-  tissue_classes_visible: number[]
-  cell_polygons_visible: boolean
-  cell_polygons_opacity: number
-  cell_classes_visible: number[]
-  cell_hover_enabled: boolean
 }
 
 export interface SessionCreatedResponse {

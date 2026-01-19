@@ -7,11 +7,7 @@ import {
   ViewportLoader,
 } from '../components/viewer'
 import { CursorLayer } from '../components/viewer/CursorLayer'
-import { OverlayCanvas } from '../components/viewer/OverlayCanvas'
-import { TissueHeatmapLayer } from '../components/viewer/TissueHeatmapLayer'
 import { MinimapOverlay } from '../components/viewer/MinimapOverlay'
-import { CellTooltip } from '../components/viewer/CellTooltip'
-import { OverlayUploader } from '../components/upload/OverlayUploader'
 import { Sidebar, SidebarSection } from '../components/layout'
 import { SessionFooter } from '../components/session'
 import { StatusBar, ConnectionBadge } from '../components/layout'
@@ -19,21 +15,17 @@ import {
   Button,
   FollowModeIndicator,
   KeyboardShortcutsHelp,
-  LayerControls,
   NetworkErrorBanner,
   PresetEmptyState,
   ReturnToPresenterButton,
 } from '../components/ui'
-import { useSession, type OverlayManifest } from '../hooks/useSession'
+import { useSession } from '../hooks/useSession'
 import { usePresence } from '../hooks/usePresence'
 import { useDefaultSlide } from '../hooks/useDefaultSlide'
 import { useAvailableSlides } from '../hooks/useAvailableSlides'
 import { useKeyboardShortcuts, type KeyboardShortcut } from '../hooks/useKeyboardShortcuts'
 import { useShareUrl } from '../hooks/useShareUrl'
-import { useLayerVisibility } from '../hooks/useLayerVisibility'
-import { useOverlayCells } from '../hooks/useOverlayCells'
 import { useViewerViewport } from '../hooks/useViewerViewport'
-import { DEFAULT_CELL_CLASSES, DEFAULT_TISSUE_CLASSES } from '../constants'
 
 // Demo slide configuration - will be replaced with actual data from backend
 const DEMO_SLIDE_BASE: Omit<SlideInfo, 'tileUrlTemplate'> = {
@@ -52,12 +44,7 @@ export function Session() {
   const viewerContainerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<SlideViewerHandle | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notification, setNotification] = useState<string | null>(null)
   const autoCreateRequestedRef = useRef(false)
-
-  // Overlay state (metadata only - cells are fetched by useOverlayCells, visibility by useLayerVisibility)
-  const [overlayId, setOverlayId] = useState<string | null>(null)
-  const [overlayManifest, setOverlayManifest] = useState<OverlayManifest | null>(null)
 
   // Footer cursor position (for displaying coordinates)
   const [footerCursorPos, setFooterCursorPos] = useState<{ x: number; y: number } | null>(null)
@@ -67,6 +54,7 @@ export function Session() {
     const hash = window.location.hash.slice(1)
     return new URLSearchParams(hash)
   }, [])
+
   // Only read secrets from hash fragment (never sent to server) - do NOT use searchParams
   const joinSecret = hashParams.get('join') || undefined
   const presenterKey = hashParams.get('presenter') || undefined
@@ -77,14 +65,6 @@ export function Session() {
 
   // Fetch all available slides for the slide selector
   const { slides: availableSlides } = useAvailableSlides()
-
-  // Handle overlay loaded
-  const handleOverlayLoaded = useCallback((id: string, manifest: OverlayManifest) => {
-    setOverlayId(id)
-    setOverlayManifest(manifest)
-    setNotification(`Overlay loaded: ${id}`)
-    setTimeout(() => setNotification(null), 3000)
-  }, [])
 
   // Handle session creation - update URL to include session ID and secrets
   const handleSessionCreated = useCallback(
@@ -113,7 +93,6 @@ export function Session() {
     createSession,
     updateCursor,
     updateViewport,
-    updateLayerVisibility,
     changeSlide,
     snapToPresenter,
     setIsFollowing,
@@ -123,7 +102,6 @@ export function Session() {
     joinSecret,
     presenterKey,
     onError: setError,
-    onOverlayLoaded: handleOverlayLoaded,
     onSessionCreated: handleSessionCreated,
   })
 
@@ -162,29 +140,6 @@ export function Session() {
     slideParam,
     defaultSlide?.slide_id,
   ])
-
-  // Layer visibility state and handlers
-  const {
-    tissueEnabled,
-    tissueOpacity,
-    visibleTissueClasses,
-    cellsEnabled,
-    cellsOpacity,
-    visibleCellClasses,
-    cellHoverEnabled,
-    layerControlsDisabled,
-    handleTissueEnabledChange,
-    handleTissueOpacityChange,
-    handleVisibleTissueClassesChange,
-    handleCellsEnabledChange,
-    handleCellsOpacityChange,
-    handleVisibleCellClassesChange,
-    handleCellHoverEnabledChange,
-  } = useLayerVisibility({
-    session,
-    isPresenter,
-    updateLayerVisibility,
-  })
 
   // Determine if we're waiting for a session to be created
   // If autoCreateSlideId is set and session is not created yet, we should wait
@@ -280,16 +235,6 @@ export function Session() {
     }
     return () => stopTracking()
   }, [session, startTracking, stopTracking])
-
-  // Fetch overlay cells based on viewport
-  const { overlayCells } = useOverlayCells({
-    overlayId,
-    overlayManifest,
-    cellsEnabled,
-    currentViewport,
-    viewerBounds,
-    slide,
-  })
 
   // Handle mouse move for cursor tracking
   const handleMouseMove = useCallback(
@@ -427,11 +372,6 @@ export function Session() {
             </Button>
           </div>
         </div>
-      )}
-
-      {/* Notification banner */}
-      {notification && (
-        <div className="bg-green-600 px-4 py-2 text-sm text-white">{notification}</div>
       )}
 
       {/* Two-pane layout: Sidebar + Viewer */}
@@ -590,47 +530,6 @@ export function Session() {
             </div>
           )}
 
-          {/* Overlay upload (presenter only) */}
-          {session && isPresenter && !overlayId && (
-            <SidebarSection title="Overlay">
-              <OverlayUploader
-                sessionId={session.id}
-                presenterKey={secrets?.presenterKey ?? presenterKey}
-                onUploadComplete={(id) => {
-                  setOverlayId(id)
-                  setNotification('Overlay uploaded successfully!')
-                  setTimeout(() => setNotification(null), 3000)
-                }}
-                onError={setError}
-              />
-            </SidebarSection>
-          )}
-
-          {/* Layer controls (when overlay is loaded) */}
-          {overlayId && (
-            <SidebarSection title="Layers">
-              <LayerControls
-                tissueEnabled={tissueEnabled}
-                onTissueEnabledChange={handleTissueEnabledChange}
-                tissueOpacity={tissueOpacity}
-                onTissueOpacityChange={handleTissueOpacityChange}
-                tissueClasses={DEFAULT_TISSUE_CLASSES}
-                visibleTissueClasses={visibleTissueClasses}
-                onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
-                cellsEnabled={cellsEnabled}
-                onCellsEnabledChange={handleCellsEnabledChange}
-                cellsOpacity={cellsOpacity}
-                onCellsOpacityChange={handleCellsOpacityChange}
-                cellClasses={DEFAULT_CELL_CLASSES}
-                visibleCellClasses={visibleCellClasses}
-                onVisibleCellClassesChange={handleVisibleCellClassesChange}
-                cellHoverEnabled={cellHoverEnabled}
-                onCellHoverEnabledChange={handleCellHoverEnabledChange}
-                disabled={layerControlsDisabled}
-              />
-            </SidebarSection>
-          )}
-
           {/* About section */}
           <SidebarSection title="About">
             <p className="text-gray-300 leading-relaxed mb-3" style={{ fontSize: '0.875rem' }}>
@@ -682,51 +581,6 @@ export function Session() {
           )}
           {slide && (
             <SlideViewer ref={viewerRef} slide={slide} onViewportChange={handleViewportChange} />
-          )}
-
-          {/* Tissue heatmap overlay */}
-          {viewerBounds && slide && (
-            <TissueHeatmapLayer
-              overlayId={overlayId}
-              viewerBounds={viewerBounds}
-              viewport={currentViewport}
-              slideWidth={slide.width}
-              slideHeight={slide.height}
-              tileSize={overlayManifest?.tile_size ?? 256}
-              levels={overlayManifest?.levels ?? 1}
-              tissueClasses={DEFAULT_TISSUE_CLASSES}
-              visibleClasses={visibleTissueClasses}
-              opacity={tissueOpacity}
-              enabled={tissueEnabled}
-            />
-          )}
-
-          {/* Cell polygon overlay */}
-          {viewerBounds && slide && (
-            <OverlayCanvas
-              cells={overlayCells}
-              viewerBounds={viewerBounds}
-              viewport={currentViewport}
-              slideWidth={slide.width}
-              slideHeight={slide.height}
-              cellClasses={DEFAULT_CELL_CLASSES}
-              visibleClasses={visibleCellClasses}
-              opacity={cellsOpacity}
-              enabled={cellsEnabled && overlayCells.length > 0}
-            />
-          )}
-
-          {/* Cell hover tooltip */}
-          {viewerBounds && slide && overlayCells.length > 0 && (
-            <CellTooltip
-              cells={overlayCells}
-              cellClasses={DEFAULT_CELL_CLASSES}
-              viewerBounds={viewerBounds}
-              viewport={currentViewport}
-              slideWidth={slide.width}
-              slideHeight={slide.height}
-              enabled={cellsEnabled && cellHoverEnabled}
-            />
           )}
 
           {/* Cursor overlay */}

@@ -9,7 +9,7 @@
 // Type Imports
 // ============================================================================
 
-import type { SessionState, Participant, Viewport, LayerVisibility } from '../hooks/useSession'
+import type { SessionState, Participant, Viewport } from '../hooks/useSession'
 
 // ============================================================================
 // Participant Fixtures
@@ -117,29 +117,6 @@ export function createMockSlide(overrides: Partial<SlideInfo> = {}): SlideInfo {
 }
 
 // ============================================================================
-// Layer Visibility Fixtures
-// ============================================================================
-
-export const mockLayerVisibility: LayerVisibility = {
-  tissue_heatmap_visible: true,
-  tissue_heatmap_opacity: 0.5,
-  tissue_classes_visible: [0, 1, 2, 3, 4, 5, 6, 7],
-  cell_polygons_visible: true,
-  cell_polygons_opacity: 0.7,
-  cell_classes_visible: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-  cell_hover_enabled: true,
-}
-
-export function createMockLayerVisibility(
-  overrides: Partial<LayerVisibility> = {}
-): LayerVisibility {
-  return {
-    ...mockLayerVisibility,
-    ...overrides,
-  }
-}
-
-// ============================================================================
 // Session Fixtures
 // ============================================================================
 
@@ -149,7 +126,6 @@ export const mockSession: SessionState = {
   slide: mockSlide,
   presenter: mockPresenter,
   followers: [mockFollower1, mockFollower2],
-  layer_visibility: mockLayerVisibility,
   presenter_viewport: mockViewport,
 }
 
@@ -160,7 +136,6 @@ export function createMockSession(overrides: Partial<SessionState> = {}): Sessio
     slide: createMockSlide(),
     presenter: createMockParticipant({ role: 'presenter' }),
     followers: [],
-    layer_visibility: createMockLayerVisibility(),
     presenter_viewport: createMockViewport(),
     ...overrides,
   }
@@ -210,60 +185,6 @@ export function createMockCursor(
     y: Math.random() * 100000,
     ...overrides,
   }
-}
-
-// ============================================================================
-// Cell/Overlay Fixtures
-// ============================================================================
-
-export interface CellClass {
-  id: number
-  name: string
-  color: string
-}
-
-export const mockCellClasses: CellClass[] = [
-  { id: 0, name: 'Tumor', color: '#DC2626' },
-  { id: 1, name: 'Stroma', color: '#EA580C' },
-  { id: 2, name: 'Immune', color: '#CA8A04' },
-  { id: 3, name: 'Necrosis', color: '#16A34A' },
-  { id: 4, name: 'Other', color: '#0D9488' },
-]
-
-export interface TissueClass {
-  id: number
-  name: string
-  color: string
-}
-
-export const mockTissueClasses: TissueClass[] = [
-  { id: 0, name: 'Tumor', color: '#EF4444' },
-  { id: 1, name: 'Stroma', color: '#F59E0B' },
-  { id: 2, name: 'Necrosis', color: '#6B7280' },
-  { id: 3, name: 'Lymphocytes', color: '#3B82F6' },
-]
-
-export interface CellPolygon {
-  x: number
-  y: number
-  classId: number
-  confidence: number
-  vertices: number[]
-}
-
-export function createMockCell(overrides: Partial<CellPolygon> = {}): CellPolygon {
-  return {
-    x: Math.random() * 100000,
-    y: Math.random() * 100000,
-    classId: Math.floor(Math.random() * 5),
-    confidence: 0.5 + Math.random() * 0.5,
-    vertices: [10, 0, 5, 8, -5, 8, -10, 0, -5, -8, 5, -8], // Hexagon
-    ...overrides,
-  }
-}
-
-export function createMockCells(count: number): CellPolygon[] {
-  return Array.from({ length: count }, () => createMockCell())
 }
 
 // ============================================================================
