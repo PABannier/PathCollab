@@ -44,7 +44,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build
-        run: cargo build --release
+        run: cargo build
 
       - name: Run tests
         run: cargo test --all-targets
@@ -77,7 +77,7 @@ jobs:
           workspaces: server
 
       - name: Build server
-        run: cargo build --release
+        run: cargo build
         working-directory: server
 
       - name: Install frontend dependencies
