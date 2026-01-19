@@ -2,8 +2,6 @@
 
 ## Running the frontend
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
-
 ```bash
 cd ./web && bun run dev --port 3000
 ```
