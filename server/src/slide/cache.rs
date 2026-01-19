@@ -75,12 +75,12 @@ impl SlideCache {
             let mut slides = self.slides.write().await;
 
             // Evict LRU if needed (first item is oldest)
-            if slides.len() >= self.max_size {
-                if let Some((lru_id, _)) = slides.shift_remove_index(0) {
-                    debug!("Evicted slide from cache: {}", lru_id);
-                    // Also remove metadata
-                    self.metadata.remove(&lru_id);
-                }
+            if slides.len() >= self.max_size
+                && let Some((lru_id, _)) = slides.shift_remove_index(0)
+            {
+                debug!("Evicted slide from cache: {}", lru_id);
+                // Also remove metadata
+                self.metadata.remove(&lru_id);
             }
 
             slides.insert(id.to_string(), Arc::clone(&slide));
@@ -116,10 +116,10 @@ impl SlideCache {
     /// Get the cached slide list if still valid, or None if expired/empty
     pub async fn get_slide_list(&self) -> Option<Vec<(String, PathBuf)>> {
         let cache = self.slide_list_cache.read().await;
-        if let Some(ref list_cache) = *cache {
-            if list_cache.cached_at.elapsed() < SLIDE_LIST_CACHE_TTL {
-                return Some(list_cache.slides.clone());
-            }
+        if let Some(ref list_cache) = *cache
+            && list_cache.cached_at.elapsed() < SLIDE_LIST_CACHE_TTL
+        {
+            return Some(list_cache.slides.clone());
         }
         None
     }
