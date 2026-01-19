@@ -549,7 +549,6 @@ mod tile_serving {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-
     /// Phase 1 spec: DZI endpoint returns 404 for non-existent slide
     #[tokio::test]
     async fn test_dzi_nonexistent_slide_returns_404() {
@@ -933,7 +932,6 @@ mod websocket_protocol {
         server_handle.abort();
     }
 }
-
 
 // ============================================================================
 // Phase 2 Integration Tests - Collaboration MVP
