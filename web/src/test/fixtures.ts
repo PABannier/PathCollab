@@ -55,13 +55,38 @@ export function createMockParticipant(overrides: Partial<Participant> = {}): Par
 // ============================================================================
 
 export const mockViewport: Viewport = {
+  centerX: 0.5,
+  centerY: 0.5,
+  zoom: 1.0,
+  timestamp: Date.now(),
+}
+
+export function createMockViewport(overrides: Partial<Viewport> = {}): Viewport {
+  return {
+    centerX: 0.5,
+    centerY: 0.5,
+    zoom: 1.0,
+    timestamp: Date.now(),
+    ...overrides,
+  }
+}
+
+/** Server-side viewport format (snake_case) for simulating raw WebSocket messages */
+export interface ServerViewport {
+  center_x: number
+  center_y: number
+  zoom: number
+  timestamp: number
+}
+
+export const mockServerViewport: ServerViewport = {
   center_x: 0.5,
   center_y: 0.5,
   zoom: 1.0,
   timestamp: Date.now(),
 }
 
-export function createMockViewport(overrides: Partial<Viewport> = {}): Viewport {
+export function createMockServerViewport(overrides: Partial<ServerViewport> = {}): ServerViewport {
   return {
     center_x: 0.5,
     center_y: 0.5,
@@ -119,7 +144,7 @@ export const mockSession: SessionState = {
   slide: mockSlide,
   presenter: mockPresenter,
   followers: [mockFollower1, mockFollower2],
-  presenter_viewport: mockViewport,
+  presenterViewport: mockViewport,
 }
 
 export function createMockSession(overrides: Partial<SessionState> = {}): SessionState {
@@ -129,7 +154,40 @@ export function createMockSession(overrides: Partial<SessionState> = {}): Sessio
     slide: createMockSlide(),
     presenter: createMockParticipant({ role: 'presenter' }),
     followers: [],
-    presenter_viewport: createMockViewport(),
+    presenterViewport: createMockViewport(),
+    ...overrides,
+  }
+}
+
+/** Server-side session format (snake_case viewport) for simulating raw WebSocket messages */
+export interface ServerSessionState {
+  id: string
+  rev: number
+  slide: SlideInfo
+  presenter: Participant
+  followers: Participant[]
+  presenter_viewport: ServerViewport
+}
+
+export const mockServerSession: ServerSessionState = {
+  id: 'k3m9p2qdx7',
+  rev: 1,
+  slide: mockSlide,
+  presenter: mockPresenter,
+  followers: [mockFollower1, mockFollower2],
+  presenter_viewport: mockServerViewport,
+}
+
+export function createMockServerSession(
+  overrides: Partial<ServerSessionState> = {}
+): ServerSessionState {
+  return {
+    id: `${Math.random().toString(36).slice(2, 12)}`,
+    rev: 1,
+    slide: createMockSlide(),
+    presenter: createMockParticipant({ role: 'presenter' }),
+    followers: [],
+    presenter_viewport: createMockServerViewport(),
     ...overrides,
   }
 }
@@ -220,14 +278,14 @@ export function createMockDOMRect(overrides: Partial<DOMRect> = {}): DOMRect {
 
 export const mockSessionCreatedMessage = {
   type: 'session_created' as const,
-  session: mockSession,
+  session: mockServerSession,
   join_secret: 'test-join-secret-128bit',
   presenter_key: 'test-presenter-key-192bit',
 }
 
 export const mockSessionJoinedMessage = {
   type: 'session_joined' as const,
-  session: mockSession,
+  session: mockServerSession,
   you: mockFollower1,
 }
 
@@ -240,5 +298,5 @@ export const mockPresenceDeltaMessage = {
 
 export const mockPresenterViewportMessage = {
   type: 'presenter_viewport' as const,
-  viewport: mockViewport,
+  viewport: mockServerViewport,
 }

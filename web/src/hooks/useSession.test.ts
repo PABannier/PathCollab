@@ -14,8 +14,10 @@ import { useSession } from './useSession'
 import { installMockWebSocket, type MockWebSocketInstance } from '../test/utils'
 import {
   mockSession,
+  mockServerSession,
   mockFollower1,
   mockViewport,
+  mockServerViewport,
   mockCursors,
   createMockSlide,
 } from '../test/fixtures'
@@ -74,16 +76,17 @@ describe('useSession', () => {
       const sentMessages = mockWs.getInstance()?.getSentMessages()
       expect(sentMessages?.some((m) => m.type === 'create_session')).toBe(true)
 
-      // Simulate server response
+      // Simulate server response (server sends snake_case format)
       await act(async () => {
         mockWs.getInstance()?.simulateMessage({
           type: 'session_created',
-          session: mockSession,
+          session: mockServerSession,
           join_secret: 'test-join-secret',
           presenter_key: 'test-presenter-key',
         })
       })
 
+      // Result is converted to frontend format (camelCase)
       expect(result.current.session).toEqual(mockSession)
       expect(result.current.currentUser).toEqual(mockSession.presenter)
       expect(result.current.isPresenter).toBe(true)
@@ -113,7 +116,7 @@ describe('useSession', () => {
       await act(async () => {
         mockWs.getInstance()?.simulateMessage({
           type: 'session_joined',
-          session: mockSession,
+          session: mockServerSession,
           you: mockFollower1,
         })
       })
@@ -150,13 +153,13 @@ describe('useSession', () => {
     it('should add participant on participant_joined message', async () => {
       const { result } = renderHook(() => useSession({}))
 
-      // Setup: Create session first
+      // Setup: Create session first (server sends snake_case format)
       await act(async () => {
         vi.advanceTimersByTime(10)
         mockWs.getInstance()?.simulateOpen()
         mockWs.getInstance()?.simulateMessage({
           type: 'session_created',
-          session: { ...mockSession, followers: [] },
+          session: { ...mockServerSession, followers: [] },
           join_secret: 'test',
           presenter_key: 'test',
         })
@@ -185,7 +188,7 @@ describe('useSession', () => {
         mockWs.getInstance()?.simulateOpen()
         mockWs.getInstance()?.simulateMessage({
           type: 'session_joined',
-          session: mockSession,
+          session: mockServerSession,
           you: mockFollower1,
         })
       })
@@ -215,7 +218,7 @@ describe('useSession', () => {
         mockWs.getInstance()?.simulateOpen()
         mockWs.getInstance()?.simulateMessage({
           type: 'session_joined',
-          session: mockSession,
+          session: mockServerSession,
           you: mockFollower1,
         })
       })
@@ -242,7 +245,7 @@ describe('useSession', () => {
         mockWs.getInstance()?.simulateOpen()
         mockWs.getInstance()?.simulateMessage({
           type: 'session_joined',
-          session: mockSession,
+          session: mockServerSession,
           you: mockFollower1,
         })
         mockWs.getInstance()?.simulateMessage({
@@ -300,18 +303,20 @@ describe('useSession', () => {
         mockWs.getInstance()?.simulateOpen()
         mockWs.getInstance()?.simulateMessage({
           type: 'session_joined',
-          session: mockSession,
+          session: mockServerSession,
           you: mockFollower1,
         })
       })
 
+      // Simulate server viewport update (server sends snake_case)
       await act(async () => {
         mockWs.getInstance()?.simulateMessage({
           type: 'presenter_viewport',
-          viewport: mockViewport,
+          viewport: mockServerViewport,
         })
       })
 
+      // Result is converted to frontend format (camelCase)
       expect(result.current.presenterViewport).toEqual(mockViewport)
     })
 
@@ -474,13 +479,13 @@ describe('useSession', () => {
         })
       )
 
-      // Setup: Create session
+      // Setup: Create session (server sends snake_case format)
       await act(async () => {
         vi.advanceTimersByTime(10)
         mockWs.getInstance()?.simulateOpen()
         mockWs.getInstance()?.simulateMessage({
           type: 'session_created',
-          session: mockSession,
+          session: mockServerSession,
           join_secret: 'test',
           presenter_key: 'test',
         })
@@ -515,7 +520,7 @@ describe('useSession', () => {
         mockWs.getInstance()?.simulateOpen()
         mockWs.getInstance()?.simulateMessage({
           type: 'session_joined',
-          session: mockSession,
+          session: mockServerSession,
           you: mockFollower1,
         })
       })
@@ -571,9 +576,9 @@ describe('useSession', () => {
     it('should preserve other session state when slide changes', async () => {
       const { result } = renderHook(() => useSession({}))
 
-      // Setup: Join session with specific state
-      const sessionWithFollowers = {
-        ...mockSession,
+      // Setup: Join session with specific state (server sends snake_case format)
+      const serverSessionWithFollowers = {
+        ...mockServerSession,
         followers: [mockFollower1],
         rev: 5,
       }
@@ -583,7 +588,7 @@ describe('useSession', () => {
         mockWs.getInstance()?.simulateOpen()
         mockWs.getInstance()?.simulateMessage({
           type: 'session_joined',
-          session: sessionWithFollowers,
+          session: serverSessionWithFollowers,
           you: mockFollower1,
         })
       })

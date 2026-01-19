@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SessionState, Viewport } from '../../hooks/useSession'
 
 export interface UseCursorTrackingOptions {
@@ -40,6 +40,9 @@ export interface UseCursorTrackingReturn {
  * - Updating footer cursor position display
  * - Sending cursor updates to the session (when active)
  * - Starting/stopping presence tracking with session lifecycle
+ *
+ * Uses refs for frequently-changing values (viewport) to avoid
+ * recreating the mousemove handler on every viewport change.
  */
 export function useCursorTracking({
   session,
@@ -52,6 +55,25 @@ export function useCursorTracking({
 }: UseCursorTrackingOptions): UseCursorTrackingReturn {
   const [footerCursorPos, setFooterCursorPos] = useState<{ x: number; y: number } | null>(null)
 
+  // Use refs for values that change frequently to avoid stale closures
+  // and prevent callback recreation on every viewport/bounds change
+  const viewportRef = useRef(currentViewport)
+  const boundsRef = useRef(viewerBounds)
+  const sessionRef = useRef(session)
+
+  // Keep refs in sync with props
+  useEffect(() => {
+    viewportRef.current = currentViewport
+  }, [currentViewport])
+
+  useEffect(() => {
+    boundsRef.current = viewerBounds
+  }, [viewerBounds])
+
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
+
   // Start cursor tracking when session is active
   useEffect(() => {
     if (session) {
@@ -60,27 +82,25 @@ export function useCursorTracking({
     return () => stopTracking()
   }, [session, startTracking, stopTracking])
 
-  // Handle mouse move for cursor tracking
+  // Handle mouse move for cursor tracking - stable callback
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
+      const bounds = boundsRef.current
+      const viewport = viewportRef.current
+
       // Always track cursor for footer display when we have bounds
-      if (viewerBounds) {
-        const slideCoords = convertToSlideCoords(
-          e.clientX,
-          e.clientY,
-          viewerBounds,
-          currentViewport
-        )
+      if (bounds) {
+        const slideCoords = convertToSlideCoords(e.clientX, e.clientY, bounds, viewport)
         if (slideCoords) {
           setFooterCursorPos({ x: slideCoords.x, y: slideCoords.y })
           // Only send cursor updates to session if active
-          if (session) {
+          if (sessionRef.current) {
             updateCursorPosition(slideCoords.x, slideCoords.y)
           }
         }
       }
     },
-    [session, viewerBounds, currentViewport, convertToSlideCoords, updateCursorPosition]
+    [convertToSlideCoords, updateCursorPosition]
   )
 
   // Handle mouse leave to clear footer cursor position

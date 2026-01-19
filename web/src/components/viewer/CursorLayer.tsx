@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 
 interface Cursor {
   participant_id: string
@@ -18,7 +18,7 @@ interface CursorLayerProps {
   currentUserId?: string
 }
 
-export function CursorLayer({
+export const CursorLayer = memo(function CursorLayer({
   cursors,
   viewerBounds,
   viewport,
@@ -75,6 +75,9 @@ export function CursorLayer({
         <g
           key={cursor.participant_id}
           transform={`translate(${cursor.screenX - viewerBounds.left}, ${cursor.screenY - viewerBounds.top})`}
+          style={{
+            transition: 'transform 16ms linear', // Match 60fps for smooth cursor tracking
+          }}
         >
           {/* Cursor arrow */}
           <path
@@ -111,4 +114,4 @@ export function CursorLayer({
       ))}
     </svg>
   )
-}
+})

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 
 export interface SlideListItem {
   id: string
@@ -15,53 +15,30 @@ interface UseAvailableSlidesReturn {
   refetch: () => void
 }
 
+async function fetchAvailableSlides(): Promise<SlideListItem[]> {
+  const response = await fetch('/api/slides')
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch slides: ${response.status}`)
+  }
+
+  return response.json()
+}
+
 /**
  * Hook to fetch all available slides from the server.
+ * Uses React Query for caching, deduplication, and stale-while-revalidate.
  */
 export function useAvailableSlides(): UseAvailableSlidesReturn {
-  const [slides, setSlides] = useState<SlideListItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [fetchCount, setFetchCount] = useState(0)
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['slides', 'list'],
+    queryFn: fetchAvailableSlides,
+  })
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function fetchSlides() {
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        const response = await fetch('/api/slides')
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch slides: ${response.status}`)
-        }
-
-        const data = await response.json()
-        if (!cancelled) {
-          setSlides(data)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Unknown error')
-          setSlides([])
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false)
-        }
-      }
-    }
-
-    fetchSlides()
-
-    return () => {
-      cancelled = true
-    }
-  }, [fetchCount])
-
-  const refetch = useCallback(() => setFetchCount((c) => c + 1), [])
-
-  return { slides, isLoading, error, refetch }
+  return {
+    slides: data ?? [],
+    isLoading,
+    error: error instanceof Error ? error.message : null,
+    refetch: () => void refetch(),
+  }
 }

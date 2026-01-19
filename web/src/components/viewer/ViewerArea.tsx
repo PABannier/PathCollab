@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import { type RefObject, useMemo } from 'react'
 import { SlideViewer, type SlideInfo, type SlideViewerHandle, ViewportLoader } from './index'
 import { CursorLayer } from './CursorLayer'
 import { MinimapOverlay } from './MinimapOverlay'
@@ -14,12 +14,6 @@ export interface CursorData {
   color: string
   x: number
   y: number
-}
-
-export interface PresenterViewportData {
-  center_x: number
-  center_y: number
-  zoom: number
 }
 
 export interface ViewerAreaProps {
@@ -48,7 +42,7 @@ export interface ViewerAreaProps {
   /** Cursor data from all participants */
   cursors: CursorData[]
   /** Presenter's current viewport */
-  presenterViewport: PresenterViewportData | null
+  presenterViewport: Viewport | null
   /** Presenter info for minimap */
   presenterInfo: Participant | null
   /** Current user's ID */
@@ -91,6 +85,18 @@ export function ViewerArea({
   onReturnToPresenter,
   onShowHelp,
 }: ViewerAreaProps) {
+  // Memoize normalized cursors for minimap to avoid creating new array/objects on every render
+  const normalizedCursors = useMemo(() => {
+    if (!slide) return []
+    return cursors.map((c) => ({
+      participant_id: c.participant_id,
+      name: c.name,
+      color: c.color,
+      x: c.x / slide.width,
+      y: c.y / slide.height,
+    }))
+  }, [cursors, slide])
+
   return (
     <main
       className="relative flex-1 overflow-hidden"
@@ -134,24 +140,14 @@ export function ViewerArea({
           }}
         >
           <MinimapOverlay
-            presenterViewport={{
-              centerX: presenterViewport.center_x,
-              centerY: presenterViewport.center_y,
-              zoom: presenterViewport.zoom,
-            }}
+            presenterViewport={presenterViewport}
             presenterInfo={presenterInfo}
             currentViewport={currentViewport}
             minimapWidth={150}
             minimapHeight={150}
             slideAspectRatio={slide.width / slide.height}
             isPresenter={isPresenter}
-            cursors={cursors.map((c) => ({
-              participant_id: c.participant_id,
-              name: c.name,
-              color: c.color,
-              x: c.x / slide.width,
-              y: c.y / slide.height,
-            }))}
+            cursors={normalizedCursors}
             currentUserId={currentUserId}
           />
         </div>

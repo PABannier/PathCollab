@@ -12,11 +12,30 @@ export interface Participant {
   connected_at: number
 }
 
-export interface Viewport {
+/** Viewport as received from the server (snake_case) */
+interface ServerViewport {
   center_x: number
   center_y: number
   zoom: number
   timestamp: number
+}
+
+/** Frontend viewport type (camelCase) */
+export interface Viewport {
+  centerX: number
+  centerY: number
+  zoom: number
+  timestamp: number
+}
+
+/** Convert server viewport to frontend viewport */
+function toFrontendViewport(sv: ServerViewport): Viewport {
+  return {
+    centerX: sv.center_x,
+    centerY: sv.center_y,
+    zoom: sv.zoom,
+    timestamp: sv.timestamp,
+  }
 }
 
 export interface SlideInfo {
@@ -29,13 +48,35 @@ export interface SlideInfo {
   tile_url_template: string
 }
 
+/** Session state as received from server (snake_case viewport) */
+interface ServerSessionState {
+  id: string
+  rev: number
+  slide: SlideInfo
+  presenter: Participant
+  followers: Participant[]
+  presenter_viewport: ServerViewport
+}
+
 export interface SessionState {
   id: string
   rev: number
   slide: SlideInfo
   presenter: Participant
   followers: Participant[]
-  presenter_viewport: Viewport
+  presenterViewport: Viewport
+}
+
+/** Convert server session state to frontend session state */
+function toFrontendSession(ss: ServerSessionState): SessionState {
+  return {
+    id: ss.id,
+    rev: ss.rev,
+    slide: ss.slide,
+    presenter: ss.presenter,
+    followers: ss.followers,
+    presenterViewport: toFrontendViewport(ss.presenter_viewport),
+  }
 }
 
 interface CursorWithParticipant {
@@ -118,13 +159,14 @@ export function useSession({
     (message: WebSocketMessage) => {
       switch (message.type) {
         case 'session_created': {
-          const sessionData = message.session as SessionState
+          const serverSession = message.session as ServerSessionState
+          const sessionData = toFrontendSession(serverSession)
           setSession(sessionData)
           setIsCreatingSession(false)
           // When session is created, we're the presenter
           setCurrentUser(sessionData.presenter)
           setIsPresenter(true)
-          setPresenterViewport(sessionData.presenter_viewport)
+          setPresenterViewport(sessionData.presenterViewport)
           // Save secrets for sharing
           if (message.join_secret && message.presenter_key) {
             setSecrets({
@@ -141,13 +183,14 @@ export function useSession({
           break
         }
         case 'session_joined': {
-          const sessionData = message.session as SessionState
+          const serverSession = message.session as ServerSessionState
+          const sessionData = toFrontendSession(serverSession)
           setSession(sessionData)
           if (message.you) {
             setCurrentUser(message.you as Participant)
             setIsPresenter((message.you as Participant).role === 'presenter')
           }
-          setPresenterViewport(sessionData.presenter_viewport)
+          setPresenterViewport(sessionData.presenterViewport)
           break
         }
 
@@ -187,26 +230,27 @@ export function useSession({
           const removed = (message.removed || []) as string[]
 
           setCursors((prev) => {
+            // Use a Map for O(1) lookups instead of O(n) findIndex in a loop
+            const cursorMap = new Map(prev.map((c) => [c.participant_id, c]))
+
             // Remove cursors for removed participants
-            let next = prev.filter((c) => !removed.includes(c.participant_id))
+            for (const id of removed) {
+              cursorMap.delete(id)
+            }
+
             // Update or add changed cursors
             for (const cursor of changed) {
-              const idx = next.findIndex((c) => c.participant_id === cursor.participant_id)
-              if (idx >= 0) {
-                // Create new array to avoid mutation
-                next = [...next.slice(0, idx), cursor, ...next.slice(idx + 1)]
-              } else {
-                next = [...next, cursor]
-              }
+              cursorMap.set(cursor.participant_id, cursor)
             }
-            return next
+
+            return Array.from(cursorMap.values())
           })
           break
         }
 
         case 'presenter_viewport': {
-          const viewport = message.viewport as Viewport
-          setPresenterViewport(viewport)
+          const serverViewport = message.viewport as ServerViewport
+          setPresenterViewport(toFrontendViewport(serverViewport))
           break
         }
 
@@ -382,8 +426,8 @@ export function useSession({
 
       // Threshold-based comparison in normalized coordinates
       const positionDiff = Math.sqrt(
-        Math.pow(currentViewport.centerX - presenterViewport.center_x, 2) +
-          Math.pow(currentViewport.centerY - presenterViewport.center_y, 2)
+        Math.pow(currentViewport.centerX - presenterViewport.centerX, 2) +
+          Math.pow(currentViewport.centerY - presenterViewport.centerY, 2)
       )
       const zoomRatio = currentViewport.zoom / presenterViewport.zoom
       const zoomDiff = Math.abs(Math.log(zoomRatio))
