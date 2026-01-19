@@ -1,39 +1,70 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
-
-## Quick Reference
+## Running the frontend
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
+cd ./web && bun run dev --port 3000
 ```
 
-## Landing the Plane (Session Completion)
+## Running the backend in development
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+To launch the backend, you'll need to specify the directory that contains the WSIs, and the directory that contains the overlays.
 
-**MANDATORY WORKFLOW:**
+```bash
+SLIDES_DIR=/data/wsi_slides OVERLAY_DIR=/data/cell_masks PORT=8080 RUST_LOG=pathcollab=debug,tower_http=debug cargo run
+```
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+## Benchmarking and Performance Testing
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+### Quick Performance Check
+
+To quickly assess the impact of changes on latency:
+
+```bash
+# 1. Start the server with real slides
+SLIDES_DIR=/data/wsi_slides OVERLAY_CACHE_DIR=/tmp/overlay DEMO_ENABLED=true \
+  cargo run --release
+
+# 2. Run quick tile stress test (in another terminal)
+./bench/load_tests/scenarios/tile_stress.sh --quick
+
+# 3. Compare against baseline
+python3 ./bench/scripts/compare_baseline.py \
+  --current bench/load_tests/results/tile_current.json \
+  --baseline bench/baselines/tile_baseline.json
+```
+
+### Full Benchmark Suite
+
+For thorough performance assessment before merging significant changes:
+
+```bash
+# Run complete benchmark suite with baseline comparison
+./bench/scripts/run_all.sh --compare-baseline
+
+# Or save a new baseline after confirmed improvements
+./bench/scripts/run_all.sh --save-baseline
+```
+
+This runs:
+1. **HTTP tile stress test** - Measures tile serving latency (P50/P90/P95/P99)
+2. **WebSocket load test** - Validates cursor/viewport broadcast latency
+3. **Baseline comparison** - Fails if P99 regresses >10%
+
+### Key Metrics to Monitor
+
+| Metric | Budget | Source |
+|--------|--------|--------|
+| Tile serving P99 | < 100ms | `tile_stress.sh` |
+| Cursor broadcast P99 | < 100ms | WebSocket load test |
+| Viewport broadcast P99 | < 150ms | WebSocket load test |
+
+### Live Metrics
+
+The server exposes Prometheus metrics for real-time monitoring:
+
+- `/metrics` - JSON format (sessions, connections, uptime)
+- `/metrics/prometheus` - Prometheus format with histograms:
+  - `pathcollab_tile_duration_seconds` - Total tile serving latency
+  - `pathcollab_tile_phase_duration_seconds{phase="read|resize|encode"}` - Per-phase breakdown
+  - `pathcollab_ws_broadcast_duration_seconds` - WebSocket broadcast latency

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       run_full_load_test:
-        description: 'Run full load tests (5 sessions, 20 followers, 30 seconds)'
+        description: 'Run extended load tests (5 sessions, 20 followers, 5 minutes)'
         required: false
         default: 'false'
         type: boolean
@@ -12,21 +12,24 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      - 'bench/**'
       - '.github/workflows/perf.yml'
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Verify performance test infrastructure compiles
-  compile-check:
-    name: Compile Performance Tests
+  # Quick non-regression test on every PR
+  regression-test:
+    name: Performance Regression Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libopenslide-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libopenslide-dev python3
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -43,60 +46,36 @@ jobs:
           key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Build server (release)
-        run: cargo build --release
+      - name: Install oha (HTTP load testing tool)
+        run: |
+          if ! command -v oha &> /dev/null; then
+            cargo install oha
+          fi
 
-      - name: Compile performance tests
-        run: cargo test --test perf_tests --no-run --release
-
-  # Full load test (manual trigger only)
-  load-test:
-    name: Run Load Tests
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_full_load_test == 'true'
-    needs: compile-check
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libopenslide-dev
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Build server (release)
-        run: cargo build --release
+      - name: Build server and tests (release)
+        run: |
+          cargo build --release
+          cargo test --test perf_tests --no-run --release
 
       - name: Create test directories
         run: |
           mkdir -p /tmp/pathcollab/slides
           mkdir -p /tmp/pathcollab/overlay_cache
+          mkdir -p bench/load_tests/results
 
       - name: Start server in background
         run: |
           HOST=127.0.0.1 \
-          PORT=9090 \
+          PORT=8080 \
           SLIDES_DIR=/tmp/pathcollab/slides \
           OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
           DEMO_ENABLED=true \
-          RUST_LOG=info \
+          RUST_LOG=warn \
           ./target/release/pathcollab &
 
           # Wait for server to be ready
           for i in {1..30}; do
-            if curl -s http://127.0.0.1:9090/health > /dev/null 2>&1; then
+            if curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
               echo "Server is ready!"
               break
             fi
@@ -104,35 +83,86 @@ jobs:
             sleep 1
           done
 
-      - name: Run minimal load test
+          # Verify health
+          curl -s http://127.0.0.1:8080/health
+
+      - name: Run WebSocket regression test
         run: |
-          cargo test --test perf_tests test_fanout_minimal --release -- --ignored --nocapture
+          cd server
+          cargo test --test perf_tests test_fanout_minimal --release -- --ignored --nocapture 2>&1 | tee /tmp/ws_results.txt
         timeout-minutes: 5
 
-      - name: Run standard load test
+      - name: Check WebSocket performance budgets
         run: |
-          cargo test --test perf_tests test_fanout_standard --release -- --ignored --nocapture
-        timeout-minutes: 10
+          echo "=== WebSocket Test Results ==="
+          cat /tmp/ws_results.txt
+
+          # Check if test passed
+          if grep -q "Overall: PASS" /tmp/ws_results.txt; then
+            echo "✅ WebSocket performance within budget"
+          else
+            echo "❌ WebSocket performance exceeded budget"
+            exit 1
+          fi
+
+      - name: Run HTTP tile stress test (quick)
+        run: |
+          ./bench/load_tests/scenarios/tile_stress.sh \
+            --quick \
+            --output bench/load_tests/results/tile_current.json 2>&1 | tee /tmp/tile_results.txt
+        timeout-minutes: 5
+
+      - name: Compare HTTP tile performance to baseline
+        run: |
+          echo "=== HTTP Tile Performance ==="
+
+          # Run comparison (--ci mode exits 1 on regression)
+          python3 ./bench/scripts/compare_baseline.py \
+            --current bench/load_tests/results/tile_current.json \
+            --baseline bench/baselines/tile_baseline.json \
+            --threshold 20 \
+            --markdown | tee /tmp/comparison.md
+
+          # Also run with CI mode to get exit code
+          python3 ./bench/scripts/compare_baseline.py \
+            --current bench/load_tests/results/tile_current.json \
+            --baseline bench/baselines/tile_baseline.json \
+            --threshold 20 \
+            --ci
 
       - name: Collect server metrics
         if: always()
         run: |
           echo "=== Server Metrics ==="
-          curl -s http://127.0.0.1:9090/metrics || true
+          curl -s http://127.0.0.1:8080/metrics || true
           echo ""
           echo "=== Prometheus Metrics ==="
-          curl -s http://127.0.0.1:9090/metrics/prometheus || true
+          curl -s http://127.0.0.1:8080/metrics/prometheus | head -50 || true
 
-  # Prometheus metrics endpoint validation
-  metrics-check:
-    name: Validate Metrics Endpoint
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            bench/load_tests/results/
+            /tmp/ws_results.txt
+            /tmp/tile_results.txt
+            /tmp/comparison.md
+          retention-days: 30
+
+  # Extended load test (manual trigger only)
+  extended-load-test:
+    name: Extended Load Tests
     runs-on: ubuntu-latest
-    needs: compile-check
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_full_load_test == 'true'
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libopenslide-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libopenslide-dev python3
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -149,56 +179,86 @@ jobs:
           key: ${{ runner.os }}-cargo-perf-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Build server (release)
-        run: cargo build --release
+      - name: Install oha
+        run: cargo install oha
+
+      - name: Build server and tests (release)
+        run: |
+          cargo build --release
+          cargo test --test perf_tests --no-run --release
 
       - name: Create test directories
         run: |
           mkdir -p /tmp/pathcollab/slides
           mkdir -p /tmp/pathcollab/overlay_cache
+          mkdir -p bench/load_tests/results
 
-      - name: Start server
+      - name: Start server in background
         run: |
           HOST=127.0.0.1 \
-          PORT=9090 \
+          PORT=8080 \
           SLIDES_DIR=/tmp/pathcollab/slides \
           OVERLAY_CACHE_DIR=/tmp/pathcollab/overlay_cache \
-          RUST_LOG=info \
+          DEMO_ENABLED=true \
+          RUST_LOG=warn \
           ./target/release/pathcollab &
 
-          # Wait for server to be ready
           for i in {1..30}; do
-            if curl -s http://127.0.0.1:9090/health > /dev/null 2>&1; then
+            if curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; then
               echo "Server is ready!"
               break
             fi
-            echo "Waiting for server... ($i/30)"
             sleep 1
           done
 
-      - name: Validate health endpoint
+      - name: Run standard WebSocket load test
         run: |
-          response=$(curl -s http://127.0.0.1:9090/health)
-          echo "Health response: $response"
-          # Check that it returns valid JSON with expected fields
-          echo "$response" | jq -e '.status' > /dev/null
+          cd server
+          cargo test --test perf_tests test_fanout_standard --release -- --ignored --nocapture 2>&1 | tee /tmp/ws_standard.txt
+        timeout-minutes: 10
 
-      - name: Validate metrics endpoint
+      - name: Run extended WebSocket load test
         run: |
-          response=$(curl -s http://127.0.0.1:9090/metrics)
-          echo "Metrics response: $response"
-          # Check that it returns valid JSON with expected fields
-          echo "$response" | jq -e '.uptime_seconds' > /dev/null
-          echo "$response" | jq -e '.active_sessions' > /dev/null
+          cd server
+          cargo test --test perf_tests test_fanout_extended --release -- --ignored --nocapture 2>&1 | tee /tmp/ws_extended.txt
+        timeout-minutes: 15
 
-      - name: Validate Prometheus metrics endpoint
+      - name: Run HTTP tile ramp test
         run: |
-          response=$(curl -s http://127.0.0.1:9090/metrics/prometheus)
-          echo "Prometheus metrics:"
-          echo "$response"
-          # Check that it returns Prometheus format (contains # HELP or metric names)
-          if echo "$response" | grep -q "pathcollab"; then
-            echo "Prometheus metrics look valid"
-          else
-            echo "Warning: No pathcollab metrics found (this is OK if no activity yet)"
-          fi
+          ./bench/load_tests/scenarios/ramp_test.sh \
+            --start 1 \
+            --end 50 \
+            --step 5 \
+            --stage-duration 10 \
+            --output bench/load_tests/results 2>&1 | tee /tmp/ramp_results.txt
+        timeout-minutes: 20
+
+      - name: Run HTTP tile standard test
+        run: |
+          ./bench/load_tests/scenarios/tile_stress.sh \
+            --concurrent 20 \
+            --duration 60 \
+            --output bench/load_tests/results/tile_extended.json 2>&1 | tee /tmp/tile_extended.txt
+        timeout-minutes: 10
+
+      - name: Generate performance report
+        if: always()
+        run: |
+          python3 ./bench/scripts/generate_report.py \
+            --input-dir bench/load_tests/results \
+            --output bench/load_tests/results/REPORT.md || true
+
+          echo "=== Performance Report ==="
+          cat bench/load_tests/results/REPORT.md || echo "Report generation failed"
+
+      - name: Upload extended results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extended-benchmark-results
+          path: |
+            bench/load_tests/results/
+            /tmp/ws_*.txt
+            /tmp/tile_*.txt
+            /tmp/ramp_results.txt
+          retention-days: 90

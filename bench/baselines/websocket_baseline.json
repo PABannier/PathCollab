@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-01-18T00:00:00Z",
+  "description": "Initial baseline - placeholder for WebSocket performance",
+  "metrics": {
+    "cursor_p99_ms": 100,
+    "viewport_p99_ms": 150,
+    "message_handling_p99_ms": 10
+  },
+  "notes": "This is a placeholder baseline derived from the performance budgets in tests/load_tests/mod.rs"
+}
