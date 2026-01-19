@@ -315,12 +315,12 @@ impl LocalSlideService {
             // Resize if we need to scale down
             let final_image = if scale_factor > 1.001 {
                 let resize_start = Instant::now();
-            let resized = image::imageops::resize(
-                &rgba_image,
-                target_w,
-                target_h,
-                image::imageops::FilterType::Lanczos3,
-            );
+                let resized = image::imageops::resize(
+                    &rgba_image,
+                    target_w,
+                    target_h,
+                    image::imageops::FilterType::Lanczos3,
+                );
                 histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "resize")
                     .record(resize_start.elapsed());
                 resized
@@ -380,7 +380,7 @@ impl SlideService for LocalSlideService {
 
         for (id, path) in slides {
             // Check cache first
-            if let Some(meta) = self.cache.get_metadata(&id).await {
+            if let Some(meta) = self.cache.get_metadata(&id) {
                 metadata_list.push(meta);
                 continue;
             }
@@ -389,7 +389,7 @@ impl SlideService for LocalSlideService {
             match self.cache.get_or_open(&id, &path).await {
                 Ok(slide) => {
                     let meta = self.extract_metadata(&id, &path, &slide);
-                    self.cache.set_metadata(&id, meta.clone()).await;
+                    self.cache.set_metadata(&id, meta.clone());
                     metadata_list.push(meta);
                 }
                 Err(e) => {
@@ -404,7 +404,7 @@ impl SlideService for LocalSlideService {
 
     async fn get_slide(&self, id: &str) -> Result<SlideMetadata, SlideError> {
         // Check cache first
-        if let Some(meta) = self.cache.get_metadata(id).await {
+        if let Some(meta) = self.cache.get_metadata(id) {
             return Ok(meta);
         }
 
@@ -417,7 +417,7 @@ impl SlideService for LocalSlideService {
         // Open and extract metadata
         let slide = self.cache.get_or_open(id, &path).await?;
         let meta = self.extract_metadata(id, &path, &slide);
-        self.cache.set_metadata(id, meta.clone()).await;
+        self.cache.set_metadata(id, meta.clone());
 
         Ok(meta)
     }

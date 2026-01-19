@@ -1,10 +1,10 @@
 //! Thread-safe slide handle cache with LRU eviction
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use dashmap::DashMap;
 use indexmap::IndexMap;
 use openslide_rs::OpenSlide;
 use tokio::sync::RwLock;
@@ -26,11 +26,14 @@ struct SlideListCache {
 ///
 /// Uses IndexMap which maintains insertion order and provides O(1) access/removal.
 /// When an item is accessed, we remove and re-insert it to move it to the end (most recent).
+///
+/// The metadata cache uses DashMap for lock-free concurrent reads, since metadata
+/// is checked on every tile request but rarely written.
 pub struct SlideCache {
     /// Cached slide handles with LRU ordering (most recent at end)
     slides: RwLock<IndexMap<String, Arc<OpenSlide>>>,
     /// Cached slide metadata
-    metadata: RwLock<HashMap<String, SlideMetadata>>,
+    metadata: DashMap<String, SlideMetadata>,
     /// Maximum number of cached slides
     max_size: usize,
     /// Cached slide list (avoids repeated directory scans)
@@ -42,7 +45,7 @@ impl SlideCache {
     pub fn new(max_size: usize) -> Self {
         Self {
             slides: RwLock::new(IndexMap::with_capacity(max_size)),
-            metadata: RwLock::new(HashMap::new()),
+            metadata: DashMap::new(),
             max_size,
             slide_list_cache: RwLock::new(None),
         }
@@ -76,8 +79,7 @@ impl SlideCache {
                 if let Some((lru_id, _)) = slides.shift_remove_index(0) {
                     debug!("Evicted slide from cache: {}", lru_id);
                     // Also remove metadata
-                    let mut metadata = self.metadata.write().await;
-                    metadata.remove(&lru_id);
+                    self.metadata.remove(&lru_id);
                 }
             }
 
@@ -88,9 +90,8 @@ impl SlideCache {
     }
 
     /// Get cached metadata for a slide
-    pub async fn get_metadata(&self, id: &str) -> Option<SlideMetadata> {
-        let metadata = self.metadata.read().await;
-        metadata.get(id).cloned()
+    pub fn get_metadata(&self, id: &str) -> Option<SlideMetadata> {
+        self.metadata.get(id).map(|r| r.value().clone())
     }
 
     /// Get a cached slide handle without requiring a path
@@ -108,9 +109,8 @@ impl SlideCache {
     }
 
     /// Set metadata for a slide
-    pub async fn set_metadata(&self, id: &str, meta: SlideMetadata) {
-        let mut metadata = self.metadata.write().await;
-        metadata.insert(id.to_string(), meta);
+    pub fn set_metadata(&self, id: &str, meta: SlideMetadata) {
+        self.metadata.insert(id.to_string(), meta);
     }
 
     /// Get the cached slide list if still valid, or None if expired/empty
