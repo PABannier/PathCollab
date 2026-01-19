@@ -68,8 +68,9 @@ export function useViewerViewport({
   // Refs for pending operations
   const pendingSnapRef = useRef(false)
   const lastAppliedViewportRef = useRef<string | null>(null)
+  const resizeThrottleRef = useRef<number | null>(null)
 
-  // Update viewer bounds on resize
+  // Update viewer bounds on resize (throttled to avoid excessive updates)
   useEffect(() => {
     const updateBounds = () => {
       if (viewerContainerRef.current) {
@@ -77,17 +78,30 @@ export function useViewerViewport({
       }
     }
 
-    updateBounds()
-    window.addEventListener('resize', updateBounds)
-    return () => window.removeEventListener('resize', updateBounds)
+    const throttledUpdateBounds = () => {
+      if (resizeThrottleRef.current) return
+      updateBounds()
+      resizeThrottleRef.current = window.setTimeout(() => {
+        resizeThrottleRef.current = null
+      }, 100) // Throttle to max 10 updates/second
+    }
+
+    updateBounds() // Initial measurement
+    window.addEventListener('resize', throttledUpdateBounds)
+    return () => {
+      window.removeEventListener('resize', throttledUpdateBounds)
+      if (resizeThrottleRef.current) {
+        clearTimeout(resizeThrottleRef.current)
+      }
+    }
   }, [viewerContainerRef])
 
   // Apply presenter viewport to the viewer
   const applyPresenterViewport = useCallback(
-    (viewport: { center_x: number; center_y: number; zoom: number }) => {
+    (viewport: Viewport) => {
       viewerRef.current?.setViewport({
-        centerX: viewport.center_x,
-        centerY: viewport.center_y,
+        centerX: viewport.centerX,
+        centerY: viewport.centerY,
         zoom: viewport.zoom,
       })
     },
@@ -129,7 +143,7 @@ export function useViewerViewport({
     if (!isFollowing || isPresenter || !presenterViewport) return
 
     // Create a unique key for this viewport to detect changes
-    const viewportKey = `${presenterViewport.center_x}-${presenterViewport.center_y}-${presenterViewport.zoom}-${presenterViewport.timestamp}`
+    const viewportKey = `${presenterViewport.centerX}-${presenterViewport.centerY}-${presenterViewport.zoom}-${presenterViewport.timestamp}`
 
     // Only apply if this is a new viewport (avoid duplicate applications)
     if (lastAppliedViewportRef.current === viewportKey) return

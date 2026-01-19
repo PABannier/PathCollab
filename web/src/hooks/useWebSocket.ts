@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+/** Max messages to queue while disconnected to prevent memory issues */
+const MAX_QUEUE_SIZE = 100
+
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'solo'
 
 export interface WebSocketMessage {
@@ -207,8 +210,11 @@ export function useWebSocket({
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msgWithSeq))
     } else {
-      // Queue message for when connection is established
-      messageQueueRef.current.push(msgWithSeq)
+      // Queue message for when connection is established (with size limit)
+      if (messageQueueRef.current.length < MAX_QUEUE_SIZE) {
+        messageQueueRef.current.push(msgWithSeq)
+      }
+      // Silently drop messages when queue is full to prevent memory issues
     }
 
     return seq

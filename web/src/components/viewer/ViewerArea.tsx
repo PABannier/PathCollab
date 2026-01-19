@@ -16,12 +16,6 @@ export interface CursorData {
   y: number
 }
 
-export interface PresenterViewportData {
-  center_x: number
-  center_y: number
-  zoom: number
-}
-
 export interface ViewerAreaProps {
   /** Reference to the viewer container element */
   containerRef: RefObject<HTMLDivElement | null>
@@ -48,7 +42,7 @@ export interface ViewerAreaProps {
   /** Cursor data from all participants */
   cursors: CursorData[]
   /** Presenter's current viewport */
-  presenterViewport: PresenterViewportData | null
+  presenterViewport: Viewport | null
   /** Presenter info for minimap */
   presenterInfo: Participant | null
   /** Current user's ID */
@@ -91,16 +85,6 @@ export function ViewerArea({
   onReturnToPresenter,
   onShowHelp,
 }: ViewerAreaProps) {
-  // Memoize presenter viewport conversion to avoid creating new object on every render
-  const normalizedPresenterViewport = useMemo(() => {
-    if (!presenterViewport) return null
-    return {
-      centerX: presenterViewport.center_x,
-      centerY: presenterViewport.center_y,
-      zoom: presenterViewport.zoom,
-    }
-  }, [presenterViewport])
-
   // Memoize normalized cursors for minimap to avoid creating new array/objects on every render
   const normalizedCursors = useMemo(() => {
     if (!slide) return []
@@ -145,7 +129,7 @@ export function ViewerArea({
       )}
 
       {/* Minimap overlay showing presenter viewport for followers */}
-      {hasSession && slide && !isPresenter && normalizedPresenterViewport && presenterInfo && (
+      {hasSession && slide && !isPresenter && presenterViewport && presenterInfo && (
         <div
           className="absolute"
           style={{
@@ -156,7 +140,7 @@ export function ViewerArea({
           }}
         >
           <MinimapOverlay
-            presenterViewport={normalizedPresenterViewport}
+            presenterViewport={presenterViewport}
             presenterInfo={presenterInfo}
             currentViewport={currentViewport}
             minimapWidth={150}
