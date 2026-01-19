@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { SessionState } from '../../hooks/useSession'
 import type { ConnectionStatus } from '../../hooks/useWebSocket'
 
@@ -24,7 +25,7 @@ export interface SessionFooterProps {
  * - Zoom level
  * - Cursor coordinates
  */
-export function SessionFooter({
+export const SessionFooter = memo(function SessionFooter({
   session,
   connectionStatus,
   latency,
@@ -113,4 +114,4 @@ export function SessionFooter({
       </div>
     </footer>
   )
-}
+})

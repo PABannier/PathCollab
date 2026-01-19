@@ -85,10 +85,9 @@ describe('MinimapOverlay', () => {
     const rect = container.querySelector('.border-2')
     expect(rect).toBeTruthy()
 
-    // Check computed styles
+    // Check computed styles - uses transform for GPU-accelerated positioning
     const style = rect?.getAttribute('style') || ''
-    expect(style).toContain('left: 50')
-    expect(style).toContain('top: 50')
+    expect(style).toContain('transform: translate(50px, 50px)')
     expect(style).toContain('width: 100')
     expect(style).toContain('height: 100')
   })
@@ -154,6 +153,7 @@ describe('MinimapOverlay', () => {
 
   it('calculates correct cursor positions in minimap', () => {
     // Cursor at (0.3, 0.4) normalized should be at (60, 80) in 200x200 minimap
+    // With centering offset of -4px: translate(56px, 76px)
     const { container } = render(
       <MinimapOverlay
         presenterViewport={null}
@@ -169,9 +169,9 @@ describe('MinimapOverlay', () => {
     const cursor = container.querySelector('[title="Alice"]')
     expect(cursor).toBeTruthy()
 
+    // Uses transform for GPU-accelerated positioning (with -4px centering offset)
     const style = cursor?.getAttribute('style') || ''
-    expect(style).toContain('left: 60')
-    expect(style).toContain('top: 80')
+    expect(style).toContain('transform: translate(56px, 76px)')
   })
 
   it('returns null when nothing to display', () => {
@@ -253,8 +253,8 @@ describe('MinimapOverlay coordinate calculations', () => {
     const rect = container.querySelector('.border-2')
     const style = rect?.getAttribute('style') || ''
     // left = 0.25 - 0.25 = 0, should be clamped to 0
-    expect(style).toContain('left: 0')
-    expect(style).toContain('top: 0')
+    // Uses transform for GPU-accelerated positioning
+    expect(style).toContain('transform: translate(0px, 0px)')
   })
 
   it('cursor dots have title attribute with participant name', () => {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 
 interface Viewport {
   centerX: number
@@ -36,7 +36,7 @@ interface MinimapOverlayProps {
   currentUserId?: string
 }
 
-export function MinimapOverlay({
+export const MinimapOverlay = memo(function MinimapOverlay({
   presenterViewport,
   presenterInfo,
   currentViewport: _currentViewport,
@@ -99,14 +99,15 @@ export function MinimapOverlay({
       {/* Presenter viewport rectangle */}
       {presenterRect && (
         <div
-          className="absolute border-2 rounded-sm transition-all duration-150"
+          className="absolute border-2 rounded-sm"
           style={{
-            left: presenterRect.x,
-            top: presenterRect.y,
+            transform: `translate(${presenterRect.x}px, ${presenterRect.y}px)`,
             width: presenterRect.width,
             height: presenterRect.height,
             borderColor: presenterInfo?.color || '#3B82F6',
             backgroundColor: `${presenterInfo?.color || '#3B82F6'}20`,
+            transition: 'transform 150ms ease-out, width 150ms ease-out, height 150ms ease-out',
+            willChange: 'transform',
           }}
           title={`${presenterInfo?.name || 'Presenter'}'s view`}
         >
@@ -123,20 +124,22 @@ export function MinimapOverlay({
         </div>
       )}
 
-      {/* Cursor dots */}
+      {/* Cursor dots - uses transform for position (GPU-accelerated) */}
       {cursorDots.map((cursor) => (
         <div
           key={cursor.id}
-          className="absolute w-2 h-2 rounded-full -translate-x-1 -translate-y-1 transition-all duration-100"
+          className="absolute w-2 h-2 rounded-full"
           style={{
-            left: cursor.x,
-            top: cursor.y,
+            // Combine position transform with centering offset (-4px = half of 8px width/height)
+            transform: `translate(${cursor.x - 4}px, ${cursor.y - 4}px)`,
             backgroundColor: cursor.color,
             boxShadow: `0 0 4px ${cursor.color}`,
+            transition: 'transform 100ms linear',
+            willChange: 'transform',
           }}
           title={cursor.name}
         />
       ))}
     </div>
   )
-}
+})
