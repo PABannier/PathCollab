@@ -86,13 +86,13 @@ export interface SlideInfo {
 }
 
 export const mockSlide: SlideInfo = {
-  id: 'demo-slide-001',
+  id: 'test-slide-001',
   name: 'Test Slide',
   width: 100000,
   height: 100000,
   tile_size: 256,
   num_levels: 10,
-  tile_url_template: '/api/slide/demo-slide-001/tile/{level}/{x}/{y}',
+  tile_url_template: '/api/slide/test-slide-001/tile/{level}/{x}/{y}',
 }
 
 export function createMockSlide(overrides: Partial<SlideInfo> = {}): SlideInfo {

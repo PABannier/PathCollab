@@ -82,7 +82,7 @@ test.describe('Tile Rendering (Phase 1 Week 1)', () => {
     const logger = setupVerboseLogging(page, 'slide-viewer-renders')
 
     await logStep(page, logger, 1, 'Navigate to session page', 'screenshots/step1-navigate.png')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for OpenSeadragon viewer')
     // Phase 1 spec: SlideViewer.tsx renders OpenSeadragon container
@@ -117,7 +117,7 @@ test.describe('Tile Rendering (Phase 1 Week 1)', () => {
     })
 
     await logStep(page, logger, 1, 'Navigate to viewer')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
     await page.waitForLoadState('networkidle')
 
     await logStep(page, logger, 2, 'Analyze tile loading times')
@@ -145,7 +145,7 @@ test.describe('Tile Rendering (Phase 1 Week 1)', () => {
     const logger = setupVerboseLogging(page, 'zoom-controls')
 
     await logStep(page, logger, 1, 'Navigate to viewer')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer to load')
     const viewer = page.locator('.openseadragon-container, [data-testid="slide-viewer"]')
@@ -173,7 +173,7 @@ test.describe('Tile Rendering (Phase 1 Week 1)', () => {
     const logger = setupVerboseLogging(page, 'pan-arrows')
 
     await logStep(page, logger, 1, 'Navigate to viewer')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     const viewer = page.locator('.openseadragon-container, [data-testid="slide-viewer"]')
@@ -198,7 +198,7 @@ test.describe('Tile Rendering (Phase 1 Week 1)', () => {
     const logger = setupVerboseLogging(page, 'mouse-wheel-zoom')
 
     await logStep(page, logger, 1, 'Navigate to viewer')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     const viewer = page.locator('.openseadragon-container, [data-testid="slide-viewer"]')
@@ -225,7 +225,7 @@ test.describe('Minimap (Phase 1 Week 1)', () => {
     const logger = setupVerboseLogging(page, 'minimap-visible')
 
     await logStep(page, logger, 1, 'Navigate to viewer')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for OpenSeadragon')
     await page.waitForSelector('.openseadragon-container', { timeout: 15000 })
@@ -244,7 +244,7 @@ test.describe('Minimap (Phase 1 Week 1)', () => {
     const logger = setupVerboseLogging(page, 'minimap-viewport')
 
     await logStep(page, logger, 1, 'Navigate to viewer')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     await page.waitForSelector('.openseadragon-container', { timeout: 15000 })
@@ -274,7 +274,7 @@ test.describe('WebSocket Server (Phase 1 Week 2)', () => {
     })
 
     await logStep(page, logger, 1, 'Navigate to session page')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for WebSocket connection')
     await page.waitForTimeout(3000)
@@ -304,7 +304,7 @@ test.describe('WebSocket Server (Phase 1 Week 2)', () => {
     })
 
     await logStep(page, logger, 1, 'Navigate to create new session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for message exchange')
     await page.waitForTimeout(5000)
@@ -342,7 +342,7 @@ test.describe('Session Management (Phase 1 Week 2)', () => {
     })
 
     await logStep(page, logger, 1, 'Navigate to new session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for session creation')
     await page.waitForTimeout(5000)
@@ -420,7 +420,7 @@ test.describe('Full Integration (Phase 1 Week 2)', () => {
     await page.screenshot({ path: 'screenshots/flow-1-home.png' })
 
     await logStep(page, logger, 2, 'Navigate to new session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
     await page.screenshot({ path: 'screenshots/flow-2-new-session.png' })
 
     await logStep(page, logger, 3, 'Wait for session creation')
@@ -475,7 +475,7 @@ test.describe('Full Integration (Phase 1 Week 2)', () => {
     })
 
     await logStep(presenterPage, presenterLogger, 1, 'Presenter creates session')
-    await presenterPage.goto(`${BASE_URL}/s/new?slide=demo`)
+    await presenterPage.goto(`${BASE_URL}/s/new`)
     await presenterPage.waitForTimeout(5000)
 
     if (sessionId && joinSecret) {
@@ -538,7 +538,7 @@ test.describe('Error Handling (Phase 1)', () => {
     await page.goto(BASE_URL)
     await page.waitForTimeout(1000)
 
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
     await page.waitForTimeout(3000)
 
     // Filter known acceptable errors

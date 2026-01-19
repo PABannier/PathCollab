@@ -54,7 +54,7 @@ impl FanOutScenario {
             let presenter = match LoadTestClient::connect(&self.config.ws_url).await {
                 Ok(mut client) => {
                     // Create session
-                    if let Err(e) = client.create_session("demo").await {
+                    if let Err(e) = client.create_session("test-slide").await {
                         eprintln!("Failed to create session {}: {}", session_idx, e);
                         connection_errors.fetch_add(1, Ordering::SeqCst);
                         continue;

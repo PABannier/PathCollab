@@ -17,7 +17,7 @@ interface UseDefaultSlideReturn {
 
 /**
  * Hook to fetch the default slide from the server.
- * The server returns the demo slide (if configured) or the first available slide.
+ * The server returns the first available slide from the slides directory.
  */
 export function useDefaultSlide(): UseDefaultSlideReturn {
   const [slide, setSlide] = useState<DefaultSlide | null>(null)

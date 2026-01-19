@@ -30,7 +30,7 @@ export interface UseAutoCreateSessionReturn {
  * Hook for handling automatic session creation on page load.
  *
  * Auto-creates a session when:
- * - URL is /s/new or /s/demo (not joining an existing session)
+ * - URL is /s/new (not joining an existing session)
  * - WebSocket is connected
  * - No session exists yet
  * - A slide ID is available
@@ -56,16 +56,13 @@ export function useAutoCreateSession({
     if (sessionId === 'new') {
       return slideParam || null
     }
-    if (sessionId === 'demo') {
-      return 'demo'
-    }
     return null
   }, [joinSecret, sessionId, slideParam])
 
   // Auto-create session when connected and slide is available
   useEffect(() => {
     // Don't auto-create if we're joining an existing session
-    if (sessionId && sessionId !== 'new' && sessionId !== 'demo') return
+    if (sessionId && sessionId !== 'new') return
     // Don't create if already have a session or not connected
     if (session || connectionStatus !== 'connected') return
     // Don't create twice
