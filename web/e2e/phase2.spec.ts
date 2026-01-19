@@ -12,7 +12,7 @@ const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:5173'
  * Create a new session and return the share URL
  */
 async function createSession(page: Page): Promise<string> {
-  await page.goto(`${BASE_URL}/s/new?slide=demo`)
+  await page.goto(`${BASE_URL}/s/new`)
 
   // Wait for viewer to load
   const viewer = page.locator('.openseadragon-container')
@@ -44,7 +44,7 @@ test.describe('Phase 2: Connection Status', () => {
     const logger = setupVerboseLogging(page, 'connection-status')
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     const viewer = page.locator('.openseadragon-container')
@@ -64,7 +64,7 @@ test.describe('Phase 2: Participant Management', () => {
     const logger = setupVerboseLogging(page, 'participant-count')
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     const viewer = page.locator('.openseadragon-container')
@@ -82,7 +82,7 @@ test.describe('Phase 2: Participant Management', () => {
     const logger = setupVerboseLogging(page, 'presenter-badge')
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     const viewer = page.locator('.openseadragon-container')
@@ -101,7 +101,7 @@ test.describe('Phase 2: Share Functionality', () => {
     const logger = setupVerboseLogging(page, 'share-url')
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for share URL')
     // Share input should appear with session URL
@@ -120,7 +120,7 @@ test.describe('Phase 2: Share Functionality', () => {
     const logger = setupVerboseLogging(page, 'copy-button')
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Find copy button')
     const copyButton = page.locator('button:has-text("Copy")').first()
@@ -142,7 +142,7 @@ test.describe('Phase 2: Viewport Controls', () => {
     const logger = setupVerboseLogging(page, 'follow-button-presenter')
 
     await logStep(page, logger, 1, 'Create session as presenter')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     const viewer = page.locator('.openseadragon-container')
@@ -160,7 +160,7 @@ test.describe('Phase 2: Viewport Controls', () => {
     const logger = setupVerboseLogging(page, 'snap-shortcut')
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     const viewer = page.locator('.openseadragon-container')
@@ -184,7 +184,7 @@ test.describe('Phase 2: Debug Panel', () => {
     const logger = setupVerboseLogging(page, 'debug-panel')
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     await logStep(page, logger, 2, 'Wait for viewer')
     const viewer = page.locator('.openseadragon-container')
@@ -304,7 +304,7 @@ test.describe('Phase 2: Performance', () => {
     const startTime = Date.now()
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     // Wait for share URL (indicates session is ready)
     const shareInput = page.locator('input[readonly]').first()
@@ -323,7 +323,7 @@ test.describe('Phase 2: Performance', () => {
     const logger = setupVerboseLogging(page, 'perf-responsive')
 
     await logStep(page, logger, 1, 'Create session')
-    await page.goto(`${BASE_URL}/s/new?slide=demo`)
+    await page.goto(`${BASE_URL}/s/new`)
 
     const viewer = page.locator('.openseadragon-container')
     await expect(viewer).toBeVisible({ timeout: 15000 })

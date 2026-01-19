@@ -61,15 +61,14 @@ if [ -d "$SLIDES_DIR" ]; then
     if [ "$SLIDE_COUNT" -eq "0" ]; then
         echo ""
         echo "NOTE: No slide files found in $SLIDES_DIR"
-        echo "      Place .svs, .ndpi, .tiff files there to view real slides."
-        echo "      Demo mode will use placeholder tiles."
+        echo "      Place .svs, .ndpi, .tiff files there to view slides."
     else
         echo "  Found $SLIDE_COUNT slide(s)"
     fi
 else
     echo ""
     echo "NOTE: Slides directory not found: $SLIDES_DIR"
-    echo "      Demo mode will use placeholder tiles."
+    echo "      Place .svs, .ndpi, .tiff files there to view slides."
 fi
 
 # Set environment variables

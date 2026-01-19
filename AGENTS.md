@@ -22,7 +22,7 @@ To quickly assess the impact of changes on latency:
 
 ```bash
 # 1. Start the server with real slides
-SLIDES_DIR=/data/wsi_slides OVERLAY_CACHE_DIR=/tmp/overlay DEMO_ENABLED=true \
+SLIDES_DIR=/data/wsi_slides OVERLAY_CACHE_DIR=/tmp/overlay \
   cargo run --release
 
 # 2. Run quick tile stress test (in another terminal)

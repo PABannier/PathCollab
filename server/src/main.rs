@@ -161,9 +161,6 @@ async fn main() -> anyhow::Result<()> {
     if let Some(ref base_url) = config.public_base_url {
         info!("Public base URL: {}", base_url);
     }
-    if config.demo.enabled {
-        info!("Demo mode enabled: slide_id={:?}", config.demo.slide_id);
-    }
 
     // Ensure data directories exist (auto-create for dev-friendly startup)
     let slides_dir = &config.slide.slides_dir;

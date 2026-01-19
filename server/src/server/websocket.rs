@@ -451,77 +451,57 @@ async fn handle_client_message(
                 connection_id, slide_id
             );
 
-            // Fetch real slide metadata from slide service
-            let slide = if let Some(ref slide_service) = state.slide_service {
-                match slide_service.get_slide(&slide_id).await {
-                    Ok(metadata) => SlideInfo {
-                        id: metadata.id,
-                        name: metadata.name,
-                        width: metadata.width,
-                        height: metadata.height,
-                        tile_size: metadata.tile_size,
-                        num_levels: metadata.num_levels,
-                        tile_url_template: format!(
-                            "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
-                            slide_id
-                        ),
-                    },
-                    Err(e) => {
-                        // Check if demo mode allows fallback to virtual slide
-                        let demo_enabled = std::env::var("DEMO_ENABLED")
-                            .map(|v| v == "true" || v == "1")
-                            .unwrap_or(false);
-
-                        if demo_enabled {
-                            warn!(
-                                "Slide {} not found, using demo slide (DEMO_ENABLED=true)",
-                                slide_id
-                            );
-                            SlideInfo {
-                                id: slide_id.clone(),
-                                name: format!("Demo: {}", slide_id),
-                                width: 100000,
-                                height: 100000,
-                                tile_size: 256,
-                                num_levels: 10,
-                                tile_url_template: format!(
-                                    "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
-                                    slide_id
-                                ),
-                            }
-                        } else {
-                            error!("Failed to get slide metadata: {}", e);
-                            let _ = tx
-                                .send(ServerMessage::SessionError {
-                                    code: crate::protocol::ErrorCode::InvalidSlide,
-                                    message: format!("Slide not found: {}", e),
-                                })
-                                .await;
-                            let _ = tx
-                                .send(ServerMessage::Ack {
-                                    ack_seq: seq,
-                                    status: crate::protocol::AckStatus::Rejected,
-                                    reason: Some(format!("Slide not found: {}", e)),
-                                })
-                                .await;
-                            return;
-                        }
-                    }
+            // Fetch slide metadata from slide service
+            let slide_service = match &state.slide_service {
+                Some(service) => service,
+                None => {
+                    error!("No slide service configured");
+                    let _ = tx
+                        .send(ServerMessage::SessionError {
+                            code: crate::protocol::ErrorCode::InvalidSlide,
+                            message: "Slide service not available".to_string(),
+                        })
+                        .await;
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Rejected,
+                            reason: Some("Slide service not available".to_string()),
+                        })
+                        .await;
+                    return;
                 }
-            } else {
-                // Fallback to demo slide info if no slide service configured
-                warn!("No slide service configured, using demo slide info");
-                SlideInfo {
-                    id: slide_id.clone(),
-                    name: format!("Slide {}", slide_id),
-                    width: 100000,
-                    height: 100000,
-                    tile_size: 256,
-                    num_levels: 10,
+            };
+
+            let slide = match slide_service.get_slide(&slide_id).await {
+                Ok(metadata) => SlideInfo {
+                    id: metadata.id,
+                    name: metadata.name,
+                    width: metadata.width,
+                    height: metadata.height,
+                    tile_size: metadata.tile_size,
+                    num_levels: metadata.num_levels,
                     tile_url_template: format!(
                         "/api/slide/{}/tile/{{level}}/{{x}}/{{y}}",
                         slide_id
                     ),
+                },
+                Err(e) => {
+                    error!("Failed to get slide metadata: {}", e);
+                    let _ = tx
+                        .send(ServerMessage::SessionError {
+                            code: crate::protocol::ErrorCode::InvalidSlide,
+                            message: format!("Slide not found: {}", e),
+                        })
+                        .await;
+                    let _ = tx
+                        .send(ServerMessage::Ack {
+                            ack_seq: seq,
+                            status: crate::protocol::AckStatus::Rejected,
+                            reason: Some(format!("Slide not found: {}", e)),
+                        })
+                        .await;
+                    return;
                 }
             };
 

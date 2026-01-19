@@ -36,9 +36,6 @@ pub struct Config {
     /// Presence configuration
     pub presence: PresenceConfig,
 
-    /// Demo configuration
-    pub demo: DemoConfig,
-
     /// Slide configuration
     pub slide: SlideConfig,
 
@@ -66,15 +63,6 @@ pub struct PresenceConfig {
     pub cursor_broadcast_hz: u32,
     /// Viewport broadcast frequency in Hz
     pub viewport_broadcast_hz: u32,
-}
-
-/// Demo mode configuration
-#[derive(Debug, Clone, Default)]
-pub struct DemoConfig {
-    /// Whether demo mode is enabled
-    pub enabled: bool,
-    /// Demo slide ID
-    pub slide_id: Option<String>,
 }
 
 /// Slide source mode
@@ -134,7 +122,6 @@ impl Default for Config {
             wsistreamer_url: "http://wsistreamer:3000".to_string(),
             session: SessionConfig::default(),
             presence: PresenceConfig::default(),
-            demo: DemoConfig::default(),
             slide: SlideConfig::default(),
             static_files: StaticFilesConfig::default(),
         }
@@ -234,16 +221,6 @@ impl Config {
         if let Ok(val) = env::var("VIEWPORT_BROADCAST_HZ") {
             if let Ok(hz) = val.parse() {
                 config.presence.viewport_broadcast_hz = hz;
-            }
-        }
-
-        // Demo config
-        if let Ok(val) = env::var("DEMO_ENABLED") {
-            config.demo.enabled = val.to_lowercase() == "true" || val == "1";
-        }
-        if let Ok(id) = env::var("DEMO_SLIDE_ID") {
-            if !id.is_empty() {
-                config.demo.slide_id = Some(id);
             }
         }
 

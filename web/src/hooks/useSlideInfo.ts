@@ -24,25 +24,14 @@ export interface UseSlideInfoOptions {
   isLoadingDefaultSlide: boolean
 }
 
-/** Demo slide configuration - used as fallback when no slides available */
-const DEMO_SLIDE_BASE: Omit<SlideInfo, 'tileUrlTemplate'> = {
-  id: 'demo',
-  name: 'Demo Slide',
-  width: 100000,
-  height: 100000,
-  tileSize: 256,
-  numLevels: 10,
-}
-
 /**
  * Hook for deriving the current slide info from various sources.
  *
  * Priority order:
  * 1. Session slide (if in an active session)
  * 2. Default slide from API (for standalone viewer mode)
- * 3. Demo slide fallback
  *
- * Returns null during loading states to show appropriate loading UI.
+ * Returns null during loading states or when no slides are available.
  */
 export function useSlideInfo({
   sessionSlide,
@@ -85,15 +74,7 @@ export function useSlideInfo({
       }
     }
 
-    // 4. Show loading state while fetching default slide
-    if (isLoadingDefaultSlide) {
-      return null
-    }
-
-    // 5. Fallback to demo slide if no slides available
-    return {
-      ...DEMO_SLIDE_BASE,
-      tileUrlTemplate: `/api/slide/${DEMO_SLIDE_BASE.id}/tile/{level}/{x}/{y}`,
-    }
+    // 4. Show loading state while fetching default slide, or null if no slides available
+    return null
   }, [sessionSlide, defaultSlide, isWaitingForSession, isLoadingDefaultSlide])
 }

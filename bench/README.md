@@ -281,8 +281,7 @@ The tile tests require at least one slide in the server's slides directory:
 # Check configured slides directory in .env or environment
 ls $SLIDES_DIR
 
-# Or use demo mode
-DEMO_ENABLED=true cargo run --release
+# Place WSI files (.svs, .ndpi, .tiff, etc.) in the slides directory
 ```
 
 ### Benchmark results vary widely

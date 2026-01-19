@@ -573,15 +573,15 @@ mod tile_serving {
 // ============================================================================
 
 mod websocket_protocol {
+    use super::*;
     use axum::{Router, routing::get};
     use pathcollab_server::protocol::{ClientMessage, ServerMessage};
-    use pathcollab_server::server::AppState;
     use std::net::SocketAddr;
     use tokio_tungstenite::{connect_async, tungstenite::Message};
 
     /// Start a test server on a random port
     async fn start_test_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
-        let state = AppState::new();
+        let state = create_test_app_state_with_slides();
 
         let app = Router::new()
             .route("/ws", get(pathcollab_server::server::ws_handler))
@@ -939,13 +939,13 @@ mod websocket_protocol {
 // ============================================================================
 
 mod phase2_presence {
+    use super::*;
     use axum::{Router, routing::get};
     use pathcollab_server::protocol::{ClientMessage, ServerMessage};
-    use pathcollab_server::server::AppState;
     use tokio_tungstenite::{connect_async, tungstenite::Message};
 
     async fn start_test_server() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
-        let state = AppState::new();
+        let state = create_test_app_state_with_slides();
 
         let app = Router::new()
             .route("/ws", get(pathcollab_server::server::ws_handler))
@@ -1397,11 +1397,10 @@ mod phase2_participants {
     use super::*;
     use axum::{Router, routing::get};
     use pathcollab_server::protocol::{ClientMessage, ServerMessage};
-    use pathcollab_server::server::AppState;
     use tokio_tungstenite::{connect_async, tungstenite::Message};
 
     async fn start_test_server() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
-        let state = AppState::new();
+        let state = create_test_app_state_with_slides();
 
         let app = Router::new()
             .route("/ws", get(pathcollab_server::server::ws_handler))
@@ -1741,13 +1740,13 @@ mod phase2_participants {
 }
 
 mod phase2_robustness {
+    use super::*;
     use axum::{Router, routing::get};
     use pathcollab_server::protocol::{ClientMessage, ServerMessage};
-    use pathcollab_server::server::AppState;
     use tokio_tungstenite::{connect_async, tungstenite::Message};
 
     async fn start_test_server() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
-        let state = AppState::new();
+        let state = create_test_app_state_with_slides();
 
         let app = Router::new()
             .route("/ws", get(pathcollab_server::server::ws_handler))

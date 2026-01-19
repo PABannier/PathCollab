@@ -133,7 +133,12 @@ if [[ -z "$SLIDE_ID" ]]; then
 
     if [[ -z "$SLIDE_ID" ]]; then
         DEFAULT_JSON=$(curl -sf "$BASE_URL/api/slides/default" 2>/dev/null || echo "{}")
-        SLIDE_ID=$(echo "$DEFAULT_JSON" | grep -o '"slide_id":"[^"]*"' | cut -d'"' -f4 || echo "demo")
+        SLIDE_ID=$(echo "$DEFAULT_JSON" | grep -o '"slide_id":"[^"]*"' | cut -d'"' -f4 || echo "")
+    fi
+
+    if [[ -z "$SLIDE_ID" ]]; then
+        log_error "No slides available. Place WSI files in the slides directory."
+        exit 1
     fi
 fi
 log_success "Using slide: $SLIDE_ID"

@@ -8,7 +8,6 @@ use axum::{
     routing::get,
 };
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::sync::Arc;
 
 use super::service::SlideService;
@@ -62,7 +61,7 @@ impl IntoResponse for SlideErrorResponse {
 pub struct DefaultSlideResponse {
     /// The slide ID to use
     pub slide_id: String,
-    /// How this slide was selected: "demo", "first_available", or "last_used"
+    /// How this slide was selected: "first_available" or "last_used"
     pub source: String,
     /// Slide name
     pub name: String,
@@ -176,34 +175,11 @@ pub async fn get_tile(
 
 /// GET /api/slides/default - Get the default slide to display
 ///
-/// Selection priority:
-/// 1. DEMO_SLIDE_ID environment variable (if set and slide exists)
-/// 2. First available slide from the slides directory
+/// Returns the first available slide from the slides directory.
+/// Returns 404 if no slides are available.
 pub async fn get_default_slide(
     State(state): State<SlideAppState>,
 ) -> Result<Json<DefaultSlideResponse>, SlideErrorResponse> {
-    // Try configured demo slide first
-    #[allow(clippy::collapsible_if)]
-    if let Ok(demo_id) = env::var("DEMO_SLIDE_ID") {
-        if !demo_id.is_empty() {
-            if let Ok(metadata) = state.slide_service.get_slide(&demo_id).await {
-                tracing::info!("Default slide selected from DEMO_SLIDE_ID: {}", demo_id);
-                return Ok(Json(DefaultSlideResponse {
-                    slide_id: demo_id,
-                    source: "demo".to_string(),
-                    name: metadata.name,
-                    width: metadata.width,
-                    height: metadata.height,
-                }));
-            }
-            tracing::warn!(
-                "DEMO_SLIDE_ID '{}' configured but slide not found, falling back",
-                demo_id
-            );
-        }
-    }
-
-    // Fall back to first available slide
     let slides = state.slide_service.list_slides().await.map_err(|e| {
         tracing::error!("Failed to list slides for default: {}", e);
         SlideErrorResponse::from(e)

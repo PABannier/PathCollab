@@ -71,7 +71,7 @@ docker run -p 8080:8080 -v ~/slides:/slides ghcr.io/pabannier/pathcollab:latest
 # 2. Open browser
 open http://localhost:8080
 
-# 3. Create a session (click "Create Session" or "Try Demo")
+# 3. Create a session (click "Create Session")
 #    → Select a slide from your /slides directory
 #    → Get a shareable link like: http://localhost:8080/s/k3m9p2qdx7#join=...
 
@@ -230,7 +230,7 @@ docker run -p 8080:8080 -v ~/slides:/slides ghcr.io/pabannier/pathcollab:latest
 ### 2. Create a Session
 
 1. Open http://localhost:8080
-2. Click **"Create Session"** (or **"Try Demo"** for a sample slide)
+2. Click **"Create Session"**
 3. Select a slide from the file browser
 4. You're now the **presenter**
 

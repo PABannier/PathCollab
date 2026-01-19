@@ -38,7 +38,7 @@ async fn test_create_session() {
         .expect("Should connect to server");
 
     client
-        .create_session("demo")
+        .create_session("test-slide")
         .await
         .expect("Should create session");
 

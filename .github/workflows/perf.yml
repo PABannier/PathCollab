@@ -67,7 +67,6 @@ jobs:
           HOST=127.0.0.1 \
           PORT=8080 \
           SLIDES_DIR=/tmp/pathcollab/slides \
-          DEMO_ENABLED=true \
           RUST_LOG=warn \
           ./target/release/pathcollab &
 
@@ -195,7 +194,6 @@ jobs:
           HOST=127.0.0.1 \
           PORT=8080 \
           SLIDES_DIR=/tmp/pathcollab/slides \
-          DEMO_ENABLED=true \
           RUST_LOG=warn \
           ./target/release/pathcollab &
 
