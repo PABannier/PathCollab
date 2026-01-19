@@ -53,9 +53,7 @@ SLIDES_DIR="${1:-$PROJECT_ROOT/data/slides}"
 echo ""
 echo "Setting up directories..."
 mkdir -p "$PROJECT_ROOT/data/slides"
-mkdir -p "$PROJECT_ROOT/data/overlays"
 echo "  [OK] data/slides"
-echo "  [OK] data/overlays"
 
 # Check for slides (warn if empty, don't fail)
 if [ -d "$SLIDES_DIR" ]; then

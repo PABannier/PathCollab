@@ -505,8 +505,6 @@ describe('useSession', () => {
     })
   })
 
-  // Overlay loading tests removed - overlay functionality to be reimplemented
-
   describe('slide change', () => {
     it('should update session slide when slide_changed message is received', async () => {
       const { result } = renderHook(() => useSession({}))
