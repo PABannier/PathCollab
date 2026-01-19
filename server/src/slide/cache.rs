@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use openslide_rs::OpenSlide;
 use tokio::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::types::{SlideError, SlideMetadata};
 
@@ -121,26 +121,5 @@ impl SlideCache {
             let mut metadata = self.metadata.write().await;
             metadata.remove(&lru_id);
         }
-    }
-
-    /// Clear all cached slides
-    #[allow(dead_code)]
-    pub async fn clear(&self) {
-        let mut slides = self.slides.write().await;
-        let mut metadata = self.metadata.write().await;
-        let mut order = self.access_order.write().await;
-
-        slides.clear();
-        metadata.clear();
-        order.clear();
-
-        warn!("Slide cache cleared");
-    }
-
-    /// Get the number of cached slides
-    #[allow(dead_code)]
-    pub async fn len(&self) -> usize {
-        let slides = self.slides.read().await;
-        slides.len()
     }
 }

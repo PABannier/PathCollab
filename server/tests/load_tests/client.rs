@@ -3,7 +3,6 @@
 //! Provides a high-level API for simulating PathCollab clients
 //! with proper protocol handling and latency tracking.
 
-#![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 
 use futures_util::{SinkExt, StreamExt};
@@ -251,13 +250,6 @@ impl LoadTestClient {
         self.send(msg).await
     }
 
-    /// Send ping
-    pub async fn send_ping(&mut self) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
-        let seq = self.next_seq();
-        let msg = ClientMessage::Ping { seq };
-        self.send(msg).await
-    }
-
     /// Receive next message with optional timeout
     pub async fn recv_timeout(
         &mut self,
@@ -273,12 +265,6 @@ impl LoadTestClient {
             Ok(None) => Ok(None), // Connection closed
             Err(_) => Ok(None),   // Timeout
         }
-    }
-
-    /// Process an ack and return the latency if tracked
-    pub async fn process_ack(&mut self, ack_seq: u64) -> Option<Duration> {
-        let mut pending = self.pending_acks.write().await;
-        pending.remove(&ack_seq).map(|sent_at| sent_at.elapsed())
     }
 
     /// Close the connection
@@ -328,21 +314,21 @@ pub async fn spawn_update_client(
                 if y >= 1.0 { y = 0.0; }
 
                 match client.send_cursor(x, y).await {
-                    Ok(seq) => {
-                        let _ = results_tx.send(ClientEvent::MessageSent { seq, msg_type: "cursor" }).await;
+                    Ok(_) => {
+                        let _ = results_tx.send(ClientEvent::MessageSent).await;
                     }
-                    Err(e) => {
-                        let _ = results_tx.send(ClientEvent::Error { message: e.to_string() }).await;
+                    Err(_) => {
+                        let _ = results_tx.send(ClientEvent::Error).await;
                     }
                 }
             }
             _ = viewport_ticker.tick() => {
                 match client.send_viewport(0.5, 0.5, 1.0).await {
-                    Ok(seq) => {
-                        let _ = results_tx.send(ClientEvent::MessageSent { seq, msg_type: "viewport" }).await;
+                    Ok(_) => {
+                        let _ = results_tx.send(ClientEvent::MessageSent).await;
                     }
-                    Err(e) => {
-                        let _ = results_tx.send(ClientEvent::Error { message: e.to_string() }).await;
+                    Err(_) => {
+                        let _ = results_tx.send(ClientEvent::Error).await;
                     }
                 }
             }
@@ -355,15 +341,10 @@ pub async fn spawn_update_client(
 /// Events from client tasks
 #[derive(Debug)]
 pub enum ClientEvent {
-    MessageSent {
-        seq: u64,
-        msg_type: &'static str,
-    },
+    MessageSent,
     MessageReceived {
         latency: Option<Duration>,
         msg_type: &'static str,
     },
-    Error {
-        message: String,
-    },
+    Error,
 }

@@ -180,17 +180,3 @@ pub fn create_test_app_with_slides() -> Router {
         .nest("/api", slide_routes(slide_state))
         .layer(cors)
 }
-
-/// Initialize test logging for detailed output
-#[allow(dead_code)]
-pub fn init_test_logging() {
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-    let _ = tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "pathcollab=debug".into()),
-        )
-        .with(tracing_subscriber::fmt::layer().with_test_writer())
-        .try_init();
-}

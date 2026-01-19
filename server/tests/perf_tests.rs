@@ -3,7 +3,6 @@
 //! Run with: cargo test --test perf_tests -- --ignored --nocapture
 //! Or for quick test: cargo test --test perf_tests test_connection -- --ignored --nocapture
 
-#![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
 
 mod load_tests;
