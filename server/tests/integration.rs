@@ -50,7 +50,6 @@ mod http_routes {
         assert_eq!(json["status"], "ok");
         assert!(json["version"].is_string());
     }
-
 }
 
 // ============================================================================

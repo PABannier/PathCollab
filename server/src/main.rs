@@ -181,7 +181,6 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-
     // Initialize slide service based on configuration
     let slide_service: Arc<dyn pathcollab_server::SlideService> = match config.slide.source_mode {
         SlideSourceMode::Local => {
