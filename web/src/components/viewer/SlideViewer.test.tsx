@@ -270,5 +270,4 @@ describe('SlideViewer', () => {
     expect(mockViewer?.viewport.zoomTo).toHaveBeenCalled()
     expect(mockViewer?.viewport.panTo).toHaveBeenCalled()
   })
-
 })

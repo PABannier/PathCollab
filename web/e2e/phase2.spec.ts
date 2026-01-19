@@ -77,7 +77,6 @@ test.describe('Phase 2: Connection Status', () => {
 
     logger.end()
   })
-
 })
 
 test.describe('Phase 2: Participant Management', () => {
