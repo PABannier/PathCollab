@@ -47,10 +47,9 @@ For thorough performance assessment before merging significant changes:
 ```
 
 This runs:
-1. **Criterion micro-benchmarks** - JPEG encoding, R-tree queries, JSON serialization
-2. **HTTP tile stress test** - Measures tile serving latency (P50/P90/P95/P99)
-3. **WebSocket load test** - Validates cursor/viewport broadcast latency
-4. **Baseline comparison** - Fails if P99 regresses >10%
+1. **HTTP tile stress test** - Measures tile serving latency (P50/P90/P95/P99)
+2. **WebSocket load test** - Validates cursor/viewport broadcast latency
+3. **Baseline comparison** - Fails if P99 regresses >10%
 
 ### Key Metrics to Monitor
 
@@ -59,25 +58,6 @@ This runs:
 | Tile serving P99 | < 100ms | `tile_stress.sh` |
 | Cursor broadcast P99 | < 100ms | WebSocket load test |
 | Viewport broadcast P99 | < 150ms | WebSocket load test |
-
-### Micro-benchmarks for Isolated Testing
-
-When optimizing specific functions:
-
-```bash
-cd server
-
-# Run all micro-benchmarks
-cargo bench
-
-# Run specific benchmark
-cargo bench --bench tile_encoding
-cargo bench --bench spatial_index
-cargo bench --bench message_serialization
-
-# View HTML report
-open target/criterion/report/index.html
-```
 
 ### Live Metrics
 
