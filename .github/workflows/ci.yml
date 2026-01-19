@@ -10,9 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Backend checks
   backend-tests:
-    name: Rust
+    name: Backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +47,43 @@ jobs:
 
       - name: Run tests
         run: cargo test --all-targets
+
+  frontend-tests:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Type check
+        run: bun run tsc --noEmit
+
+      - name: Build
+        run: bun run build
+        working-directory: web
+        continue-on-error: true
+
+      - name: Run frontend tests
+        run: bun run test:run
+        working-directory: web
+
+      - name: Run frontend tests with coverage
+        run: bun run test:coverage
+        working-directory: web
+        continue-on-error: true
 
   e2e-tests:
     name: E2E Tests
@@ -114,44 +150,6 @@ jobs:
           name: playwright-report
           path: web/playwright-report/
           retention-days: 30
-
-  # Frontend checks
-  frontend-tests:
-    name: Frontend
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./web
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Lint
-        run: bun run lint
-
-      - name: Type check
-        run: bun run tsc --noEmit
-
-      - name: Build
-        run: bun run build
-        working-directory: web
-        continue-on-error: true
-
-      - name: Run frontend tests
-        run: bun run test:run
-        working-directory: web
-
-      - name: Run frontend tests with coverage
-        run: bun run test:coverage
-        working-directory: web
-        continue-on-error: true
 
   # Docker build verification
   docker:
