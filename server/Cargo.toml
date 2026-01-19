@@ -38,5 +38,8 @@ image = { version = "0.25", default-features = false, features = ["jpeg"] }
 metrics = "0.24"
 metrics-exporter-prometheus = "0.16"
 
+# Efficient data structures
+indexmap = "2"
+
 [dev-dependencies]
 tokio-tungstenite = "0.26"
