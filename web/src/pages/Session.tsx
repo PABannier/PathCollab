@@ -44,7 +44,6 @@ export function Session() {
   const viewerContainerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<SlideViewerHandle | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notification, setNotification] = useState<string | null>(null)
   const autoCreateRequestedRef = useRef(false)
 
   // Footer cursor position (for displaying coordinates)
@@ -55,6 +54,7 @@ export function Session() {
     const hash = window.location.hash.slice(1)
     return new URLSearchParams(hash)
   }, [])
+
   // Only read secrets from hash fragment (never sent to server) - do NOT use searchParams
   const joinSecret = hashParams.get('join') || undefined
   const presenterKey = hashParams.get('presenter') || undefined
@@ -372,11 +372,6 @@ export function Session() {
             </Button>
           </div>
         </div>
-      )}
-
-      {/* Notification banner */}
-      {notification && (
-        <div className="bg-green-600 px-4 py-2 text-sm text-white">{notification}</div>
       )}
 
       {/* Two-pane layout: Sidebar + Viewer */}
