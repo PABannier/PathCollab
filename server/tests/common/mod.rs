@@ -180,3 +180,9 @@ pub fn create_test_app_with_slides() -> Router {
         .nest("/api", slide_routes(slide_state))
         .layer(cors)
 }
+
+/// Create an AppState with a mock slide service for WebSocket tests
+pub fn create_test_app_state_with_slides() -> AppState {
+    let slide_service: Arc<dyn SlideService> = Arc::new(MockSlideService::new());
+    AppState::new().with_slide_service(slide_service)
+}
