@@ -327,12 +327,12 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     }
   }, [])
 
-  // Update textures when tiles change
+  // Update textures when tiles change (textures are cached permanently, never deleted until unmount)
   useEffect(() => {
     const gl = glRef.current
     if (!gl || !programRef.current) return
 
-    // Create textures for new tiles
+    // Create textures for new tiles (never delete existing textures - they stay cached)
     for (const [key, tile] of tiles) {
       if (texturesRef.current.has(key)) continue
 
@@ -363,13 +363,9 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
       texturesRef.current.set(key, { texture, tile })
     }
 
-    // Remove textures for tiles that are no longer needed
-    for (const [key, { texture }] of texturesRef.current) {
-      if (!tiles.has(key)) {
-        gl.deleteTexture(texture)
-        texturesRef.current.delete(key)
-      }
-    }
+    // NOTE: We intentionally do NOT delete textures when tiles are removed from the Map.
+    // Tissue tiles are cheap to render and we want to keep them cached for instant re-display
+    // when panning back or re-enabling the overlay. Textures are only cleaned up on unmount.
   }, [tiles, glReady])
 
   // Calculate viewport transform matrix

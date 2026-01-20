@@ -98,9 +98,15 @@ export function useTissueOverlay({
   slideHeight,
   enabled,
 }: UseTissueOverlayOptions): UseTissueOverlayReturn {
-  // Tile cache: key -> CachedTile
+  // Tile cache: key -> CachedTile (persisted across viewport changes and enable/disable)
   const [tiles, setTiles] = useState<Map<string, CachedTile>>(new Map())
+  const tilesRef = useRef<Map<string, CachedTile>>(tiles)
   const pendingFetchesRef = useRef<Set<string>>(new Set())
+
+  // Keep ref in sync with state (for use in callbacks without dependency)
+  useEffect(() => {
+    tilesRef.current = tiles
+  }, [tiles])
 
   // Query tissue metadata to check if overlay exists
   const { data: metadataResponse, isLoading: isLoadingMetadata } = useQuery({
@@ -238,15 +244,17 @@ export function useTissueOverlay({
     return visibleTileInfos.slice(0, MAX_VISIBLE_TILES)
   }, [metadata, viewport, viewerBounds, slideWidth, slideHeight, currentLevel])
 
-  // Fetch visible tiles
+  // Fetch visible tiles (uses ref to avoid recreating callback when tiles change)
   const fetchTiles = useCallback(async () => {
     if (!slideId || !metadata || !enabled || visibleTiles.length === 0) return
 
     const tilesToFetch: TissueTileInfo[] = []
+    const currentTiles = tilesRef.current
 
     for (const tile of visibleTiles) {
       const key = tileKey(tile.level, tile.x, tile.y)
-      if (!tiles.has(key) && !pendingFetchesRef.current.has(key)) {
+      // Check both the ref (for already cached) and pending fetches
+      if (!currentTiles.has(key) && !pendingFetchesRef.current.has(key)) {
         tilesToFetch.push(tile)
         pendingFetchesRef.current.add(key)
       }
@@ -286,7 +294,7 @@ export function useTissueOverlay({
         })
       )
     }
-  }, [slideId, metadata, enabled, visibleTiles, tiles])
+  }, [slideId, metadata, enabled, visibleTiles])
 
   // Debounce tile fetching
   useEffect(() => {
