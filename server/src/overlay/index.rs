@@ -35,6 +35,13 @@ impl OverlaySpatialIndex {
         let mut cells = Vec::new();
         let mut entries = Vec::new();
 
+        if data.tiles.is_empty() {
+            return Self {
+                tree: RTree::new(),
+                cells,
+            };
+        }
+
         // Track bounds for debug logging
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
