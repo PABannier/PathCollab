@@ -145,6 +145,7 @@ export function Session() {
     cells: allCells,
     isLoading: isLoadingCells,
     hasOverlay,
+    isOverlayLoading,
     overlayMetadata,
   } = useCellOverlay({
     slideId: slide?.id,
@@ -319,7 +320,8 @@ export function Session() {
             <OverlayControls
               cellOverlaysEnabled={cellOverlaysEnabled}
               onCellOverlaysChange={handleCellOverlaysChange}
-              hasCellOverlay={hasOverlay}
+              hasCellOverlay={hasOverlay && !isOverlayLoading}
+              isOverlayLoading={isOverlayLoading}
               cellCount={overlayMetadata?.cell_count}
               opacity={cellOverlayOpacity}
               onOpacityChange={handleCellOverlayOpacityChange}

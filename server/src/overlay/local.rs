@@ -14,12 +14,20 @@ use super::reader::{AnnotationReader, CompositeReader};
 use super::service::OverlayService;
 use super::types::{CellMask, OverlayError, OverlayMetadata, RegionRequest};
 
+/// Cache state for overlay loading
+#[derive(Clone)]
+enum OverlayCacheState {
+    /// File found, loading in progress
+    Loading,
+    /// Fully loaded and indexed
+    Ready(Arc<CachedOverlay>),
+}
+
 /// Local overlay service that reads overlay files from disk
 pub struct LocalOverlayService {
     overlays_dir: PathBuf,
     reader: CompositeReader,
-    /// Cache: slide_id -> (metadata, spatial index)
-    cache: DashMap<String, Arc<CachedOverlay>>,
+    cache: Arc<DashMap<String, OverlayCacheState>>,
 }
 
 /// Cached overlay data including metadata and spatial index
@@ -42,7 +50,7 @@ impl LocalOverlayService {
         Ok(Self {
             overlays_dir,
             reader: CompositeReader::new(),
-            cache: DashMap::new(),
+            cache: Arc::new(DashMap::new()),
         })
     }
 
@@ -70,8 +78,14 @@ impl LocalOverlayService {
     /// Load and cache overlay data for a slide
     fn load_overlay(&self, slide_id: &str) -> Result<Arc<CachedOverlay>, OverlayError> {
         // Check cache first
-        if let Some(cached) = self.cache.get(slide_id) {
-            return Ok(cached.clone());
+        if let Some(entry) = self.cache.get(slide_id) {
+            return match entry.value() {
+                OverlayCacheState::Loading => {
+                    // Still loading, return not found for now
+                    Err(OverlayError::NotFound(slide_id.to_string()))
+                }
+                OverlayCacheState::Ready(cached) => Ok(cached.clone()),
+            };
         }
 
         // Find overlay file
@@ -93,7 +107,10 @@ impl LocalOverlayService {
         let cached = Arc::new(CachedOverlay { metadata, index });
 
         // Cache the overlay
-        self.cache.insert(slide_id.to_string(), cached.clone());
+        self.cache.insert(
+            slide_id.to_string(),
+            OverlayCacheState::Ready(cached.clone()),
+        );
 
         info!(
             "Loaded overlay for slide '{}': {} cells",
@@ -102,6 +119,80 @@ impl LocalOverlayService {
         );
 
         Ok(cached)
+    }
+
+    /// Check overlay status: (file_exists, is_ready)
+    pub fn get_overlay_status(&self, slide_id: &str) -> (bool, bool) {
+        // Check cache first
+        if let Some(entry) = self.cache.get(slide_id) {
+            return match entry.value() {
+                OverlayCacheState::Loading => (true, false),
+                OverlayCacheState::Ready(_) => (true, true),
+            };
+        }
+        // Check if file exists (fast filesystem check)
+        (self.find_overlay_file(slide_id).is_some(), false)
+    }
+
+    /// Initiate background loading for an overlay
+    pub fn initiate_load(&self, slide_id: &str) {
+        // Don't start if already loading/loaded
+        if self.cache.contains_key(slide_id) {
+            return;
+        }
+
+        // Check if file exists before marking as loading
+        let path = match self.find_overlay_file(slide_id) {
+            Some(p) => p,
+            None => return,
+        };
+
+        // Mark as loading
+        self.cache
+            .insert(slide_id.to_string(), OverlayCacheState::Loading);
+
+        // Clone what we need for the blocking task
+        let cache = self.cache.clone();
+        let slide_id = slide_id.to_string();
+        let reader = CompositeReader::new();
+
+        // Spawn blocking task for CPU-intensive work
+        tokio::task::spawn_blocking(move || {
+            match Self::do_load_blocking(&reader, &path, &slide_id) {
+                Ok(cached) => {
+                    cache.insert(slide_id.clone(), OverlayCacheState::Ready(cached.clone()));
+                    info!(
+                        "Background loaded overlay for slide '{}': {} cells",
+                        slide_id,
+                        cached.index.cell_count()
+                    );
+                }
+                Err(e) => {
+                    cache.remove(&slide_id); // Allow retry
+                    warn!("Failed to load overlay for '{}': {}", slide_id, e);
+                }
+            }
+        });
+    }
+
+    /// Perform blocking load of overlay file (runs on blocking thread pool)
+    fn do_load_blocking(
+        reader: &CompositeReader,
+        path: &PathBuf,
+        slide_id: &str,
+    ) -> Result<Arc<CachedOverlay>, OverlayError> {
+        debug!("Background loading overlay from: {:?}", path);
+
+        // Read and parse file
+        let data = reader.read(path)?;
+
+        // Build spatial index
+        let index = OverlaySpatialIndex::from_segmentation_data(&data);
+
+        // Create metadata
+        let metadata = Self::build_metadata(slide_id, &data, &index);
+
+        Ok(Arc::new(CachedOverlay { metadata, index }))
     }
 
     /// Build metadata from segmentation data
@@ -201,5 +292,15 @@ impl OverlayService for LocalOverlayService {
     async fn get_overlay_metadata(&self, slide_id: &str) -> Result<OverlayMetadata, OverlayError> {
         let cached = self.load_overlay(slide_id)?;
         Ok(cached.metadata.clone())
+    }
+
+    async fn get_overlay_status(&self, slide_id: &str) -> (bool, bool) {
+        // Delegate to the inherent method
+        LocalOverlayService::get_overlay_status(self, slide_id)
+    }
+
+    async fn initiate_load(&self, slide_id: &str) {
+        // Delegate to the inherent method
+        LocalOverlayService::initiate_load(self, slide_id)
     }
 }

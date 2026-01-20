@@ -17,24 +17,38 @@ interface UseCellOverlayOptions {
   enabled: boolean
 }
 
+interface OverlayLoadingResponse {
+  slide_id: string
+  status: 'loading'
+}
+
+type OverlayMetadataResponse = OverlayMetadata | OverlayLoadingResponse
+
 interface UseCellOverlayReturn {
   cells: CellMask[]
   isLoading: boolean
   hasOverlay: boolean
+  isOverlayLoading: boolean
   overlayMetadata: OverlayMetadata | null
 }
 
-async function fetchOverlayMetadata(slideId: string): Promise<OverlayMetadata | null> {
+async function fetchOverlayMetadata(slideId: string): Promise<OverlayMetadataResponse | null> {
   const response = await fetch(`/api/slide/${slideId}/overlay/metadata`)
 
+  if (response.status === 404) {
+    return null
+  }
+
+  if (response.status === 202) {
+    // Loading in progress - return loading response
+    return response.json() as Promise<OverlayLoadingResponse>
+  }
+
   if (!response.ok) {
-    if (response.status === 404) {
-      return null
-    }
     throw new Error(`Failed to fetch overlay metadata: ${response.status}`)
   }
 
-  return response.json()
+  return response.json() as Promise<OverlayMetadata>
 }
 
 async function fetchCellsInRegion(
@@ -103,14 +117,29 @@ export function useCellOverlay({
   }, [region])
 
   // Query overlay metadata to check if overlay exists
-  const { data: metadata, isLoading: isLoadingMetadata } = useQuery({
+  const { data: metadataResponse, isLoading: isLoadingMetadata } = useQuery({
     queryKey: ['overlay', 'metadata', slideId],
     queryFn: () => fetchOverlayMetadata(slideId!),
     enabled: !!slideId,
     staleTime: 5 * 60 * 1000, // Cache metadata for 5 minutes
+    // Poll every 2 seconds while loading
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (data && 'status' in data && data.status === 'loading') {
+        return 2000
+      }
+      return false
+    },
   })
 
-  const hasOverlay = !!metadata
+  // Check if overlay is in loading state
+  const isOverlayLoading = metadataResponse != null && 'status' in metadataResponse && metadataResponse.status === 'loading'
+
+  // Extract actual metadata (null if loading or not found)
+  const metadata = metadataResponse && !('status' in metadataResponse) ? metadataResponse : null
+
+  // hasOverlay is true when loading OR when ready
+  const hasOverlay = !!metadata || isOverlayLoading
 
   // Query cells in the current viewport region
   const { data: cellsResponse, isLoading: isLoadingCells } = useQuery({
@@ -131,6 +160,7 @@ export function useCellOverlay({
     cells: cellsResponse?.cells ?? [],
     isLoading: isLoadingMetadata || isLoadingCells,
     hasOverlay,
-    overlayMetadata: metadata ?? null,
+    isOverlayLoading,
+    overlayMetadata: metadata,
   }
 }

@@ -28,6 +28,13 @@ pub struct OverlayErrorResponse {
     pub code: String,
 }
 
+/// Loading response for overlay API (returned with 202 Accepted)
+#[derive(Debug, Serialize)]
+pub struct OverlayLoadingResponse {
+    pub slide_id: String,
+    pub status: String, // "loading"
+}
+
 impl From<OverlayError> for OverlayErrorResponse {
     fn from(e: OverlayError) -> Self {
         let code = match &e {
@@ -133,17 +140,42 @@ pub async fn get_cells_in_region(
 pub async fn get_overlay_metadata(
     State(state): State<OverlayAppState>,
     Path(id): Path<String>,
-) -> Result<Json<OverlayMetadata>, OverlayErrorResponse> {
-    let metadata = state
-        .overlay_service
-        .get_overlay_metadata(&id)
-        .await
-        .map_err(|e| {
-            tracing::warn!("Failed to get overlay metadata for slide {}: {}", id, e);
-            OverlayErrorResponse::from(e)
-        })?;
+) -> Response {
+    let (exists, ready) = state.overlay_service.get_overlay_status(&id).await;
 
-    Ok(Json(metadata))
+    if !exists {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(OverlayErrorResponse {
+                error: format!("No overlay found for slide '{}'", id),
+                code: "not_found".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    if !ready {
+        // Initiate loading if not already started
+        state.overlay_service.initiate_load(&id).await;
+        // Return 202 Accepted
+        return (
+            StatusCode::ACCEPTED,
+            Json(OverlayLoadingResponse {
+                slide_id: id,
+                status: "loading".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Ready - return full metadata (200 OK)
+    match state.overlay_service.get_overlay_metadata(&id).await {
+        Ok(metadata) => (StatusCode::OK, Json(metadata)).into_response(),
+        Err(e) => {
+            tracing::warn!("Failed to get overlay metadata for slide {}: {}", id, e);
+            OverlayErrorResponse::from(e).into_response()
+        }
+    }
 }
 
 /// Build overlay API routes
