@@ -152,13 +152,11 @@ export function useTissueOverlay({
     }
 
     // Determine the ideal level to use based on zoom
-    // Use lower level (more detail) when zoomed in, higher level (less detail) when zoomed out
     const viewportWidth = 1 / viewport.zoom
     const pixelsPerViewportPixel = (viewportWidth * slideWidth) / viewerBounds.width
-    const idealLevel = Math.max(
-      0,
-      Math.min(metadata.max_level, Math.floor(Math.log2(pixelsPerViewportPixel)))
-    )
+    // Calculate how many levels down from max we should go based on the zoom
+    const levelsDown = Math.max(0, Math.floor(Math.log2(pixelsPerViewportPixel)))
+    const idealLevel = Math.max(0, metadata.max_level - levelsDown)
 
     // Find the closest available level to the ideal level
     let closestLevel = 0

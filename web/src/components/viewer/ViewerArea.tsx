@@ -199,7 +199,6 @@ export function ViewerArea({
             viewerBounds={viewerBounds}
             viewport={realtimeViewport}
             slideWidth={slide.width}
-            slideHeight={slide.height}
             opacity={tissueOverlayOpacity}
             visibleClasses={visibleTissueClasses}
           />

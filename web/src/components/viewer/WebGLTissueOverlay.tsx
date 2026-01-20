@@ -15,7 +15,6 @@ interface WebGLTissueOverlayProps {
   viewerBounds: DOMRect
   viewport: Viewport
   slideWidth: number
-  slideHeight: number
   opacity?: number
   visibleClasses: Set<number>
 }
@@ -226,7 +225,6 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
   viewerBounds,
   viewport,
   slideWidth,
-  slideHeight,
   opacity = 0.7,
   visibleClasses,
 }: WebGLTissueOverlayProps) {
@@ -303,7 +301,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     gl.enable(gl.BLEND)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- triggering re-render after WebGL init
+    // Trigger re-render after WebGL init to ensure textures are created
     setGlReady((v) => v + 1)
 
     // Capture ref values for cleanup
@@ -370,7 +368,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
 
   // Calculate viewport transform matrix
   const transformMatrix = useMemo(() => {
-    if (viewport.zoom <= 0 || slideWidth <= 0 || slideHeight <= 0) {
+    if (viewport.zoom <= 0 || slideWidth <= 0) {
       return null
     }
 
@@ -387,7 +385,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     const translateY = (2 * viewportTop) / viewportHeight + 1
 
     return new Float32Array([scaleX, 0, 0, 0, scaleY, 0, translateX, translateY, 1])
-  }, [viewport, viewerBounds.width, viewerBounds.height, slideWidth, slideHeight])
+  }, [viewport, viewerBounds.width, viewerBounds.height, slideWidth])
 
   // Build colormap from metadata
   const colormap = useMemo(() => buildColormap(metadata.classes), [metadata.classes])
@@ -478,6 +476,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
       // Draw tile
       gl.drawArrays(gl.TRIANGLES, 0, 6)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tiles is intentionally included to trigger re-render when new tiles load
   }, [
     transformMatrix,
     colormap,
@@ -486,6 +485,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     currentLevel,
     metadata.max_level,
     metadata.tile_size,
+    tiles, // Re-render when tiles change (triggers after texture effect creates textures)
   ])
 
   // Render on each animation frame when viewport changes
