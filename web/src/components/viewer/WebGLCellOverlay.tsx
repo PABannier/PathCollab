@@ -328,18 +328,22 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     // Trigger re-render when buffers are updated
     setBufferVersion((v) => v + 1)
 
+    // Capture the current buffers for cleanup
+    // This avoids the ESLint warning about refs changing before cleanup runs
+    const buffersToCleanup = cellBuffersRef.current
+
     // Cleanup buffers on unmount or when cells change
     return () => {
       const currentGl = glRef.current
       if (currentGl) {
-        for (const buffer of cellBuffersRef.current.values()) {
+        for (const buffer of buffersToCleanup.values()) {
           if (buffer.fullBuffer) currentGl.deleteBuffer(buffer.fullBuffer)
           if (buffer.simplifiedBuffer) currentGl.deleteBuffer(buffer.simplifiedBuffer)
           if (buffer.boxBuffer) currentGl.deleteBuffer(buffer.boxBuffer)
           if (buffer.pointBuffer) currentGl.deleteBuffer(buffer.pointBuffer)
         }
       }
-      cellBuffersRef.current.clear()
+      buffersToCleanup.clear()
     }
   }, [cells, glReady])
 

@@ -157,8 +157,10 @@ export function Session() {
   })
 
   // Initialize visible cell types when metadata loads
+  // This is intentional state sync from external data (server response) to local state
   useEffect(() => {
     if (overlayMetadata?.cell_types) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing server state to local state
       setVisibleCellTypes(new Set(overlayMetadata.cell_types))
     }
   }, [overlayMetadata?.cell_types])
@@ -201,11 +203,14 @@ export function Session() {
   )
 
   // Sync follower state when presenter cell overlay changes
+  // This is intentional state sync: followers receive presenter's overlay state via WebSocket
   useEffect(() => {
     if (!isPresenter && presenterCellOverlay) {
+      /* eslint-disable react-hooks/set-state-in-effect -- syncing presenter state to follower */
       setCellOverlaysEnabled(presenterCellOverlay.enabled)
       setCellOverlayOpacity(presenterCellOverlay.opacity)
       setVisibleCellTypes(new Set(presenterCellOverlay.visibleCellTypes))
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [isPresenter, presenterCellOverlay])
 

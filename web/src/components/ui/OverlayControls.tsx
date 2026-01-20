@@ -70,33 +70,52 @@ export function OverlayControls({
         {/* Cell Overlays Toggle */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className={`text-sm ${hasCellOverlay || isOverlayLoading ? 'text-gray-300' : 'text-gray-500'}`}>
+            <span
+              className={`text-sm ${hasCellOverlay || isOverlayLoading ? 'text-gray-300' : 'text-gray-500'}`}
+            >
               Cell overlays
             </span>
             {/* Show cell count when ready */}
-            {cellOverlaysEnabled && hasCellOverlay && !isOverlayLoading && cellCount !== undefined && (
-              <span
-                className="inline-flex items-center px-1.5 py-0.5 text-xs font-semibold rounded"
-                style={{
-                  backgroundColor: 'var(--color-primary, #3b82f6)',
-                  color: 'white',
-                }}
-              >
-                {cellCount.toLocaleString()}
-              </span>
-            )}
+            {cellOverlaysEnabled &&
+              hasCellOverlay &&
+              !isOverlayLoading &&
+              cellCount !== undefined && (
+                <span
+                  className="inline-flex items-center px-1.5 py-0.5 text-xs font-semibold rounded"
+                  style={{
+                    backgroundColor: 'var(--color-primary, #3b82f6)',
+                    color: 'white',
+                  }}
+                >
+                  {cellCount.toLocaleString()}
+                </span>
+              )}
             {/* Loading spinner */}
             {isOverlayLoading && (
               <span className="flex items-center gap-1.5 text-gray-400">
                 <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
                 </svg>
                 <span className="text-xs">(loading)</span>
               </span>
             )}
             {/* Only show unavailable if not loading */}
-            {!hasCellOverlay && !isOverlayLoading && <span className="text-xs text-gray-500">(unavailable)</span>}
+            {!hasCellOverlay && !isOverlayLoading && (
+              <span className="text-xs text-gray-500">(unavailable)</span>
+            )}
           </div>
           <Toggle
             checked={cellOverlaysEnabled}

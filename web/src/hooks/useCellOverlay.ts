@@ -133,7 +133,10 @@ export function useCellOverlay({
   })
 
   // Check if overlay is in loading state
-  const isOverlayLoading = metadataResponse != null && 'status' in metadataResponse && metadataResponse.status === 'loading'
+  const isOverlayLoading =
+    metadataResponse != null &&
+    'status' in metadataResponse &&
+    metadataResponse.status === 'loading'
 
   // Extract actual metadata (null if loading or not found)
   const metadata = metadataResponse && !('status' in metadataResponse) ? metadataResponse : null
@@ -142,6 +145,7 @@ export function useCellOverlay({
   const hasOverlay = !!metadata || isOverlayLoading
 
   // Query cells in the current viewport region
+  // Only enable when metadata is ready (not just loading) to avoid failed requests
   const { data: cellsResponse, isLoading: isLoadingCells } = useQuery({
     queryKey: ['overlay', 'cells', slideId, debouncedRegion],
     queryFn: () =>
@@ -152,7 +156,7 @@ export function useCellOverlay({
         debouncedRegion!.width,
         debouncedRegion!.height
       ),
-    enabled: enabled && hasOverlay && !!slideId && !!debouncedRegion,
+    enabled: enabled && !!metadata && !!slideId && !!debouncedRegion,
     staleTime: 30 * 1000, // Cache cells for 30 seconds
   })
 

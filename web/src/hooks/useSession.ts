@@ -185,7 +185,9 @@ export function useSession({
     (message: WebSocketMessage) => {
       switch (message.type) {
         case 'session_created': {
-          const serverSession = message.session as ServerSessionState & { cell_overlay?: ServerCellOverlayState }
+          const serverSession = message.session as ServerSessionState & {
+            cell_overlay?: ServerCellOverlayState
+          }
           const sessionData = toFrontendSession(serverSession)
           setSession(sessionData)
           setIsCreatingSession(false)
@@ -213,7 +215,9 @@ export function useSession({
           break
         }
         case 'session_joined': {
-          const serverSession = message.session as ServerSessionState & { cell_overlay?: ServerCellOverlayState }
+          const serverSession = message.session as ServerSessionState & {
+            cell_overlay?: ServerCellOverlayState
+          }
           const sessionData = toFrontendSession(serverSession)
           setSession(sessionData)
           if (message.you) {
