@@ -2,6 +2,7 @@ use axum::{Json, Router, extract::State, response::IntoResponse, routing::get};
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use pathcollab_server::SessionManager;
 use pathcollab_server::config::{Config, SlideSourceMode};
+use pathcollab_server::overlay::{LocalOverlayService, OverlayAppState, overlay_routes};
 use pathcollab_server::server::{AppState, ws_handler};
 use pathcollab_server::session::state::SessionConfig as SessionStateConfig;
 use pathcollab_server::slide::{LocalSlideService, SlideAppState, slide_routes};
@@ -202,6 +203,22 @@ async fn main() -> anyhow::Result<()> {
         slide_service: slide_service.clone(),
     };
 
+    // Initialize overlay service
+    let overlay_service: Arc<dyn pathcollab_server::OverlayService> = {
+        info!(
+            "Using local overlay source: {:?}",
+            config.overlay.overlays_dir
+        );
+        let service = LocalOverlayService::new(&config.overlay)
+            .expect("Failed to initialize local overlay service");
+        Arc::new(service)
+    };
+
+    // Create overlay app state for HTTP routes
+    let overlay_app_state = OverlayAppState {
+        overlay_service: overlay_service.clone(),
+    };
+
     // Create shared application state with session config, slide service, and public base URL
     let session_config = SessionStateConfig {
         max_duration: config.session.max_duration,
@@ -244,6 +261,9 @@ async fn main() -> anyhow::Result<()> {
     // Build slide API routes (separate state, merged as nested service)
     let slide_api = slide_routes(slide_app_state);
 
+    // Build overlay API routes
+    let overlay_api = overlay_routes(overlay_app_state);
+
     // Build the router with multiple state types
     // The slide routes have their own state, so we nest them before adding AppState
     let app = Router::new()
@@ -254,6 +274,8 @@ async fn main() -> anyhow::Result<()> {
         .with_state(app_state)
         // Merge slide routes after setting AppState (slide routes have their own state)
         .merge(Router::new().nest("/api", slide_api))
+        // Merge overlay routes
+        .merge(Router::new().nest("/api", overlay_api))
         .layer(TraceLayer::new_for_http())
         .layer(cors);
 

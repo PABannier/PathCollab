@@ -39,6 +39,9 @@ pub struct Config {
     /// Slide configuration
     pub slide: SlideConfig,
 
+    /// Overlay configuration
+    pub overlay: OverlayConfig,
+
     /// Static file serving configuration
     pub static_files: StaticFilesConfig,
 }
@@ -112,6 +115,21 @@ pub struct SlideConfig {
     pub max_cached_slides: usize,
 }
 
+/// Overlay-related configuration
+#[derive(Debug, Clone)]
+pub struct OverlayConfig {
+    /// Directory containing overlay files
+    pub overlays_dir: PathBuf,
+}
+
+impl Default for OverlayConfig {
+    fn default() -> Self {
+        Self {
+            overlays_dir: PathBuf::from("./data/overlays"),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -123,6 +141,7 @@ impl Default for Config {
             session: SessionConfig::default(),
             presence: PresenceConfig::default(),
             slide: SlideConfig::default(),
+            overlay: OverlayConfig::default(),
             static_files: StaticFilesConfig::default(),
         }
     }
@@ -249,6 +268,11 @@ impl Config {
             if let Ok(size) = val.parse() {
                 config.slide.max_cached_slides = size;
             }
+        }
+
+        // Overlay config
+        if let Ok(path) = env::var("OVERLAY_DIR") {
+            config.overlay.overlays_dir = PathBuf::from(path);
         }
 
         // Static files config
