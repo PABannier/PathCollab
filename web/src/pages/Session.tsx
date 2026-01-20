@@ -138,7 +138,7 @@ export function Session() {
   })
 
   // Cell overlay data
-  const { cells, hasOverlay, overlayMetadata } = useCellOverlay({
+  const { cells, isLoading: isLoadingCells, hasOverlay, overlayMetadata } = useCellOverlay({
     slideId: slide?.id,
     viewport: currentViewport,
     viewerBounds,
@@ -303,6 +303,7 @@ export function Session() {
         latency={latency}
         currentViewport={currentViewport}
         footerCursorPos={footerCursorPos}
+        isLoadingCells={cellOverlaysEnabled && isLoadingCells}
       />
 
       {/* Keyboard shortcuts help modal */}
