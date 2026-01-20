@@ -5,6 +5,7 @@ import { WebGLTissueOverlay } from './WebGLTissueOverlay'
 import { CursorLayer } from './CursorLayer'
 import type { CellMask, TissueOverlayMetadata } from '../../types/overlay'
 import type { CachedTile } from '../../hooks/useTissueOverlay'
+import type { TissueTileIndex } from '../../utils/TissueTileIndex'
 import { MinimapOverlay } from './MinimapOverlay'
 import { PresetEmptyState } from '../ui/EmptyState'
 import { ReturnToPresenterButton } from '../ui/ReturnToPresenterButton'
@@ -81,6 +82,8 @@ export interface ViewerAreaProps {
   tissueMetadata?: TissueOverlayMetadata | null
   /** Cached tissue tiles */
   tissueTiles?: Map<string, CachedTile>
+  /** Spatial index for tissue tiles */
+  tissueTileIndex?: TissueTileIndex | null
   /** Current tissue tile level */
   tissueCurrentLevel?: number
   /** Opacity for tissue overlays (0-1) */
@@ -120,6 +123,7 @@ export function ViewerArea({
   tissueOverlaysEnabled,
   tissueMetadata,
   tissueTiles,
+  tissueTileIndex,
   tissueCurrentLevel,
   tissueOverlayOpacity,
   visibleTissueClasses,
@@ -190,11 +194,13 @@ export function ViewerArea({
         slide &&
         tissueMetadata &&
         tissueTiles &&
+        tissueTileIndex &&
         tissueCurrentLevel !== undefined &&
         visibleTissueClasses && (
           <WebGLTissueOverlay
             metadata={tissueMetadata}
             tiles={tissueTiles}
+            tileIndex={tissueTileIndex}
             currentLevel={tissueCurrentLevel}
             viewerBounds={viewerBounds}
             viewport={realtimeViewport}

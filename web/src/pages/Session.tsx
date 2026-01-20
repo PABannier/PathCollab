@@ -164,6 +164,7 @@ export function Session() {
   const {
     metadata: tissueMetadata,
     tiles: tissueTiles,
+    tileIndex: tissueTileIndex,
     currentLevel: tissueCurrentLevel,
     isLoading: isLoadingTissue,
     hasOverlay: hasTissueOverlay,
@@ -173,6 +174,7 @@ export function Session() {
     viewport: currentViewport,
     viewerBounds,
     slideWidth: slide?.width ?? 0,
+    slideHeight: slide?.height ?? 0,
     enabled: tissueOverlaysEnabled && !!slide,
   })
 
@@ -418,6 +420,7 @@ export function Session() {
           tissueOverlaysEnabled={tissueOverlaysEnabled}
           tissueMetadata={tissueMetadata}
           tissueTiles={tissueTiles}
+          tissueTileIndex={tissueTileIndex}
           tissueCurrentLevel={tissueCurrentLevel}
           tissueOverlayOpacity={tissueOverlayOpacity}
           visibleTissueClasses={visibleTissueClasses}

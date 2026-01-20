@@ -1,6 +1,7 @@
 import { memo, useRef, useEffect, useCallback, useMemo, useState } from 'react'
 import type { TissueOverlayMetadata, TissueClassInfo } from '../../types/overlay'
 import type { CachedTile } from '../../hooks/useTissueOverlay'
+import type { TissueTileIndex, ViewportBounds } from '../../utils/TissueTileIndex'
 
 interface Viewport {
   centerX: number
@@ -11,6 +12,7 @@ interface Viewport {
 interface WebGLTissueOverlayProps {
   metadata: TissueOverlayMetadata
   tiles: Map<string, CachedTile>
+  tileIndex: TissueTileIndex
   currentLevel: number
   viewerBounds: DOMRect
   viewport: Viewport
@@ -55,12 +57,12 @@ const TISSUE_COLORS_BY_NAME: Record<string, [number, number, number]> = {
   other: [1.0, 0.627, 0.478],
 }
 
-// Vertex shader - transforms slide coordinates to clip space
-const VERTEX_SHADER_SOURCE = `
-  attribute vec2 a_position;
-  attribute vec2 a_texcoord;
+// Vertex shader - transforms slide coordinates to clip space (GLSL ES 3.0)
+const VERTEX_SHADER_SOURCE = `#version 300 es
+  in vec2 a_position;
+  in vec2 a_texcoord;
   uniform mat3 u_transform;
-  varying vec2 v_texcoord;
+  out vec2 v_texcoord;
 
   void main() {
     vec3 pos = u_transform * vec3(a_position, 1.0);
@@ -69,52 +71,31 @@ const VERTEX_SHADER_SOURCE = `
   }
 `
 
-// Fragment shader - lookup class index from texture, apply colormap
-const FRAGMENT_SHADER_SOURCE = `
+// Fragment shader - O(1) LUT lookups using texelFetch (GLSL ES 3.0)
+const FRAGMENT_SHADER_SOURCE = `#version 300 es
   precision mediump float;
-  uniform sampler2D u_texture;
-  uniform vec4 u_colormap[16];       // Colors per class (max 16 classes)
-  uniform float u_opacity;           // Global opacity
-  uniform int u_visibleMask;         // Bitmask for visible classes
-  varying vec2 v_texcoord;
+  uniform sampler2D u_texture;         // Tile class indices
+  uniform sampler2D u_colorLUT;        // 16x1 RGBA texture for colors
+  uniform sampler2D u_visibilityLUT;   // 16x1 R8 texture for visibility
+  uniform float u_opacity;
+  in vec2 v_texcoord;
+  out vec4 fragColor;
 
   void main() {
     // Sample the class index from the red channel
-    float classValue = texture2D(u_texture, v_texcoord).r;
+    float classValue = texture(u_texture, v_texcoord).r;
     int classIndex = int(classValue * 255.0 + 0.5);
 
-    // Check if class is visible using bitmask
-    // We need to implement this without bitwise ops in GLSL ES 2.0
-    int mask = u_visibleMask;
-    int bit = 1;
-    bool visible = false;
-    for (int i = 0; i < 16; i++) {
-      if (i == classIndex) {
-        // Check if bit i is set in mask
-        int shifted = mask;
-        for (int j = 0; j < 16; j++) {
-          if (j == i) break;
-          shifted = shifted / 2;
-        }
-        visible = (shifted - (shifted / 2) * 2) == 1;
-        break;
-      }
-    }
-
-    if (!visible) {
+    // O(1) visibility lookup using texelFetch
+    float visible = texelFetch(u_visibilityLUT, ivec2(classIndex, 0), 0).r;
+    if (visible < 0.5) {
       discard;
     }
 
-    // Look up color from colormap
-    vec4 color = u_colormap[0];
-    for (int i = 0; i < 16; i++) {
-      if (i == classIndex) {
-        color = u_colormap[i];
-        break;
-      }
-    }
+    // O(1) color lookup using texelFetch
+    vec4 color = texelFetch(u_colorLUT, ivec2(classIndex, 0), 0);
 
-    gl_FragColor = vec4(color.rgb, color.a * u_opacity);
+    fragColor = vec4(color.rgb, color.a * u_opacity);
   }
 `
 
@@ -202,15 +183,13 @@ function buildColormap(classes: TissueClassInfo[]): Float32Array {
   return colormap
 }
 
-/** Convert Set of visible class IDs to bitmask */
-function visibleClassesToMask(visibleClasses: Set<number>): number {
-  let mask = 0
-  for (const id of visibleClasses) {
-    if (id >= 0 && id < 16) {
-      mask |= 1 << id
-    }
+/** Build visibility LUT data (16 bytes, one per class) */
+function buildVisibilityLUT(visibleClasses: Set<number>): Uint8Array {
+  const data = new Uint8Array(16)
+  for (let i = 0; i < 16; i++) {
+    data[i] = visibleClasses.has(i) ? 255 : 0
   }
-  return mask
+  return data
 }
 
 interface TileTexture {
@@ -221,6 +200,7 @@ interface TileTexture {
 export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
   metadata,
   tiles,
+  tileIndex,
   currentLevel,
   viewerBounds,
   viewport,
@@ -236,11 +216,13 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     texcoord: number
     transform: WebGLUniformLocation | null
     texture: WebGLUniformLocation | null
-    colormap: WebGLUniformLocation | null
+    colorLUT: WebGLUniformLocation | null
+    visibilityLUT: WebGLUniformLocation | null
     opacity: WebGLUniformLocation | null
-    visibleMask: WebGLUniformLocation | null
   } | null>(null)
   const texturesRef = useRef<Map<string, TileTexture>>(new Map())
+  const colorLUTRef = useRef<WebGLTexture | null>(null)
+  const visibilityLUTRef = useRef<WebGLTexture | null>(null)
   const positionBufferRef = useRef<WebGLBuffer | null>(null)
   const texcoordBufferRef = useRef<WebGLBuffer | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -280,22 +262,46 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
       texcoord: gl.getAttribLocation(program, 'a_texcoord'),
       transform: gl.getUniformLocation(program, 'u_transform'),
       texture: gl.getUniformLocation(program, 'u_texture'),
-      colormap: gl.getUniformLocation(program, 'u_colormap'),
+      colorLUT: gl.getUniformLocation(program, 'u_colorLUT'),
+      visibilityLUT: gl.getUniformLocation(program, 'u_visibilityLUT'),
       opacity: gl.getUniformLocation(program, 'u_opacity'),
-      visibleMask: gl.getUniformLocation(program, 'u_visibleMask'),
     }
 
     // Create position buffer (will be updated per-tile)
     positionBufferRef.current = gl.createBuffer()
     texcoordBufferRef.current = gl.createBuffer()
 
-    // Set up texcoord buffer (same for all tiles: unit square)
+    // Set up texcoord buffer (DYNAMIC_DRAW for fallback rendering with custom texcoords)
     gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBufferRef.current)
     gl.bufferData(
       gl.ARRAY_BUFFER,
       new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]),
-      gl.STATIC_DRAW
+      gl.DYNAMIC_DRAW
     )
+
+    // Create color LUT texture (16x1 RGBA8)
+    const colorLUT = gl.createTexture()
+    if (colorLUT) {
+      gl.bindTexture(gl.TEXTURE_2D, colorLUT)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 16, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      colorLUTRef.current = colorLUT
+    }
+
+    // Create visibility LUT texture (16x1 R8)
+    const visibilityLUT = gl.createTexture()
+    if (visibilityLUT) {
+      gl.bindTexture(gl.TEXTURE_2D, visibilityLUT)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 16, 1, 0, gl.RED, gl.UNSIGNED_BYTE, null)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      visibilityLUTRef.current = visibilityLUT
+    }
 
     // Enable blending for transparency
     gl.enable(gl.BLEND)
@@ -306,6 +312,8 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
 
     // Capture ref values for cleanup
     const texturesToClean = texturesRef.current
+    const colorLUTToClean = colorLUTRef.current
+    const visibilityLUTToClean = visibilityLUTRef.current
 
     return () => {
       // Clean up textures
@@ -313,6 +321,9 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
         gl.deleteTexture(texture)
       }
       texturesToClean.clear()
+
+      if (colorLUTToClean) gl.deleteTexture(colorLUTToClean)
+      if (visibilityLUTToClean) gl.deleteTexture(visibilityLUTToClean)
 
       gl.deleteBuffer(positionBufferRef.current)
       gl.deleteBuffer(texcoordBufferRef.current)
@@ -322,6 +333,8 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
       glRef.current = null
       programRef.current = null
       locationsRef.current = null
+      colorLUTRef.current = null
+      visibilityLUTRef.current = null
     }
   }, [])
 
@@ -387,11 +400,67 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     return new Float32Array([scaleX, 0, 0, 0, scaleY, 0, translateX, translateY, 1])
   }, [viewport, viewerBounds.width, viewerBounds.height, slideWidth])
 
-  // Build colormap from metadata
+  // Build colormap from metadata (Float32Array for CPU-side reference)
   const colormap = useMemo(() => buildColormap(metadata.classes), [metadata.classes])
 
-  // Build visibility mask
-  const visibleMask = useMemo(() => visibleClassesToMask(visibleClasses), [visibleClasses])
+  // Update color LUT texture when colormap changes
+  useEffect(() => {
+    const gl = glRef.current
+    const colorLUT = colorLUTRef.current
+    if (!gl || !colorLUT) return
+
+    // Convert Float32Array colormap to Uint8Array for texture upload
+    const colorData = new Uint8Array(16 * 4)
+    for (let i = 0; i < 16; i++) {
+      const offset = i * 4
+      colorData[offset] = Math.round(colormap[offset] * 255)
+      colorData[offset + 1] = Math.round(colormap[offset + 1] * 255)
+      colorData[offset + 2] = Math.round(colormap[offset + 2] * 255)
+      colorData[offset + 3] = Math.round(colormap[offset + 3] * 255)
+    }
+
+    gl.bindTexture(gl.TEXTURE_2D, colorLUT)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 16, 1, gl.RGBA, gl.UNSIGNED_BYTE, colorData)
+  }, [colormap, glReady])
+
+  // Build visibility LUT data
+  const visibilityData = useMemo(() => buildVisibilityLUT(visibleClasses), [visibleClasses])
+
+  // Update visibility LUT texture when visibility changes
+  useEffect(() => {
+    const gl = glRef.current
+    const visibilityLUT = visibilityLUTRef.current
+    if (!gl || !visibilityLUT) return
+
+    gl.bindTexture(gl.TEXTURE_2D, visibilityLUT)
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 16, 1, gl.RED, gl.UNSIGNED_BYTE, visibilityData)
+  }, [visibilityData, glReady])
+
+  // Calculate viewport bounds in slide coordinates for spatial queries
+  const viewportBounds = useMemo((): ViewportBounds | null => {
+    if (viewport.zoom <= 0 || slideWidth <= 0) return null
+
+    const viewportWidth = 1 / viewport.zoom
+    const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
+
+    // Convert from normalized (0-1) to slide pixel coordinates
+    const left = (viewport.centerX - viewportWidth / 2) * slideWidth
+    const top = (viewport.centerY - viewportHeight / 2) * slideWidth // Use slideWidth for OSD normalization
+    const right = (viewport.centerX + viewportWidth / 2) * slideWidth
+    const bottom = (viewport.centerY + viewportHeight / 2) * slideWidth
+
+    return { left, top, right, bottom }
+  }, [
+    viewport.centerX,
+    viewport.centerY,
+    viewport.zoom,
+    viewerBounds.width,
+    viewerBounds.height,
+    slideWidth,
+  ])
+
+  // Standard texcoords for full tile rendering (unit square)
+  const UNIT_TEXCOORDS = new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1])
 
   // Render function
   const render = useCallback(() => {
@@ -399,7 +468,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     const program = programRef.current
     const locations = locationsRef.current
 
-    if (!gl || !program || !locations || !transformMatrix) {
+    if (!gl || !program || !locations || !transformMatrix || !viewportBounds) {
       return
     }
 
@@ -416,37 +485,45 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
 
     // Set uniforms
     gl.uniformMatrix3fv(locations.transform, false, transformMatrix)
-    gl.uniform4fv(locations.colormap, colormap)
     gl.uniform1f(locations.opacity, opacity)
-    gl.uniform1i(locations.visibleMask, visibleMask)
+
+    // Bind color LUT to texture unit 1
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, colorLUTRef.current)
+    gl.uniform1i(locations.colorLUT, 1)
+
+    // Bind visibility LUT to texture unit 2
+    gl.activeTexture(gl.TEXTURE2)
+    gl.bindTexture(gl.TEXTURE_2D, visibilityLUTRef.current)
+    gl.uniform1i(locations.visibilityLUT, 2)
 
     // Enable vertex attributes
     gl.enableVertexAttribArray(locations.position)
     gl.enableVertexAttribArray(locations.texcoord)
 
-    // Bind texcoord buffer
-    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBufferRef.current)
-    gl.vertexAttribPointer(locations.texcoord, 2, gl.FLOAT, false, 0, 0)
+    // Query visible tiles at current level using spatial index (O(k) instead of O(n))
+    const visibleTiles = tileIndex.queryViewport(currentLevel, viewportBounds)
 
-    // Render each tile (only tiles at current level)
-    for (const { texture, tile } of texturesRef.current.values()) {
-      // Only render tiles at the current zoom level
-      if (tile.level !== currentLevel) continue
+    // Track tiles that need fallback (visible but texture not loaded yet)
+    const tilesNeedingFallback: Array<{
+      tile: CachedTile
+      bounds: { left: number; top: number; right: number; bottom: number }
+    }> = []
 
-      // Calculate tile position in slide coordinates (full resolution)
-      // The protobuf uses inverted level convention: maxLevel = full resolution
-      // levelScale converts from tile's level to full resolution
-      const levelScale = Math.pow(2, metadata.max_level - tile.level)
+    // First pass: render current-level tiles that are loaded
+    for (const indexedTile of visibleTiles) {
+      const tile = indexedTile.tile
+      const key = `${tile.level}-${tile.x}-${tile.y}`
+      const tileTexture = texturesRef.current.get(key)
 
-      // Tile x, y are GRID indices (column, row), not pixel coordinates
-      // First convert to pixel coordinates at the tile's level, then scale to full resolution
-      const tileLeftAtLevel = tile.x * metadata.tile_size
-      const tileTopAtLevel = tile.y * metadata.tile_size
+      if (!tileTexture) {
+        // Tile not loaded yet, queue for fallback rendering
+        tilesNeedingFallback.push({ tile, bounds: tile.bounds })
+        continue
+      }
 
-      const tileLeft = tileLeftAtLevel * levelScale
-      const tileTop = tileTopAtLevel * levelScale
-      const tileRight = tileLeft + tile.width * levelScale
-      const tileBottom = tileTop + tile.height * levelScale
+      // Use pre-computed bounds from tile cache
+      const { left: tileLeft, top: tileTop, right: tileRight, bottom: tileBottom } = tile.bounds
 
       // Create position buffer for this tile (two triangles forming a quad)
       const positions = new Float32Array([
@@ -464,27 +541,79 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
         tileBottom,
       ])
 
+      // Set standard texcoords (full tile)
+      gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBufferRef.current)
+      gl.bufferData(gl.ARRAY_BUFFER, UNIT_TEXCOORDS, gl.DYNAMIC_DRAW)
+      gl.vertexAttribPointer(locations.texcoord, 2, gl.FLOAT, false, 0, 0)
+
       gl.bindBuffer(gl.ARRAY_BUFFER, positionBufferRef.current)
       gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW)
       gl.vertexAttribPointer(locations.position, 2, gl.FLOAT, false, 0, 0)
 
       // Bind texture
       gl.activeTexture(gl.TEXTURE0)
-      gl.bindTexture(gl.TEXTURE_2D, texture)
+      gl.bindTexture(gl.TEXTURE_2D, tileTexture.texture)
       gl.uniform1i(locations.texture, 0)
 
       // Draw tile
       gl.drawArrays(gl.TRIANGLES, 0, 6)
     }
+
+    // Second pass: render fallback tiles for missing current-level tiles
+    for (const { tile, bounds } of tilesNeedingFallback) {
+      const fallback = tileIndex.findFallback(tile.level, tile.x, tile.y, bounds)
+      if (!fallback) continue
+
+      const fallbackKey = `${fallback.tile.level}-${fallback.tile.x}-${fallback.tile.y}`
+      const fallbackTexture = texturesRef.current.get(fallbackKey)
+      if (!fallbackTexture) continue
+
+      // Position: where the target tile should appear
+      const { left: tileLeft, top: tileTop, right: tileRight, bottom: tileBottom } = bounds
+      const positions = new Float32Array([
+        tileLeft,
+        tileTop,
+        tileRight,
+        tileTop,
+        tileLeft,
+        tileBottom,
+        tileLeft,
+        tileBottom,
+        tileRight,
+        tileTop,
+        tileRight,
+        tileBottom,
+      ])
+
+      // Texcoords: sample only the relevant portion of the fallback tile
+      const { u0, v0, u1, v1 } = fallback.texCoords
+      const texcoords = new Float32Array([u0, v0, u1, v0, u0, v1, u0, v1, u1, v0, u1, v1])
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBufferRef.current)
+      gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.DYNAMIC_DRAW)
+      gl.vertexAttribPointer(locations.texcoord, 2, gl.FLOAT, false, 0, 0)
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBufferRef.current)
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW)
+      gl.vertexAttribPointer(locations.position, 2, gl.FLOAT, false, 0, 0)
+
+      // Bind fallback texture
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, fallbackTexture.texture)
+      gl.uniform1i(locations.texture, 0)
+
+      // Draw fallback tile
+      gl.drawArrays(gl.TRIANGLES, 0, 6)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tiles is intentionally included to trigger re-render when new tiles load
   }, [
     transformMatrix,
+    viewportBounds,
     colormap,
+    visibilityData,
     opacity,
-    visibleMask,
     currentLevel,
-    metadata.max_level,
-    metadata.tile_size,
+    tileIndex,
     tiles, // Re-render when tiles change (triggers after texture effect creates textures)
   ])
 
