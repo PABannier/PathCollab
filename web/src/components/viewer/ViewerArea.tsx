@@ -71,6 +71,8 @@ export interface ViewerAreaProps {
   cellOverlaysEnabled?: boolean
   /** Cell mask data for overlay */
   cells?: CellMask[]
+  /** Opacity for cell overlays (0-1) */
+  cellOverlayOpacity?: number
 }
 
 /**
@@ -100,6 +102,7 @@ export function ViewerArea({
   onShowHelp,
   cellOverlaysEnabled,
   cells,
+  cellOverlayOpacity,
 }: ViewerAreaProps) {
   // Real-time viewport for overlay rendering (updated at 60fps during animation)
   const [realtimeViewport, setRealtimeViewport] = useState<RenderViewport>({
@@ -194,6 +197,7 @@ export function ViewerArea({
           viewport={realtimeViewport}
           slideWidth={slide.width}
           slideHeight={slide.height}
+          opacity={cellOverlayOpacity}
         />
       )}
 

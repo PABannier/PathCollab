@@ -14,14 +14,37 @@ interface WebGLCellOverlayProps {
   viewport: Viewport
   slideWidth: number
   slideHeight: number
+  opacity?: number
 }
 
-// Cell type colors as RGBA (0-1 range)
-const CELL_TYPE_COLORS: Record<string, [number, number, number, number]> = {
-  tumor: [220 / 255, 38 / 255, 38 / 255, 0.4],
-  lymphocyte: [34 / 255, 197 / 255, 94 / 255, 0.4],
-  stroma: [59 / 255, 130 / 255, 246 / 255, 0.4],
-  default: [156 / 255, 163 / 255, 175 / 255, 0.4],
+// Cell type colors as RGB (0-1 range) - PathView compatible mapping
+// Alpha is applied separately via the opacity prop
+const CELL_TYPE_COLORS: Record<string, [number, number, number]> = {
+  // Cancer/Tumor cells - Red tones
+  'cancer cell': [0.9, 0.2, 0.2],
+  tumor: [0.85, 0.15, 0.15],
+  'mitotic figures': [1.0, 0.0, 0.0],
+
+  // Immune cells - Various colors
+  lymphocytes: [0.2, 0.8, 0.2], // Green
+  lymphocyte: [0.2, 0.8, 0.2],
+  macrophages: [0.6, 0.4, 0.8], // Purple
+  neutrophils: [0.2, 0.6, 1.0], // Light blue
+  eosinophils: [1.0, 0.5, 0.0], // Orange
+  'plasma cells': [0.8, 0.2, 0.8], // Magenta
+
+  // Stromal cells - Blue/Cyan tones
+  fibroblasts: [0.3, 0.7, 0.9], // Cyan
+  stroma: [0.4, 0.6, 0.9],
+  'muscle cell': [0.6, 0.3, 0.1], // Brown
+  'endothelial cells': [0.9, 0.7, 0.2], // Yellow
+
+  // Other
+  'apoptotic body': [0.5, 0.5, 0.5], // Gray
+  necrosis: [0.3, 0.3, 0.3], // Dark gray
+
+  // Default fallback
+  default: [0.6, 0.6, 0.6],
 }
 
 // LOD thresholds (screen pixel size)
@@ -55,8 +78,9 @@ const FRAGMENT_SHADER_SOURCE = `
   }
 `
 
-function getCellColor(cellType: string): [number, number, number, number] {
-  return CELL_TYPE_COLORS[cellType.toLowerCase()] ?? CELL_TYPE_COLORS.default
+function getCellColor(cellType: string, opacity: number): [number, number, number, number] {
+  const rgb = CELL_TYPE_COLORS[cellType.toLowerCase()] ?? CELL_TYPE_COLORS.default
+  return [rgb[0], rgb[1], rgb[2], opacity]
 }
 
 function createShader(
@@ -124,6 +148,7 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
   viewport,
   slideWidth,
   slideHeight,
+  opacity = 0.6,
 }: WebGLCellOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const glRef = useRef<WebGL2RenderingContext | null>(null)
@@ -347,8 +372,10 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
 
     // Transform: slide coords -> normalized (0-1) -> viewport relative (0-1) -> clip space (-1 to 1)
     // Combined into a 3x3 matrix (column-major for WebGL)
+    // NOTE: OpenSeadragon uses width-normalized coordinates (image width = 1),
+    // so both X and Y slide coords are normalized by slideWidth
     const scaleX = 2 / viewportWidth / slideWidth
-    const scaleY = -2 / viewportHeight / slideHeight // Flip Y
+    const scaleY = -2 / viewportHeight / slideWidth // Flip Y; use slideWidth for OSD normalization
     const translateX = (-2 * viewportLeft) / viewportWidth - 1
     const translateY = (2 * viewportTop) / viewportHeight + 1
 
@@ -436,8 +463,8 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
 
     // Render each cell type batch
     for (const buffer of cellBuffersRef.current.values()) {
-      // Set color for this cell type
-      const color = getCellColor(buffer.cellType)
+      // Set color for this cell type (with current opacity)
+      const color = getCellColor(buffer.cellType, opacity)
       gl.uniform4fv(locations.color, color)
 
       // Choose buffer based on LOD level
@@ -475,7 +502,7 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     }
     // bufferVersion is intentionally included to trigger re-render when buffers change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transformMatrix, lodLevel, bufferVersion])
+  }, [transformMatrix, lodLevel, bufferVersion, opacity])
 
   // Render on each animation frame when viewport changes
   useEffect(() => {

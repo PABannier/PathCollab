@@ -41,6 +41,7 @@ export function Session() {
   const [error, setError] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const [cellOverlaysEnabled, setCellOverlaysEnabled] = useState(false)
+  const [cellOverlayOpacity, setCellOverlayOpacity] = useState(0.6)
 
   // Parse secrets from URL hash fragment (never sent to server)
   const { joinSecret, presenterKey } = useHashParams()
@@ -259,6 +260,8 @@ export function Session() {
               onChange={setCellOverlaysEnabled}
               hasOverlay={hasOverlay}
               cellCount={overlayMetadata?.cell_count}
+              opacity={cellOverlayOpacity}
+              onOpacityChange={setCellOverlayOpacity}
             />
           )}
 
@@ -290,6 +293,7 @@ export function Session() {
           onShowHelp={() => setShowHelp(true)}
           cellOverlaysEnabled={cellOverlaysEnabled}
           cells={cells}
+          cellOverlayOpacity={cellOverlayOpacity}
         />
       </div>
 
