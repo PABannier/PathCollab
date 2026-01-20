@@ -223,7 +223,6 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
   useEffect(() => {
     const gl = glRef.current
     if (!gl || !programRef.current) {
-      console.log('[WebGLCellOverlay] Buffer creation skipped - no GL context')
       return
     }
 
@@ -236,8 +235,6 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     }
     cellBuffersRef.current.clear()
 
-    console.log('[WebGLCellOverlay] Creating buffers for', cells.length, 'cells')
-
     // Group cells by type
     const cellsByType = new Map<string, CellMask[]>()
     for (const cell of cells) {
@@ -246,18 +243,6 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
         cellsByType.set(type, [])
       }
       cellsByType.get(type)!.push(cell)
-    }
-
-    // Debug: log first cell's coordinates
-    if (cells.length > 0) {
-      const firstCell = cells[0]
-      console.log('[WebGLCellOverlay] First cell:', {
-        cell_id: firstCell.cell_id,
-        cell_type: firstCell.cell_type,
-        coordCount: firstCell.coordinates.length,
-        firstCoord: firstCell.coordinates[0],
-        centroid: firstCell.centroid,
-      })
     }
 
     // Create buffers for each cell type
@@ -326,14 +311,6 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer)
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pointVertices), gl.STATIC_DRAW)
 
-      console.log(`[WebGLCellOverlay] Buffer for ${cellType}:`, {
-        cellCount: typeCells.length,
-        fullVertexCount: fullVertices.length / 2,
-        simplifiedVertexCount: simplifiedVertices.length / 2,
-        boxVertexCount: boxVertices.length / 2,
-        pointVertexCount: pointVertices.length / 2,
-      })
-
       cellBuffersRef.current.set(cellType, {
         cellType,
         fullBuffer,
@@ -349,18 +326,26 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     }
 
     // Trigger re-render when buffers are updated
-
     setBufferVersion((v) => v + 1)
+
+    // Cleanup buffers on unmount or when cells change
+    return () => {
+      const currentGl = glRef.current
+      if (currentGl) {
+        for (const buffer of cellBuffersRef.current.values()) {
+          if (buffer.fullBuffer) currentGl.deleteBuffer(buffer.fullBuffer)
+          if (buffer.simplifiedBuffer) currentGl.deleteBuffer(buffer.simplifiedBuffer)
+          if (buffer.boxBuffer) currentGl.deleteBuffer(buffer.boxBuffer)
+          if (buffer.pointBuffer) currentGl.deleteBuffer(buffer.pointBuffer)
+        }
+      }
+      cellBuffersRef.current.clear()
+    }
   }, [cells, glReady])
 
   // Calculate viewport transform matrix
   const transformMatrix = useMemo(() => {
     if (viewport.zoom <= 0 || slideWidth <= 0 || slideHeight <= 0) {
-      console.log('[WebGLCellOverlay] Transform matrix null - invalid params:', {
-        zoom: viewport.zoom,
-        slideWidth,
-        slideHeight,
-      })
       return null
     }
 
@@ -378,19 +363,6 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     const scaleY = -2 / viewportHeight / slideWidth // Flip Y; use slideWidth for OSD normalization
     const translateX = (-2 * viewportLeft) / viewportWidth - 1
     const translateY = (2 * viewportTop) / viewportHeight + 1
-
-    console.log('[WebGLCellOverlay] Transform:', {
-      viewport: { centerX: viewport.centerX, centerY: viewport.centerY, zoom: viewport.zoom },
-      viewportBounds: {
-        left: viewportLeft,
-        top: viewportTop,
-        width: viewportWidth,
-        height: viewportHeight,
-      },
-      slideSize: { width: slideWidth, height: slideHeight },
-      scale: { x: scaleX, y: scaleY },
-      translate: { x: translateX, y: translateY },
-    })
 
     return new Float32Array([scaleX, 0, 0, 0, scaleY, 0, translateX, translateY, 1])
   }, [viewport, viewerBounds.width, viewerBounds.height, slideWidth, slideHeight])
@@ -429,12 +401,6 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     const locations = locationsRef.current
 
     if (!gl || !program || !locations || !transformMatrix) {
-      console.log('[WebGLCellOverlay] Render skipped - missing:', {
-        gl: !!gl,
-        program: !!program,
-        locations: !!locations,
-        transformMatrix: !!transformMatrix,
-      })
       return
     }
 
@@ -442,13 +408,6 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
     gl.clearColor(0, 0, 0, 0)
     gl.clear(gl.COLOR_BUFFER_BIT)
-
-    const bufferCount = cellBuffersRef.current.size
-    console.log('[WebGLCellOverlay] Render:', {
-      canvasSize: `${gl.canvas.width}x${gl.canvas.height}`,
-      bufferCount,
-      lodLevel,
-    })
 
     // Skip rendering if LOD is SKIP
     if (lodLevel === 'SKIP') return

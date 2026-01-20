@@ -126,19 +126,6 @@ export function ViewerArea({
     setRealtimeViewport(viewport)
   }, [])
 
-  // Debug logging for cell overlay
-  useEffect(() => {
-    if (cellOverlaysEnabled) {
-      console.log('[ViewerArea] Cell overlay state:', {
-        cellOverlaysEnabled,
-        hasViewerBounds: !!viewerBounds,
-        hasSlide: !!slide,
-        cellCount: cells?.length ?? 0,
-        realtimeViewport,
-      })
-    }
-  }, [cellOverlaysEnabled, viewerBounds, slide, cells, realtimeViewport])
-
   // Memoize normalized cursors for minimap to avoid creating new array/objects on every render
   const normalizedCursors = useMemo(() => {
     if (!slide) return []
@@ -177,18 +164,6 @@ export function ViewerArea({
         />
       )}
 
-      {/* Cursor overlay */}
-      {hasSession && viewerBounds && slide && (
-        <CursorLayer
-          cursors={cursors}
-          viewerBounds={viewerBounds}
-          viewport={currentViewport}
-          slideWidth={slide.width}
-          slideHeight={slide.height}
-          currentUserId={currentUserId}
-        />
-      )}
-
       {/* Cell overlay (WebGL-accelerated with LOD) */}
       {cellOverlaysEnabled && viewerBounds && slide && cells && cells.length > 0 && (
         <WebGLCellOverlay
@@ -198,6 +173,18 @@ export function ViewerArea({
           slideWidth={slide.width}
           slideHeight={slide.height}
           opacity={cellOverlayOpacity}
+        />
+      )}
+
+      {/* Cursor overlay */}
+      {hasSession && viewerBounds && slide && (
+        <CursorLayer
+          cursors={cursors}
+          viewerBounds={viewerBounds}
+          viewport={currentViewport}
+          slideWidth={slide.width}
+          slideHeight={slide.height}
+          currentUserId={currentUserId}
         />
       )}
 
