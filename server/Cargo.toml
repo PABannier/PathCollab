@@ -48,6 +48,9 @@ prost = "0.13"
 # Spatial indexing for region queries
 rstar = "0.12"
 
+# Zlib decompression for tissue overlay data
+flate2 = "1.0"
+
 [build-dependencies]
 prost-build = "0.13"
 

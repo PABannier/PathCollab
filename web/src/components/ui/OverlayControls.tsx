@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import { Toggle } from './Toggle'
+import type { TissueClassInfo } from '../../types/overlay'
 
 interface OverlayControlsProps {
   /** Whether cell overlays are enabled */
@@ -22,6 +22,24 @@ interface OverlayControlsProps {
   visibleCellTypes: Set<string>
   /** Callback when visible cell types change */
   onVisibleCellTypesChange: (types: Set<string>) => void
+  /** Whether tissue overlays are enabled */
+  tissueOverlaysEnabled?: boolean
+  /** Callback when tissue overlay toggle changes */
+  onTissueOverlaysChange?: (enabled: boolean) => void
+  /** Whether tissue overlay data is available */
+  hasTissueOverlay?: boolean
+  /** Whether tissue overlay is currently loading */
+  isTissueOverlayLoading?: boolean
+  /** Current tissue opacity value (0-1) */
+  tissueOpacity?: number
+  /** Callback when tissue opacity changes */
+  onTissueOpacityChange?: (opacity: number) => void
+  /** Available tissue classes from metadata */
+  tissueClasses?: TissueClassInfo[]
+  /** Currently visible tissue class IDs */
+  visibleTissueClasses?: Set<number>
+  /** Callback when visible tissue classes change */
+  onVisibleTissueClassesChange?: (classes: Set<number>) => void
 }
 
 /**
@@ -39,9 +57,16 @@ export function OverlayControls({
   cellTypes,
   visibleCellTypes,
   onVisibleCellTypesChange,
+  tissueOverlaysEnabled = false,
+  onTissueOverlaysChange,
+  hasTissueOverlay = false,
+  isTissueOverlayLoading = false,
+  tissueOpacity = 0.7,
+  onTissueOpacityChange,
+  tissueClasses = [],
+  visibleTissueClasses = new Set(),
+  onVisibleTissueClassesChange,
 }: OverlayControlsProps) {
-  const [showTissueTooltip, setShowTissueTooltip] = useState(false)
-
   const handleCellTypeToggle = (cellType: string) => {
     const newVisible = new Set(visibleCellTypes)
     if (newVisible.has(cellType)) {
@@ -52,13 +77,34 @@ export function OverlayControls({
     onVisibleCellTypesChange(newVisible)
   }
 
-  const handleSelectAll = () => {
+  const handleSelectAllCellTypes = () => {
     onVisibleCellTypesChange(new Set(cellTypes))
   }
 
-  const handleSelectNone = () => {
+  const handleSelectNoCellTypes = () => {
     onVisibleCellTypesChange(new Set())
   }
+
+  const handleTissueClassToggle = (classId: number) => {
+    const newVisible = new Set(visibleTissueClasses)
+    if (newVisible.has(classId)) {
+      newVisible.delete(classId)
+    } else {
+      newVisible.add(classId)
+    }
+    onVisibleTissueClassesChange?.(newVisible)
+  }
+
+  const handleSelectAllTissueClasses = () => {
+    onVisibleTissueClassesChange?.(new Set(tissueClasses.map((c) => c.id)))
+  }
+
+  const handleSelectNoTissueClasses = () => {
+    onVisibleTissueClassesChange?.(new Set())
+  }
+
+  // Check if tissue controls are available
+  const tissueControlsAvailable = onTissueOverlaysChange !== undefined
 
   return (
     <div className="mb-4">
@@ -154,7 +200,7 @@ export function OverlayControls({
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={handleSelectAll}
+                      onClick={handleSelectAllCellTypes}
                       className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
                     >
                       All
@@ -162,7 +208,7 @@ export function OverlayControls({
                     <span className="text-gray-600">|</span>
                     <button
                       type="button"
-                      onClick={handleSelectNone}
+                      onClick={handleSelectNoCellTypes}
                       className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
                     >
                       None
@@ -189,29 +235,117 @@ export function OverlayControls({
           </div>
         )}
 
-        {/* Tissue Overlays Toggle (disabled with tooltip) */}
-        <div
-          className="flex items-center justify-between relative"
-          onMouseEnter={() => setShowTissueTooltip(true)}
-          onMouseLeave={() => setShowTissueTooltip(false)}
-        >
-          <span className="text-sm text-gray-500">Tissue overlays</span>
-          <Toggle
-            checked={false}
-            onChange={() => {}}
-            aria-label="Tissue overlays coming soon"
-            size="sm"
-            disabled
-          />
-          {showTissueTooltip && (
-            <div
-              className="absolute left-0 bottom-full mb-1 px-2 py-1 text-xs text-white rounded shadow-lg whitespace-nowrap z-10"
-              style={{ backgroundColor: 'var(--color-gray-700, #374151)' }}
+        {/* Tissue Overlays Toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-sm ${hasTissueOverlay || isTissueOverlayLoading ? 'text-gray-300' : 'text-gray-500'}`}
             >
-              Coming soon
-            </div>
-          )}
+              Tissue overlays
+            </span>
+            {/* Loading spinner */}
+            {isTissueOverlayLoading && (
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
+                </svg>
+                <span className="text-xs">(loading)</span>
+              </span>
+            )}
+            {/* Only show unavailable if not loading and controls are available */}
+            {tissueControlsAvailable && !hasTissueOverlay && !isTissueOverlayLoading && (
+              <span className="text-xs text-gray-500">(unavailable)</span>
+            )}
+          </div>
+          <Toggle
+            checked={tissueOverlaysEnabled}
+            onChange={onTissueOverlaysChange ?? (() => {})}
+            aria-label={
+              tissueOverlaysEnabled ? 'Disable tissue overlays' : 'Enable tissue overlays'
+            }
+            size="sm"
+            disabled={!tissueControlsAvailable || !hasTissueOverlay || isTissueOverlayLoading}
+          />
         </div>
+
+        {/* Tissue Overlay Options (shown when enabled) */}
+        {tissueOverlaysEnabled && hasTissueOverlay && (
+          <div className="pl-2 border-l-2 border-gray-700 space-y-3 mt-2">
+            {/* Opacity Slider */}
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-gray-400 w-14">Opacity</label>
+              <input
+                type="range"
+                min="0.1"
+                max="1"
+                step="0.05"
+                value={tissueOpacity}
+                onChange={(e) => onTissueOpacityChange?.(parseFloat(e.target.value))}
+                className="flex-1 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+              <span className="text-xs text-gray-400 w-8 text-right">
+                {Math.round(tissueOpacity * 100)}%
+              </span>
+            </div>
+
+            {/* Tissue Classes Filter */}
+            {tissueClasses.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">Tissue types</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllTissueClasses}
+                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      All
+                    </button>
+                    <span className="text-gray-600">|</span>
+                    <button
+                      type="button"
+                      onClick={handleSelectNoTissueClasses}
+                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      None
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  {tissueClasses.map((tissueClass) => (
+                    <label
+                      key={tissueClass.id}
+                      className="flex items-center gap-2 cursor-pointer group"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visibleTissueClasses.has(tissueClass.id)}
+                        onChange={() => handleTissueClassToggle(tissueClass.id)}
+                        className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                      />
+                      <span className="text-sm text-gray-300 group-hover:text-gray-200 capitalize">
+                        {tissueClass.name.replace(/_/g, ' ')}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

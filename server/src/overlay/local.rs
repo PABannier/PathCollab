@@ -2,6 +2,9 @@
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use flate2::read::ZlibDecoder;
+use std::collections::HashMap;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -12,7 +15,10 @@ use super::index::OverlaySpatialIndex;
 use super::proto::SlideSegmentationData;
 use super::reader::{AnnotationReader, CompositeReader};
 use super::service::OverlayService;
-use super::types::{CellMask, OverlayError, OverlayMetadata, RegionRequest};
+use super::types::{
+    CellMask, OverlayError, OverlayMetadata, RegionRequest, TissueClassInfo, TissueOverlayMetadata,
+    TissueTileData, TissueTileInfo,
+};
 
 /// Cache state for overlay loading
 #[derive(Clone)]
@@ -34,6 +40,10 @@ pub struct LocalOverlayService {
 struct CachedOverlay {
     metadata: OverlayMetadata,
     index: OverlaySpatialIndex,
+    /// Raw protobuf data for tissue tile access
+    raw_data: Arc<SlideSegmentationData>,
+    /// Tile lookup map: (level, x, y) -> tile index
+    tile_map: HashMap<(u32, u32, u32), usize>,
 }
 
 impl LocalOverlayService {
@@ -104,7 +114,15 @@ impl LocalOverlayService {
         // Create metadata
         let metadata = Self::build_metadata(slide_id, &data, &index);
 
-        let cached = Arc::new(CachedOverlay { metadata, index });
+        // Build tile lookup map
+        let tile_map = Self::build_tile_map(&data);
+
+        let cached = Arc::new(CachedOverlay {
+            metadata,
+            index,
+            raw_data: Arc::new(data),
+            tile_map,
+        });
 
         // Cache the overlay
         self.cache.insert(
@@ -192,7 +210,27 @@ impl LocalOverlayService {
         // Create metadata
         let metadata = Self::build_metadata(slide_id, &data, &index);
 
-        Ok(Arc::new(CachedOverlay { metadata, index }))
+        // Build tile lookup map
+        let tile_map = Self::build_tile_map(&data);
+
+        Ok(Arc::new(CachedOverlay {
+            metadata,
+            index,
+            raw_data: Arc::new(data),
+            tile_map,
+        }))
+    }
+
+    /// Build tile lookup map for O(1) tile access
+    fn build_tile_map(data: &SlideSegmentationData) -> HashMap<(u32, u32, u32), usize> {
+        let mut map = HashMap::new();
+        for (idx, tile) in data.tiles.iter().enumerate() {
+            let level = tile.level as u32;
+            let x = tile.x as u32;
+            let y = tile.y as u32;
+            map.insert((level, x, y), idx);
+        }
+        map
     }
 
     /// Build metadata from segmentation data
@@ -245,6 +283,171 @@ impl LocalOverlayService {
         slide_ids.sort();
         slide_ids.dedup();
         slide_ids
+    }
+
+    /// Get tissue overlay metadata including class mapping and tile grid
+    pub fn get_tissue_metadata(
+        &self,
+        slide_id: &str,
+    ) -> Result<TissueOverlayMetadata, OverlayError> {
+        let cached = self.load_overlay(slide_id)?;
+        let data = &cached.raw_data;
+
+        // Check if we have tissue data (non-empty data bytes in first tile)
+        let has_tissue_data = data
+            .tiles
+            .first()
+            .map(|t| !t.tissue_segmentation_map.data.is_empty())
+            .unwrap_or(false);
+
+        if !has_tissue_data {
+            return Err(OverlayError::NotFound(format!(
+                "No tissue overlay data for slide '{}'",
+                slide_id
+            )));
+        }
+
+        // Build class mapping
+        let mut classes: Vec<TissueClassInfo> = data
+            .tissue_class_mapping
+            .iter()
+            .map(|(id, name)| TissueClassInfo {
+                id: *id,
+                name: name.clone(),
+            })
+            .collect();
+        classes.sort_by_key(|c| c.id);
+
+        // Build tile info list
+        let tiles: Vec<TissueTileInfo> = data
+            .tiles
+            .iter()
+            .filter(|t| !t.tissue_segmentation_map.data.is_empty())
+            .map(|t| {
+                let tissue_map = &t.tissue_segmentation_map;
+                TissueTileInfo {
+                    level: t.level as u32,
+                    x: t.x as u32,
+                    y: t.y as u32,
+                    width: tissue_map.width as u32,
+                    height: tissue_map.height as u32,
+                }
+            })
+            .collect();
+
+        // Determine tile size from first tile
+        let tile_size = tiles.first().map(|t| t.width.max(t.height)).unwrap_or(256);
+
+        Ok(TissueOverlayMetadata {
+            slide_id: slide_id.to_string(),
+            model_name: data.tissue_model_name.clone(),
+            classes,
+            tile_size,
+            max_level: data.max_level as u32,
+            tiles,
+        })
+    }
+
+    /// Get raw tissue tile data (class indices per pixel)
+    pub fn get_tissue_tile(
+        &self,
+        slide_id: &str,
+        level: u32,
+        x: u32,
+        y: u32,
+    ) -> Result<TissueTileData, OverlayError> {
+        let cached = self.load_overlay(slide_id)?;
+
+        // Look up tile by (level, x, y)
+        let tile_idx = cached.tile_map.get(&(level, x, y)).ok_or_else(|| {
+            OverlayError::NotFound(format!(
+                "Tissue tile not found: level={}, x={}, y={}",
+                level, x, y
+            ))
+        })?;
+
+        let tile = &cached.raw_data.tiles[*tile_idx];
+        let tissue_map = &tile.tissue_segmentation_map;
+
+        if tissue_map.data.is_empty() {
+            return Err(OverlayError::NotFound(format!(
+                "No tissue data in tile: level={}, x={}, y={}",
+                level, x, y
+            )));
+        }
+
+        // Decompress the data if it's zlib compressed
+        let decompressed_data = Self::decompress_tissue_data(
+            &tissue_map.data,
+            tissue_map.width as usize,
+            tissue_map.height as usize,
+        )?;
+
+        Ok(TissueTileData {
+            data: decompressed_data,
+            width: tissue_map.width as u32,
+            height: tissue_map.height as u32,
+        })
+    }
+
+    /// Decompress zlib-compressed tissue data, or return as-is if not compressed
+    fn decompress_tissue_data(
+        data: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<Vec<u8>, OverlayError> {
+        let expected_size = width * height;
+
+        // Check for zlib header (0x78 followed by 0x01, 0x5E, 0x9C, or 0xDA)
+        if data.len() >= 2 && data[0] == 0x78 {
+            // Looks like zlib compressed data, try to decompress
+            let mut decoder = ZlibDecoder::new(data);
+            let mut decompressed = Vec::with_capacity(expected_size);
+
+            match decoder.read_to_end(&mut decompressed) {
+                Ok(_) => {
+                    if decompressed.len() != expected_size {
+                        warn!(
+                            "Decompressed size mismatch: expected {}, got {}",
+                            expected_size,
+                            decompressed.len()
+                        );
+                    }
+                    Ok(decompressed)
+                }
+                Err(e) => {
+                    // Decompression failed, might not actually be compressed
+                    warn!("Zlib decompression failed, using raw data: {}", e);
+                    Ok(data.to_vec())
+                }
+            }
+        } else if data.len() == expected_size {
+            // Data is already the expected size, use as-is
+            Ok(data.to_vec())
+        } else {
+            // Size doesn't match and doesn't look compressed
+            warn!(
+                "Tissue data size {} doesn't match expected {} ({}x{})",
+                data.len(),
+                expected_size,
+                width,
+                height
+            );
+            Ok(data.to_vec())
+        }
+    }
+
+    /// Check if tissue data is available for a slide
+    pub fn has_tissue_data(&self, slide_id: &str) -> bool {
+        if let Ok(cached) = self.load_overlay(slide_id) {
+            return cached
+                .raw_data
+                .tiles
+                .first()
+                .map(|t| !t.tissue_segmentation_map.data.is_empty())
+                .unwrap_or(false);
+        }
+        false
     }
 }
 

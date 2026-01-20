@@ -27,6 +27,7 @@ import { useViewerViewport } from '../hooks/useViewerViewport'
 import { useHashParams } from '../hooks/useHashParams'
 import { useSlideInfo } from '../hooks/useSlideInfo'
 import { useCellOverlay } from '../hooks/useCellOverlay'
+import { useTissueOverlay } from '../hooks/useTissueOverlay'
 import { useAutoCreateSession } from '../hooks/useAutoCreateSession'
 import { useCursorTracking } from './Session/useCursorTracking'
 import { useSessionKeyboardShortcuts } from './Session/useSessionKeyboardShortcuts'
@@ -43,6 +44,9 @@ export function Session() {
   const [cellOverlaysEnabled, setCellOverlaysEnabled] = useState(false)
   const [cellOverlayOpacity, setCellOverlayOpacity] = useState(0.9)
   const [visibleCellTypes, setVisibleCellTypes] = useState<Set<string>>(new Set())
+  const [tissueOverlaysEnabled, setTissueOverlaysEnabled] = useState(false)
+  const [tissueOverlayOpacity, setTissueOverlayOpacity] = useState(0.7)
+  const [visibleTissueClasses, setVisibleTissueClasses] = useState<Set<number>>(new Set())
 
   // Parse secrets from URL hash fragment (never sent to server)
   const { joinSecret, presenterKey } = useHashParams()
@@ -156,6 +160,23 @@ export function Session() {
     enabled: cellOverlaysEnabled && !!slide,
   })
 
+  // Tissue overlay data
+  const {
+    metadata: tissueMetadata,
+    tiles: tissueTiles,
+    currentLevel: tissueCurrentLevel,
+    isLoading: isLoadingTissue,
+    hasOverlay: hasTissueOverlay,
+    isOverlayLoading: isTissueOverlayLoading,
+  } = useTissueOverlay({
+    slideId: slide?.id,
+    viewport: currentViewport,
+    viewerBounds,
+    slideWidth: slide?.width ?? 0,
+    slideHeight: slide?.height ?? 0,
+    enabled: tissueOverlaysEnabled && !!slide,
+  })
+
   // Initialize visible cell types when metadata loads
   // This is intentional state sync from external data (server response) to local state
   useEffect(() => {
@@ -164,6 +185,14 @@ export function Session() {
       setVisibleCellTypes(new Set(overlayMetadata.cell_types))
     }
   }, [overlayMetadata?.cell_types])
+
+  // Initialize visible tissue classes when metadata loads
+  useEffect(() => {
+    if (tissueMetadata?.classes) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing server state to local state
+      setVisibleTissueClasses(new Set(tissueMetadata.classes.map((c) => c.id)))
+    }
+  }, [tissueMetadata?.classes])
 
   // Filter cells by visible types
   const cells = useMemo(() => {
@@ -201,6 +230,19 @@ export function Session() {
     },
     [isPresenter, session, cellOverlaysEnabled, cellOverlayOpacity, updateCellOverlay]
   )
+
+  // Tissue overlay handlers (local state only - no sync for now)
+  const handleTissueOverlaysChange = useCallback((enabled: boolean) => {
+    setTissueOverlaysEnabled(enabled)
+  }, [])
+
+  const handleTissueOverlayOpacityChange = useCallback((opacity: number) => {
+    setTissueOverlayOpacity(opacity)
+  }, [])
+
+  const handleVisibleTissueClassesChange = useCallback((classes: Set<number>) => {
+    setVisibleTissueClasses(classes)
+  }, [])
 
   // Sync follower state when presenter cell overlay changes
   // This is intentional state sync: followers receive presenter's overlay state via WebSocket
@@ -333,6 +375,15 @@ export function Session() {
               cellTypes={overlayMetadata?.cell_types ?? []}
               visibleCellTypes={visibleCellTypes}
               onVisibleCellTypesChange={handleVisibleCellTypesChange}
+              tissueOverlaysEnabled={tissueOverlaysEnabled}
+              onTissueOverlaysChange={handleTissueOverlaysChange}
+              hasTissueOverlay={hasTissueOverlay && !isTissueOverlayLoading}
+              isTissueOverlayLoading={isTissueOverlayLoading}
+              tissueOpacity={tissueOverlayOpacity}
+              onTissueOpacityChange={handleTissueOverlayOpacityChange}
+              tissueClasses={tissueMetadata?.classes ?? []}
+              visibleTissueClasses={visibleTissueClasses}
+              onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
             />
           )}
 
@@ -365,6 +416,12 @@ export function Session() {
           cellOverlaysEnabled={cellOverlaysEnabled}
           cells={cells}
           cellOverlayOpacity={cellOverlayOpacity}
+          tissueOverlaysEnabled={tissueOverlaysEnabled}
+          tissueMetadata={tissueMetadata}
+          tissueTiles={tissueTiles}
+          tissueCurrentLevel={tissueCurrentLevel}
+          tissueOverlayOpacity={tissueOverlayOpacity}
+          visibleTissueClasses={visibleTissueClasses}
         />
       </div>
 
@@ -374,7 +431,9 @@ export function Session() {
         latency={latency}
         currentViewport={currentViewport}
         footerCursorPos={footerCursorPos}
-        isLoadingCells={cellOverlaysEnabled && isLoadingCells}
+        isLoadingCells={
+          (cellOverlaysEnabled && isLoadingCells) || (tissueOverlaysEnabled && isLoadingTissue)
+        }
       />
 
       {/* Keyboard shortcuts help modal */}

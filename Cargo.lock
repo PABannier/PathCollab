@@ -1105,6 +1105,7 @@ dependencies = [
  "axum",
  "bytes",
  "dashmap",
+ "flate2",
  "futures-util",
  "image",
  "indexmap",

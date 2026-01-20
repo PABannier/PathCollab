@@ -204,7 +204,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Initialize overlay service
-    let overlay_service: Arc<dyn pathcollab_server::OverlayService> = {
+    let overlay_service: Arc<LocalOverlayService> = {
         info!(
             "Using local overlay source: {:?}",
             config.overlay.overlays_dir
