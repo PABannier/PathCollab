@@ -48,10 +48,10 @@ const CELL_TYPE_COLORS: Record<string, [number, number, number]> = {
 }
 
 // LOD thresholds (screen pixel size)
-const LOD_SKIP = 2
-const LOD_POINT = 4
-const LOD_BOX = 10
-const LOD_SIMPLIFIED = 30
+const LOD_SKIP = 0.1
+const LOD_POINT = 2
+const LOD_BOX = 5
+const LOD_SIMPLIFIED = 20
 
 // Point size in pixels
 const POINT_SIZE = 2
