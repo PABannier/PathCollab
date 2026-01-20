@@ -42,6 +42,7 @@ bench/
 ├── load_tests/
 │   ├── scenarios/
 │   │   ├── tile_stress.sh       # HTTP tile endpoint stress test
+│   │   ├── overlay_stress.sh    # HTTP cell overlay endpoint stress test
 │   │   ├── ramp_test.sh         # Gradual load increase to find breaking point
 │   │   └── combined_load.sh     # HTTP + WebSocket simultaneous load
 │   └── results/                 # Test output (.gitignored)
@@ -86,7 +87,27 @@ Stress test the tile serving endpoint:
     --step 10
 ```
 
-### 2. WebSocket Load Tests
+### 2. Cell Overlay Load Tests
+
+Stress test the cell overlay endpoint:
+
+```bash
+# Quick test (5 connections, 10 seconds)
+./bench/load_tests/scenarios/overlay_stress.sh --quick
+
+# Standard test (10 connections, 30 seconds)
+./bench/load_tests/scenarios/overlay_stress.sh
+
+# Custom configuration
+./bench/load_tests/scenarios/overlay_stress.sh \
+    --url http://localhost:8080 \
+    --concurrent 20 \
+    --duration 60 \
+    --viewport-size 1024 \
+    --output results/overlay_test.json
+```
+
+### 3. WebSocket Load Tests
 
 Test session broadcasting under load:
 
@@ -103,7 +124,7 @@ cargo test --test perf_tests test_fanout_standard --release -- --ignored --nocap
 cargo test --test perf_tests test_fanout_extended --release -- --ignored --nocapture
 ```
 
-### 3. Combined Load Test
+### 4. Combined Load Test
 
 Simulate realistic production load with both HTTP and WebSocket traffic:
 
@@ -115,7 +136,7 @@ Simulate realistic production load with both HTTP and WebSocket traffic:
     --duration 30
 ```
 
-### 4. Full Benchmark Suite
+### 5. Full Benchmark Suite
 
 Run everything with a single command:
 
@@ -143,6 +164,7 @@ These are the target latencies for production use:
 | Metric | Budget | Description |
 |--------|--------|-------------|
 | Tile P99 | < 100ms | HTTP tile serving latency |
+| Overlay P99 | < 100ms | HTTP cell overlay query latency |
 | Cursor P99 | < 100ms | WebSocket cursor broadcast |
 | Viewport P99 | < 150ms | WebSocket viewport broadcast |
 | Message Handling | < 10ms | Server-side message processing |
@@ -229,6 +251,21 @@ Success rate: 100%             # Should be 100%
 - P99 < 100ms for tile serving
 - Success rate > 99%
 - Throughput scales linearly with concurrency up to CPU saturation
+
+### Cell Overlay Benchmarks
+
+```
+Throughput:   800 req/s        # Higher is better (faster than tiles)
+P50 latency:  3.2ms            # Median response time
+P95 latency:  12.1ms           # 95th percentile
+P99 latency:  28.5ms           # 99th percentile (main target)
+Success rate: 100%             # Should be 100%
+```
+
+**What "good" looks like:**
+- P99 < 100ms for cell overlay queries
+- Success rate > 99%
+- Should be faster than tile serving (no JPEG encoding overhead)
 
 ### WebSocket Benchmarks
 

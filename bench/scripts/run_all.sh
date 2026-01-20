@@ -220,6 +220,21 @@ if [[ "$SKIP_LOAD" != "true" ]]; then
                 --output "$RUN_DIR/tile_stress.json" 2>&1 | tee "$RUN_DIR/tile_stress.txt" || LOAD_PASSED=false
         fi
 
+        # Overlay stress test
+        log_info "Running overlay stress test..."
+        if [[ "$QUICK_MODE" == "true" ]]; then
+            bash "$BENCH_DIR/load_tests/scenarios/overlay_stress.sh" \
+                --url "$SERVER_URL" \
+                --quick \
+                --output "$RUN_DIR/overlay_stress.json" 2>&1 | tee "$RUN_DIR/overlay_stress.txt" || LOAD_PASSED=false
+        else
+            bash "$BENCH_DIR/load_tests/scenarios/overlay_stress.sh" \
+                --url "$SERVER_URL" \
+                --concurrent 20 \
+                --duration 30 \
+                --output "$RUN_DIR/overlay_stress.json" 2>&1 | tee "$RUN_DIR/overlay_stress.txt" || LOAD_PASSED=false
+        fi
+
         if [[ "$LOAD_PASSED" == "true" ]]; then
             log_success "HTTP load tests complete"
         else
