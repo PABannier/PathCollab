@@ -33,12 +33,24 @@ const GRID_SIZE = 64 // 64x64 grid for spatial indexing
  * Spatial index for O(k) viewport queries instead of O(n) full iteration.
  * Uses a fixed 64x64 grid that maps to full-resolution slide coordinates.
  */
+/** Cached query result */
+interface QueryCache {
+  level: number
+  bounds: ViewportBounds
+  result: IndexedTile[]
+  tileCount: number // Number of tiles in index when query was made
+}
+
+// Hysteresis threshold: only requery if viewport moved by more than this fraction of cell size
+const QUERY_HYSTERESIS = 0.25
+
 export class TissueTileIndex {
   private grid: Map<number, Set<IndexedTile>> = new Map()
   private tilesByKey: Map<string, IndexedTile> = new Map()
   private tilesByLevel: Map<number, IndexedTile[]> = new Map()
   private cellWidth: number
   private cellHeight: number
+  private queryCache: QueryCache | null = null
 
   constructor(_metadata: TissueOverlayMetadata, slideWidth: number, slideHeight: number) {
     this.cellWidth = slideWidth / GRID_SIZE
@@ -115,8 +127,32 @@ export class TissueTileIndex {
     return indexedTile
   }
 
-  /** Query tiles at a specific level that overlap the viewport */
+  /** Check if cached query is still valid */
+  private isCacheValid(level: number, viewportBounds: ViewportBounds): boolean {
+    if (!this.queryCache) return false
+    if (this.queryCache.level !== level) return false
+    if (this.queryCache.tileCount !== this.tilesByKey.size) return false
+
+    // Check if viewport has moved significantly (hysteresis)
+    const cache = this.queryCache.bounds
+    const thresholdX = this.cellWidth * QUERY_HYSTERESIS
+    const thresholdY = this.cellHeight * QUERY_HYSTERESIS
+
+    return (
+      Math.abs(viewportBounds.left - cache.left) < thresholdX &&
+      Math.abs(viewportBounds.right - cache.right) < thresholdX &&
+      Math.abs(viewportBounds.top - cache.top) < thresholdY &&
+      Math.abs(viewportBounds.bottom - cache.bottom) < thresholdY
+    )
+  }
+
+  /** Query tiles at a specific level that overlap the viewport (with caching) */
   queryViewport(level: number, viewportBounds: ViewportBounds): IndexedTile[] {
+    // Return cached result if viewport hasn't moved significantly
+    if (this.isCacheValid(level, viewportBounds)) {
+      return this.queryCache!.result
+    }
+
     const viewportCells = this.getOverlappingCells({
       left: viewportBounds.left,
       top: viewportBounds.top,
@@ -149,6 +185,14 @@ export class TissueTileIndex {
           result.push(indexedTile)
         }
       }
+    }
+
+    // Cache the result
+    this.queryCache = {
+      level,
+      bounds: { ...viewportBounds },
+      result,
+      tileCount: this.tilesByKey.size,
     }
 
     return result
@@ -220,6 +264,12 @@ export class TissueTileIndex {
     this.grid.clear()
     this.tilesByKey.clear()
     this.tilesByLevel.clear()
+    this.queryCache = null
+  }
+
+  /** Invalidate the query cache (call when tiles are added) */
+  invalidateCache(): void {
+    this.queryCache = null
   }
 
   /** Get number of indexed tiles */

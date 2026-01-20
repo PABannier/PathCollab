@@ -44,6 +44,8 @@ export interface CachedTile {
   // Pre-computed values for rendering
   scaleFactor: number // Math.pow(2, maxLevel - level)
   bounds: TileBounds // Bounds in full resolution slide coordinates
+  // Animation support
+  loadTime: number // Timestamp when tile was loaded (for fade-in animation)
 }
 
 interface UseTissueOverlayReturn {
@@ -101,6 +103,7 @@ function tileKey(level: number, x: number, y: number): string {
 
 /** Tile priority levels for load ordering */
 const TilePriority = {
+  COARSE_FALLBACK: -1, // Coarser level tile needed as fallback (highest priority)
   URGENT: 0, // Visible tile with no fallback available
   VISIBLE: 1, // Visible tile but has fallback from coarser level
   PREFETCH: 2, // Outside viewport but within margin for prefetching
@@ -117,6 +120,7 @@ interface PrioritizedTile {
 
 /** Batch sizes per priority level */
 const BATCH_SIZES: Record<TilePriorityType, number> = {
+  [TilePriority.COARSE_FALLBACK]: 4, // Load coarse tiles first in small batches
   [TilePriority.URGENT]: 8,
   [TilePriority.VISIBLE]: 12,
   [TilePriority.PREFETCH]: 16,
@@ -328,20 +332,28 @@ export function useTissueOverlay({
     return closestLevel
   }, [metadata, viewport.zoom, viewerBounds, slideWidth, availableLevels])
 
-  // Get all tiles at the current level (load everything, not just visible)
+  // Get tiles to load: current level + coarser levels for fallback
+  // Coarser levels are loaded first to ensure fallbacks are always available
   const tilesToLoad = useMemo(() => {
     if (!metadata) {
-      return []
+      return { currentLevelTiles: [], coarseLevelTiles: [] }
     }
 
-    // Return all tiles at the current level - we load everything upfront
-    // since tissue tiles are cheap to render and we want instant pan/zoom
-    return metadata.tiles.filter((tile) => tile.level === currentLevel)
+    // Current level tiles
+    const currentLevelTiles = metadata.tiles.filter((tile) => tile.level === currentLevel)
+
+    // Coarser level tiles (for fallback rendering)
+    // Include all tiles from levels coarser than current
+    const coarseLevelTiles = metadata.tiles.filter((tile) => tile.level < currentLevel)
+
+    return { currentLevelTiles, coarseLevelTiles }
   }, [metadata, currentLevel])
 
-  // Fetch all tiles at current level with priority-based ordering
+  // Fetch tiles with hierarchical priority: coarser levels first, then current level
   const fetchTiles = useCallback(async () => {
-    if (!slideId || !metadata || !enabled || tilesToLoad.length === 0 || !viewerBounds) return
+    const { currentLevelTiles, coarseLevelTiles } = tilesToLoad
+    if (!slideId || !metadata || !enabled || !viewerBounds) return
+    if (currentLevelTiles.length === 0 && coarseLevelTiles.length === 0) return
 
     // Cancel any ongoing fetch
     if (abortControllerRef.current) {
@@ -349,20 +361,29 @@ export function useTissueOverlay({
     }
     abortControllerRef.current = new AbortController()
 
-    const tilesToFetch: TissueTileInfo[] = []
     const currentTiles = tilesRef.current
 
-    for (const tile of tilesToLoad) {
+    // Collect coarse tiles that need fetching (highest priority - always load first)
+    const coarseTilesToFetch: TissueTileInfo[] = []
+    for (const tile of coarseLevelTiles) {
       const key = tileKey(tile.level, tile.x, tile.y)
-      // Check both the ref (for already cached) and pending fetches
       if (!currentTiles.has(key) && !pendingFetchesRef.current.has(key)) {
-        tilesToFetch.push(tile)
+        coarseTilesToFetch.push(tile)
       }
     }
 
-    if (tilesToFetch.length === 0) return
+    // Collect current level tiles that need fetching
+    const currentTilesToFetch: TissueTileInfo[] = []
+    for (const tile of currentLevelTiles) {
+      const key = tileKey(tile.level, tile.x, tile.y)
+      if (!currentTiles.has(key) && !pendingFetchesRef.current.has(key)) {
+        currentTilesToFetch.push(tile)
+      }
+    }
 
-    // Calculate visible tile range for prioritization
+    if (coarseTilesToFetch.length === 0 && currentTilesToFetch.length === 0) return
+
+    // Calculate visible tile range for prioritization of current level tiles
     const visibleRange = calculateVisibleTileRange(
       viewport,
       viewerBounds,
@@ -372,8 +393,31 @@ export function useTissueOverlay({
       currentLevel
     )
 
-    // Prioritize tiles based on visibility and fallback availability
-    const prioritizedTiles = prioritizeTiles(tilesToFetch, visibleRange, tileIndex, metadata)
+    // Prioritize coarse tiles by distance from viewport center (closest first)
+    const prioritizedCoarseTiles: PrioritizedTile[] = coarseTilesToFetch.map((tile) => {
+      // Calculate coarse tile's coverage in current level coordinates
+      const levelDiff = currentLevel - tile.level
+      const scaleFactor = Math.pow(2, levelDiff)
+      const coarseCenterX = (tile.x + 0.5) * scaleFactor
+      const coarseCenterY = (tile.y + 0.5) * scaleFactor
+      const distance = Math.sqrt(
+        Math.pow(coarseCenterX - visibleRange.centerX, 2) +
+          Math.pow(coarseCenterY - visibleRange.centerY, 2)
+      )
+      return { tile, priority: TilePriority.COARSE_FALLBACK, distance }
+    })
+
+    // Prioritize current level tiles based on visibility and fallback availability
+    const prioritizedCurrentTiles = prioritizeTiles(
+      currentTilesToFetch,
+      visibleRange,
+      tileIndex,
+      metadata
+    )
+
+    // Combine: coarse tiles first (sorted by distance), then current level tiles
+    prioritizedCoarseTiles.sort((a, b) => a.distance - b.distance)
+    const prioritizedTiles = [...prioritizedCoarseTiles, ...prioritizedCurrentTiles]
 
     // Sort by priority first, then by distance from center
     prioritizedTiles.sort((a, b) => {
@@ -442,6 +486,7 @@ export function useTissueOverlay({
               data: new Uint8Array(result.data),
               scaleFactor,
               bounds,
+              loadTime: performance.now(),
             }
 
             setTiles((prev) => {

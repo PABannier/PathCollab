@@ -77,7 +77,8 @@ const FRAGMENT_SHADER_SOURCE = `#version 300 es
   uniform sampler2D u_texture;         // Tile class indices
   uniform sampler2D u_colorLUT;        // 16x1 RGBA texture for colors
   uniform sampler2D u_visibilityLUT;   // 16x1 R8 texture for visibility
-  uniform float u_opacity;
+  uniform float u_opacity;             // Global overlay opacity
+  uniform float u_tileOpacity;         // Per-tile opacity (for fade-in animation)
   in vec2 v_texcoord;
   out vec4 fragColor;
 
@@ -95,9 +96,13 @@ const FRAGMENT_SHADER_SOURCE = `#version 300 es
     // O(1) color lookup using texelFetch
     vec4 color = texelFetch(u_colorLUT, ivec2(classIndex, 0), 0);
 
-    fragColor = vec4(color.rgb, color.a * u_opacity);
+    // Apply both global and per-tile opacity (for smooth fade-in)
+    fragColor = vec4(color.rgb, color.a * u_opacity * u_tileOpacity);
   }
 `
+
+// Fade-in animation duration in milliseconds
+const TILE_FADE_IN_DURATION = 200
 
 function createShader(
   gl: WebGL2RenderingContext,
@@ -197,6 +202,14 @@ interface TileTexture {
   tile: CachedTile
 }
 
+// Pre-allocated buffers for render loop (avoid GC pressure)
+// Standard texcoords for full tile rendering (unit square)
+const UNIT_TEXCOORDS = new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1])
+// Reusable position buffer (12 floats = 6 vertices * 2 coords)
+const positionBuffer = new Float32Array(12)
+// Reusable texcoord buffer for fallback rendering
+const texcoordBuffer = new Float32Array(12)
+
 export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
   metadata,
   tiles,
@@ -219,6 +232,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     colorLUT: WebGLUniformLocation | null
     visibilityLUT: WebGLUniformLocation | null
     opacity: WebGLUniformLocation | null
+    tileOpacity: WebGLUniformLocation | null
   } | null>(null)
   const texturesRef = useRef<Map<string, TileTexture>>(new Map())
   const colorLUTRef = useRef<WebGLTexture | null>(null)
@@ -265,6 +279,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
       colorLUT: gl.getUniformLocation(program, 'u_colorLUT'),
       visibilityLUT: gl.getUniformLocation(program, 'u_visibilityLUT'),
       opacity: gl.getUniformLocation(program, 'u_opacity'),
+      tileOpacity: gl.getUniformLocation(program, 'u_tileOpacity'),
     }
 
     // Create position buffer (will be updated per-tile)
@@ -459,10 +474,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     slideWidth,
   ])
 
-  // Standard texcoords for full tile rendering (unit square)
-  const UNIT_TEXCOORDS = new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1])
-
-  // Render function
+  // Render function - optimized to minimize allocations and redundant GL calls
   const render = useCallback(() => {
     const gl = glRef.current
     const program = programRef.current
@@ -483,21 +495,23 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
 
     gl.useProgram(program)
 
-    // Set uniforms
+    // Set uniforms ONCE before the render loop (not per-tile)
     gl.uniformMatrix3fv(locations.transform, false, transformMatrix)
     gl.uniform1f(locations.opacity, opacity)
 
-    // Bind color LUT to texture unit 1
+    // Bind LUT textures ONCE (they don't change during rendering)
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, colorLUTRef.current)
     gl.uniform1i(locations.colorLUT, 1)
 
-    // Bind visibility LUT to texture unit 2
     gl.activeTexture(gl.TEXTURE2)
     gl.bindTexture(gl.TEXTURE_2D, visibilityLUTRef.current)
     gl.uniform1i(locations.visibilityLUT, 2)
 
-    // Enable vertex attributes
+    // Set texture uniform for tile texture (unit 0) ONCE
+    gl.uniform1i(locations.texture, 0)
+
+    // Enable vertex attributes ONCE
     gl.enableVertexAttribArray(locations.position)
     gl.enableVertexAttribArray(locations.texcoord)
 
@@ -509,6 +523,15 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
       tile: CachedTile
       bounds: { left: number; top: number; right: number; bottom: number }
     }> = []
+
+    // Get current time for fade-in animation
+    const now = performance.now()
+    let needsAnimationFrame = false
+
+    // Set up texcoord buffer with unit coords for current-level tiles (same for all)
+    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBufferRef.current)
+    gl.bufferData(gl.ARRAY_BUFFER, UNIT_TEXCOORDS, gl.DYNAMIC_DRAW)
+    gl.vertexAttribPointer(locations.texcoord, 2, gl.FLOAT, false, 0, 0)
 
     // First pass: render current-level tiles that are loaded
     for (const indexedTile of visibleTiles) {
@@ -522,44 +545,47 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
         continue
       }
 
-      // Use pre-computed bounds from tile cache
+      // Calculate fade-in opacity based on time since load
+      const timeSinceLoad = now - tile.loadTime
+      const fadeProgress = Math.min(1, timeSinceLoad / TILE_FADE_IN_DURATION)
+      // Smooth ease-out curve for fade-in
+      const tileOpacity = fadeProgress < 1 ? 1 - Math.pow(1 - fadeProgress, 3) : 1
+      if (fadeProgress < 1) needsAnimationFrame = true
+
+      // Set per-tile opacity for fade-in
+      gl.uniform1f(locations.tileOpacity, tileOpacity)
+
+      // Use pre-computed bounds from tile cache - fill reusable buffer
       const { left: tileLeft, top: tileTop, right: tileRight, bottom: tileBottom } = tile.bounds
-
-      // Create position buffer for this tile (two triangles forming a quad)
-      const positions = new Float32Array([
-        tileLeft,
-        tileTop,
-        tileRight,
-        tileTop,
-        tileLeft,
-        tileBottom,
-        tileLeft,
-        tileBottom,
-        tileRight,
-        tileTop,
-        tileRight,
-        tileBottom,
-      ])
-
-      // Set standard texcoords (full tile)
-      gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBufferRef.current)
-      gl.bufferData(gl.ARRAY_BUFFER, UNIT_TEXCOORDS, gl.DYNAMIC_DRAW)
-      gl.vertexAttribPointer(locations.texcoord, 2, gl.FLOAT, false, 0, 0)
+      positionBuffer[0] = tileLeft
+      positionBuffer[1] = tileTop
+      positionBuffer[2] = tileRight
+      positionBuffer[3] = tileTop
+      positionBuffer[4] = tileLeft
+      positionBuffer[5] = tileBottom
+      positionBuffer[6] = tileLeft
+      positionBuffer[7] = tileBottom
+      positionBuffer[8] = tileRight
+      positionBuffer[9] = tileTop
+      positionBuffer[10] = tileRight
+      positionBuffer[11] = tileBottom
 
       gl.bindBuffer(gl.ARRAY_BUFFER, positionBufferRef.current)
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW)
+      gl.bufferData(gl.ARRAY_BUFFER, positionBuffer, gl.DYNAMIC_DRAW)
       gl.vertexAttribPointer(locations.position, 2, gl.FLOAT, false, 0, 0)
 
-      // Bind texture
+      // Bind tile texture (only thing that changes per-tile for current-level)
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, tileTexture.texture)
-      gl.uniform1i(locations.texture, 0)
 
       // Draw tile
       gl.drawArrays(gl.TRIANGLES, 0, 6)
     }
 
     // Second pass: render fallback tiles for missing current-level tiles
+    // Fallback tiles render at full opacity (they're temporary placeholders)
+    gl.uniform1f(locations.tileOpacity, 1.0)
+
     for (const { tile, bounds } of tilesNeedingFallback) {
       const fallback = tileIndex.findFallback(tile.level, tile.x, tile.y, bounds)
       if (!fallback) continue
@@ -568,42 +594,58 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
       const fallbackTexture = texturesRef.current.get(fallbackKey)
       if (!fallbackTexture) continue
 
-      // Position: where the target tile should appear
+      // Fill reusable position buffer
       const { left: tileLeft, top: tileTop, right: tileRight, bottom: tileBottom } = bounds
-      const positions = new Float32Array([
-        tileLeft,
-        tileTop,
-        tileRight,
-        tileTop,
-        tileLeft,
-        tileBottom,
-        tileLeft,
-        tileBottom,
-        tileRight,
-        tileTop,
-        tileRight,
-        tileBottom,
-      ])
+      positionBuffer[0] = tileLeft
+      positionBuffer[1] = tileTop
+      positionBuffer[2] = tileRight
+      positionBuffer[3] = tileTop
+      positionBuffer[4] = tileLeft
+      positionBuffer[5] = tileBottom
+      positionBuffer[6] = tileLeft
+      positionBuffer[7] = tileBottom
+      positionBuffer[8] = tileRight
+      positionBuffer[9] = tileTop
+      positionBuffer[10] = tileRight
+      positionBuffer[11] = tileBottom
 
-      // Texcoords: sample only the relevant portion of the fallback tile
+      // Fill reusable texcoord buffer for fallback sampling
       const { u0, v0, u1, v1 } = fallback.texCoords
-      const texcoords = new Float32Array([u0, v0, u1, v0, u0, v1, u0, v1, u1, v0, u1, v1])
+      texcoordBuffer[0] = u0
+      texcoordBuffer[1] = v0
+      texcoordBuffer[2] = u1
+      texcoordBuffer[3] = v0
+      texcoordBuffer[4] = u0
+      texcoordBuffer[5] = v1
+      texcoordBuffer[6] = u0
+      texcoordBuffer[7] = v1
+      texcoordBuffer[8] = u1
+      texcoordBuffer[9] = v0
+      texcoordBuffer[10] = u1
+      texcoordBuffer[11] = v1
 
       gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBufferRef.current)
-      gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.DYNAMIC_DRAW)
+      gl.bufferData(gl.ARRAY_BUFFER, texcoordBuffer, gl.DYNAMIC_DRAW)
       gl.vertexAttribPointer(locations.texcoord, 2, gl.FLOAT, false, 0, 0)
 
       gl.bindBuffer(gl.ARRAY_BUFFER, positionBufferRef.current)
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW)
+      gl.bufferData(gl.ARRAY_BUFFER, positionBuffer, gl.DYNAMIC_DRAW)
       gl.vertexAttribPointer(locations.position, 2, gl.FLOAT, false, 0, 0)
 
       // Bind fallback texture
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, fallbackTexture.texture)
-      gl.uniform1i(locations.texture, 0)
 
       // Draw fallback tile
       gl.drawArrays(gl.TRIANGLES, 0, 6)
+    }
+
+    // Schedule another frame if any tiles are still animating
+    if (needsAnimationFrame && rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null
+        render()
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tiles is intentionally included to trigger re-render when new tiles load
   }, [
