@@ -73,6 +73,8 @@ export function useCellOverlay({
   enabled,
 }: UseCellOverlayOptions): UseCellOverlayReturn {
   // Calculate the viewport region in slide pixel coordinates
+  // NOTE: OpenSeadragon uses width-normalized coordinates (image width = 1),
+  // so both X and Y viewport coords are converted using slideWidth
   const region = useMemo(() => {
     if (!viewerBounds || viewport.zoom <= 0 || slideWidth <= 0 || slideHeight <= 0) {
       return null
@@ -82,9 +84,9 @@ export function useCellOverlay({
     const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
 
     const x = (viewport.centerX - viewportWidth / 2) * slideWidth
-    const y = (viewport.centerY - viewportHeight / 2) * slideHeight
+    const y = (viewport.centerY - viewportHeight / 2) * slideWidth
     const width = viewportWidth * slideWidth
-    const height = viewportHeight * slideHeight
+    const height = viewportHeight * slideWidth
 
     return { x, y, width, height }
   }, [viewport, viewerBounds, slideWidth, slideHeight])

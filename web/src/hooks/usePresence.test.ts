@@ -429,13 +429,16 @@ describe('usePresence coordinate conversion', () => {
     )
 
     const viewerBounds = createMockDOMRect(0, 0, 800, 400) // Wide viewer
-    const viewport = { centerX: 0.5, centerY: 0.5, zoom: 1 }
+    // For a 20000x10000 slide, Y extent in OSD coords is [0, 0.5]
+    // viewportHeight = 400/800 = 0.5 at zoom=1
+    // To center on slide, centerY = 0.25 (center of [0, 0.5])
+    const viewport = { centerX: 0.5, centerY: 0.25, zoom: 1 }
 
-    // Click at center
+    // Click at center of viewer
     const coords = result.current.convertToSlideCoords(400, 200, viewerBounds, viewport)
 
     expect(coords).not.toBeNull()
-    // Center of slide
+    // Center of slide (10000, 5000)
     expect(coords!.x).toBeCloseTo(10000, 0)
     expect(coords!.y).toBeCloseTo(5000, 0)
   })

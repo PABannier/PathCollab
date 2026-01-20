@@ -39,8 +39,9 @@ export const CursorLayer = memo(function CursorLayer({
       .filter((cursor) => cursor.participant_id !== currentUserId)
       .map((cursor) => {
         // Convert slide coordinates to normalized coordinates
+        // OpenSeadragon uses width-normalized coords (image width = 1)
         const normalizedX = cursor.x / slideWidth
-        const normalizedY = cursor.y / slideHeight
+        const normalizedY = cursor.y / slideWidth
 
         // Calculate position relative to viewport
         const relX = (normalizedX - (viewport.centerX - viewportWidth / 2)) / viewportWidth
