@@ -1,13 +1,13 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { SlideViewerHandle } from '../components/viewer'
 import { Sidebar, StatusBar } from '../components/layout'
 import {
-  CellOverlayToggle,
   ErrorBanner,
   FollowModeIndicator,
   KeyboardShortcutsHelp,
   NetworkErrorBanner,
+  OverlayControls,
 } from '../components/ui'
 import {
   SessionFooter,
@@ -41,7 +41,8 @@ export function Session() {
   const [error, setError] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const [cellOverlaysEnabled, setCellOverlaysEnabled] = useState(false)
-  const [cellOverlayOpacity, setCellOverlayOpacity] = useState(0.6)
+  const [cellOverlayOpacity, setCellOverlayOpacity] = useState(0.9)
+  const [visibleCellTypes, setVisibleCellTypes] = useState<Set<string>>(new Set())
 
   // Parse secrets from URL hash fragment (never sent to server)
   const { joinSecret, presenterKey } = useHashParams()
@@ -138,7 +139,12 @@ export function Session() {
   })
 
   // Cell overlay data
-  const { cells, isLoading: isLoadingCells, hasOverlay, overlayMetadata } = useCellOverlay({
+  const {
+    cells: allCells,
+    isLoading: isLoadingCells,
+    hasOverlay,
+    overlayMetadata,
+  } = useCellOverlay({
     slideId: slide?.id,
     viewport: currentViewport,
     viewerBounds,
@@ -146,6 +152,19 @@ export function Session() {
     slideHeight: slide?.height ?? 0,
     enabled: cellOverlaysEnabled && !!slide,
   })
+
+  // Initialize visible cell types when metadata loads
+  useEffect(() => {
+    if (overlayMetadata?.cell_types) {
+      setVisibleCellTypes(new Set(overlayMetadata.cell_types))
+    }
+  }, [overlayMetadata?.cell_types])
+
+  // Filter cells by visible types
+  const cells = useMemo(() => {
+    if (visibleCellTypes.size === 0) return []
+    return allCells.filter((cell) => visibleCellTypes.has(cell.cell_type))
+  }, [allCells, visibleCellTypes])
 
   // Presence tracking
   const { startTracking, stopTracking, updateCursorPosition, convertToSlideCoords } = usePresence({
@@ -253,15 +272,18 @@ export function Session() {
             />
           )}
 
-          {/* Cell Overlays toggle */}
+          {/* Overlay controls */}
           {slide && (
-            <CellOverlayToggle
-              enabled={cellOverlaysEnabled}
-              onChange={setCellOverlaysEnabled}
-              hasOverlay={hasOverlay}
+            <OverlayControls
+              cellOverlaysEnabled={cellOverlaysEnabled}
+              onCellOverlaysChange={setCellOverlaysEnabled}
+              hasCellOverlay={hasOverlay}
               cellCount={overlayMetadata?.cell_count}
               opacity={cellOverlayOpacity}
               onOpacityChange={setCellOverlayOpacity}
+              cellTypes={overlayMetadata?.cell_types ?? []}
+              visibleCellTypes={visibleCellTypes}
+              onVisibleCellTypesChange={setVisibleCellTypes}
             />
           )}
 
