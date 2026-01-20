@@ -1,6 +1,6 @@
-import { type RefObject, useMemo } from 'react'
+import { type RefObject, useMemo, useState, useCallback, useEffect } from 'react'
 import { SlideViewer, type SlideInfo, type SlideViewerHandle, ViewportLoader } from './index'
-import { CellOverlay } from './CellOverlay'
+import { WebGLCellOverlay } from './WebGLCellOverlay'
 import { CursorLayer } from './CursorLayer'
 import type { CellMask } from '../../types/overlay'
 import { MinimapOverlay } from './MinimapOverlay'
@@ -14,8 +14,16 @@ export interface CursorData {
   participant_id: string
   name: string
   color: string
+  is_presenter: boolean
   x: number
   y: number
+}
+
+/** Simple viewport type for rendering (without timestamp) */
+interface RenderViewport {
+  centerX: number
+  centerY: number
+  zoom: number
 }
 
 export interface ViewerAreaProps {
@@ -34,7 +42,7 @@ export interface ViewerAreaProps {
   /** Current viewport bounds (for cursor/minimap calculations) */
   viewerBounds: DOMRect | null
   /** Current viewport state */
-  currentViewport: Viewport
+  currentViewport: RenderViewport
   /** Active session exists */
   hasSession: boolean
   /** Whether current user is presenter */
@@ -50,7 +58,7 @@ export interface ViewerAreaProps {
   /** Current user's ID */
   currentUserId: string | undefined
   /** Callback when viewport changes */
-  onViewportChange: (viewport: Viewport) => void
+  onViewportChange: (viewport: RenderViewport) => void
   /** Callback when mouse moves */
   onMouseMove: (e: React.MouseEvent) => void
   /** Callback when mouse leaves viewer */
@@ -93,6 +101,41 @@ export function ViewerArea({
   cellOverlaysEnabled,
   cells,
 }: ViewerAreaProps) {
+  // Real-time viewport for overlay rendering (updated at 60fps during animation)
+  const [realtimeViewport, setRealtimeViewport] = useState<RenderViewport>({
+    centerX: currentViewport.centerX,
+    centerY: currentViewport.centerY,
+    zoom: currentViewport.zoom,
+  })
+
+  // Sync realtimeViewport with currentViewport when it changes (for non-animated updates)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRealtimeViewport({
+      centerX: currentViewport.centerX,
+      centerY: currentViewport.centerY,
+      zoom: currentViewport.zoom,
+    })
+  }, [currentViewport.centerX, currentViewport.centerY, currentViewport.zoom])
+
+  // Handle real-time viewport updates during animation
+  const handleAnimationFrame = useCallback((viewport: RenderViewport) => {
+    setRealtimeViewport(viewport)
+  }, [])
+
+  // Debug logging for cell overlay
+  useEffect(() => {
+    if (cellOverlaysEnabled) {
+      console.log('[ViewerArea] Cell overlay state:', {
+        cellOverlaysEnabled,
+        hasViewerBounds: !!viewerBounds,
+        hasSlide: !!slide,
+        cellCount: cells?.length ?? 0,
+        realtimeViewport,
+      })
+    }
+  }, [cellOverlaysEnabled, viewerBounds, slide, cells, realtimeViewport])
+
   // Memoize normalized cursors for minimap to avoid creating new array/objects on every render
   const normalizedCursors = useMemo(() => {
     if (!slide) return []
@@ -122,7 +165,14 @@ export function ViewerArea({
       )}
 
       {/* Slide viewer */}
-      {slide && <SlideViewer ref={viewerRef} slide={slide} onViewportChange={onViewportChange} />}
+      {slide && (
+        <SlideViewer
+          ref={viewerRef}
+          slide={slide}
+          onViewportChange={onViewportChange}
+          onAnimationFrame={handleAnimationFrame}
+        />
+      )}
 
       {/* Cursor overlay */}
       {hasSession && viewerBounds && slide && (
@@ -136,12 +186,12 @@ export function ViewerArea({
         />
       )}
 
-      {/* Cell overlay */}
+      {/* Cell overlay (WebGL-accelerated with LOD) */}
       {cellOverlaysEnabled && viewerBounds && slide && cells && cells.length > 0 && (
-        <CellOverlay
+        <WebGLCellOverlay
           cells={cells}
           viewerBounds={viewerBounds}
-          viewport={currentViewport}
+          viewport={realtimeViewport}
           slideWidth={slide.width}
           slideHeight={slide.height}
         />

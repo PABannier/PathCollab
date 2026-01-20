@@ -1,6 +1,9 @@
 import { useMemo } from 'react'
-import type { SlideInfo } from './useSession'
+import type { SlideInfo } from '../components/viewer/SlideViewer'
 import type { DefaultSlide } from './useDefaultSlide'
+
+/** Re-export SlideInfo for convenience */
+export type { SlideInfo }
 
 /** Slide data as returned from the session */
 export interface SessionSlide {

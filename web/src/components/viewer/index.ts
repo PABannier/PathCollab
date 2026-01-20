@@ -2,9 +2,5 @@ export { SlideViewer, type SlideInfo, type SlideViewerHandle } from './SlideView
 export { CursorLayer } from './CursorLayer'
 export { MinimapOverlay } from './MinimapOverlay'
 export { ViewportLoader } from './ViewportLoader'
-export {
-  ViewerArea,
-  type ViewerAreaProps,
-  type CursorData,
-  type PresenterViewportData,
-} from './ViewerArea'
+export { WebGLCellOverlay } from './WebGLCellOverlay'
+export { ViewerArea, type ViewerAreaProps, type CursorData } from './ViewerArea'
