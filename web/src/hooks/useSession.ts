@@ -48,6 +48,29 @@ export interface SlideInfo {
   tile_url_template: string
 }
 
+/** Cell overlay state as received from server (snake_case) */
+interface ServerCellOverlayState {
+  enabled: boolean
+  opacity: number
+  visible_cell_types: string[]
+}
+
+/** Frontend cell overlay state (camelCase) */
+export interface CellOverlayState {
+  enabled: boolean
+  opacity: number
+  visibleCellTypes: string[]
+}
+
+/** Convert server cell overlay state to frontend cell overlay state */
+function toFrontendCellOverlay(sc: ServerCellOverlayState): CellOverlayState {
+  return {
+    enabled: sc.enabled,
+    opacity: sc.opacity,
+    visibleCellTypes: sc.visible_cell_types,
+  }
+}
+
 /** Session state as received from server (snake_case viewport) */
 interface ServerSessionState {
   id: string
@@ -113,6 +136,7 @@ interface UseSessionReturn {
   secrets: SessionSecrets | null
   isFollowing: boolean
   hasDiverged: boolean
+  presenterCellOverlay: CellOverlayState | null
 
   // Actions
   createSession: (slideId: string) => void
@@ -124,6 +148,7 @@ interface UseSessionReturn {
   snapToPresenter: () => void
   setIsFollowing: (following: boolean) => void
   checkDivergence: (currentViewport: { centerX: number; centerY: number; zoom: number }) => void
+  updateCellOverlay: (enabled: boolean, opacity: number, visibleCellTypes: string[]) => void
 }
 
 export function useSession({
@@ -143,6 +168,7 @@ export function useSession({
   const [secrets, setSecrets] = useState<SessionSecrets | null>(null)
   const [isFollowing, setIsFollowing] = useState(true) // Default to following when joining
   const [hasDiverged, setHasDiverged] = useState(false)
+  const [presenterCellOverlay, setPresenterCellOverlay] = useState<CellOverlayState | null>(null)
   const pendingPresenterAuthSeqRef = useRef<number | null>(null)
   const presenterAuthSessionRef = useRef<string | null>(null)
   const sendMessageRef = useRef<((message: WebSocketMessage) => number) | null>(null)
@@ -159,7 +185,7 @@ export function useSession({
     (message: WebSocketMessage) => {
       switch (message.type) {
         case 'session_created': {
-          const serverSession = message.session as ServerSessionState
+          const serverSession = message.session as ServerSessionState & { cell_overlay?: ServerCellOverlayState }
           const sessionData = toFrontendSession(serverSession)
           setSession(sessionData)
           setIsCreatingSession(false)
@@ -167,6 +193,10 @@ export function useSession({
           setCurrentUser(sessionData.presenter)
           setIsPresenter(true)
           setPresenterViewport(sessionData.presenterViewport)
+          // Extract initial cell overlay state if present
+          if (serverSession.cell_overlay) {
+            setPresenterCellOverlay(toFrontendCellOverlay(serverSession.cell_overlay))
+          }
           // Save secrets for sharing
           if (message.join_secret && message.presenter_key) {
             setSecrets({
@@ -183,7 +213,7 @@ export function useSession({
           break
         }
         case 'session_joined': {
-          const serverSession = message.session as ServerSessionState
+          const serverSession = message.session as ServerSessionState & { cell_overlay?: ServerCellOverlayState }
           const sessionData = toFrontendSession(serverSession)
           setSession(sessionData)
           if (message.you) {
@@ -191,6 +221,10 @@ export function useSession({
             setIsPresenter((message.you as Participant).role === 'presenter')
           }
           setPresenterViewport(sessionData.presenterViewport)
+          // Extract initial cell overlay state if present
+          if (serverSession.cell_overlay) {
+            setPresenterCellOverlay(toFrontendCellOverlay(serverSession.cell_overlay))
+          }
           break
         }
 
@@ -251,6 +285,16 @@ export function useSession({
         case 'presenter_viewport': {
           const serverViewport = message.viewport as ServerViewport
           setPresenterViewport(toFrontendViewport(serverViewport))
+          break
+        }
+
+        case 'presenter_cell_overlay': {
+          const cellOverlay: ServerCellOverlayState = {
+            enabled: message.enabled as boolean,
+            opacity: message.opacity as number,
+            visible_cell_types: message.visible_cell_types as string[],
+          }
+          setPresenterCellOverlay(toFrontendCellOverlay(cellOverlay))
           break
         }
 
@@ -416,6 +460,19 @@ export function useSession({
     })
   }, [sendMessage])
 
+  // Update cell overlay state (presenter only, broadcast to followers)
+  const updateCellOverlay = useCallback(
+    (enabled: boolean, opacity: number, visibleCellTypes: string[]) => {
+      sendMessage({
+        type: 'cell_overlay_update',
+        enabled,
+        opacity,
+        visible_cell_types: visibleCellTypes,
+      })
+    },
+    [sendMessage]
+  )
+
   // Check if follower's viewport has diverged from presenter's
   const checkDivergence = useCallback(
     (currentViewport: { centerX: number; centerY: number; zoom: number }) => {
@@ -463,6 +520,7 @@ export function useSession({
       secrets: null,
       isFollowing: false,
       hasDiverged: false,
+      presenterCellOverlay: null,
       createSession,
       joinSession,
       authenticatePresenter,
@@ -472,6 +530,7 @@ export function useSession({
       snapToPresenter,
       setIsFollowing: handleSetIsFollowing,
       checkDivergence,
+      updateCellOverlay,
     }
   }
 
@@ -487,6 +546,7 @@ export function useSession({
     secrets,
     isFollowing,
     hasDiverged,
+    presenterCellOverlay,
     createSession,
     joinSession,
     authenticatePresenter,
@@ -496,5 +556,6 @@ export function useSession({
     snapToPresenter,
     setIsFollowing: handleSetIsFollowing,
     checkDivergence,
+    updateCellOverlay,
   }
 }

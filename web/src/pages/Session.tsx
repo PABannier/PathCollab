@@ -76,6 +76,7 @@ export function Session() {
     secrets,
     isFollowing,
     hasDiverged,
+    presenterCellOverlay,
     createSession,
     updateCursor,
     updateViewport,
@@ -83,6 +84,7 @@ export function Session() {
     snapToPresenter,
     setIsFollowing,
     checkDivergence,
+    updateCellOverlay,
   } = useSession({
     sessionId,
     joinSecret,
@@ -165,6 +167,46 @@ export function Session() {
     if (visibleCellTypes.size === 0) return []
     return allCells.filter((cell) => visibleCellTypes.has(cell.cell_type))
   }, [allCells, visibleCellTypes])
+
+  // Wrapper functions that broadcast when presenter changes overlay settings
+  const handleCellOverlaysChange = useCallback(
+    (enabled: boolean) => {
+      setCellOverlaysEnabled(enabled)
+      if (isPresenter && session) {
+        updateCellOverlay(enabled, cellOverlayOpacity, Array.from(visibleCellTypes))
+      }
+    },
+    [isPresenter, session, cellOverlayOpacity, visibleCellTypes, updateCellOverlay]
+  )
+
+  const handleCellOverlayOpacityChange = useCallback(
+    (opacity: number) => {
+      setCellOverlayOpacity(opacity)
+      if (isPresenter && session) {
+        updateCellOverlay(cellOverlaysEnabled, opacity, Array.from(visibleCellTypes))
+      }
+    },
+    [isPresenter, session, cellOverlaysEnabled, visibleCellTypes, updateCellOverlay]
+  )
+
+  const handleVisibleCellTypesChange = useCallback(
+    (types: Set<string>) => {
+      setVisibleCellTypes(types)
+      if (isPresenter && session) {
+        updateCellOverlay(cellOverlaysEnabled, cellOverlayOpacity, Array.from(types))
+      }
+    },
+    [isPresenter, session, cellOverlaysEnabled, cellOverlayOpacity, updateCellOverlay]
+  )
+
+  // Sync follower state when presenter cell overlay changes
+  useEffect(() => {
+    if (!isPresenter && presenterCellOverlay) {
+      setCellOverlaysEnabled(presenterCellOverlay.enabled)
+      setCellOverlayOpacity(presenterCellOverlay.opacity)
+      setVisibleCellTypes(new Set(presenterCellOverlay.visibleCellTypes))
+    }
+  }, [isPresenter, presenterCellOverlay])
 
   // Presence tracking
   const { startTracking, stopTracking, updateCursorPosition, convertToSlideCoords } = usePresence({
@@ -276,14 +318,14 @@ export function Session() {
           {slide && (
             <OverlayControls
               cellOverlaysEnabled={cellOverlaysEnabled}
-              onCellOverlaysChange={setCellOverlaysEnabled}
+              onCellOverlaysChange={handleCellOverlaysChange}
               hasCellOverlay={hasOverlay}
               cellCount={overlayMetadata?.cell_count}
               opacity={cellOverlayOpacity}
-              onOpacityChange={setCellOverlayOpacity}
+              onOpacityChange={handleCellOverlayOpacityChange}
               cellTypes={overlayMetadata?.cell_types ?? []}
               visibleCellTypes={visibleCellTypes}
-              onVisibleCellTypesChange={setVisibleCellTypes}
+              onVisibleCellTypesChange={handleVisibleCellTypesChange}
             />
           )}
 

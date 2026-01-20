@@ -1,4 +1,6 @@
-use crate::protocol::{ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport};
+use crate::protocol::{
+    CellOverlayState, ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport,
+};
 use crate::session::manager::{SessionError, SessionManager};
 use crate::slide::SlideService;
 use axum::{
@@ -952,6 +954,90 @@ async fn handle_client_message(
                             "Session {} slide changed to {} by presenter",
                             session_id, slide_id
                         );
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(ServerMessage::Ack {
+                                ack_seq: seq,
+                                status: crate::protocol::AckStatus::Rejected,
+                                reason: Some(e.to_string()),
+                            })
+                            .await;
+                    }
+                }
+            } else {
+                let _ = tx
+                    .send(ServerMessage::Ack {
+                        ack_seq: seq,
+                        status: crate::protocol::AckStatus::Rejected,
+                        reason: Some("Not in a session".to_string()),
+                    })
+                    .await;
+            }
+        }
+        ClientMessage::CellOverlayUpdate {
+            enabled,
+            opacity,
+            visible_cell_types,
+            seq,
+        } => {
+            // Get session ID and presenter status
+            let (session_id, is_presenter) = {
+                let connections = state.connections.read().await;
+                let conn = connections.get(&connection_id);
+                (
+                    conn.and_then(|c| c.session_id.clone()),
+                    conn.is_some_and(|c| c.is_presenter),
+                )
+            };
+
+            // Only presenter can broadcast cell overlay updates
+            if !is_presenter {
+                let _ = tx
+                    .send(ServerMessage::Ack {
+                        ack_seq: seq,
+                        status: crate::protocol::AckStatus::Rejected,
+                        reason: Some("Only presenter can update cell overlay".to_string()),
+                    })
+                    .await;
+                return;
+            }
+
+            if let Some(session_id) = session_id {
+                let cell_overlay = CellOverlayState {
+                    enabled,
+                    opacity,
+                    visible_cell_types: visible_cell_types.clone(),
+                };
+
+                // Update session state
+                match state
+                    .session_manager
+                    .update_cell_overlay(&session_id, cell_overlay)
+                    .await
+                {
+                    Ok(_) => {
+                        // Broadcast to all participants
+                        state
+                            .broadcast_to_session(
+                                &session_id,
+                                ServerMessage::PresenterCellOverlay {
+                                    enabled,
+                                    opacity,
+                                    visible_cell_types,
+                                },
+                            )
+                            .await;
+
+                        let _ = tx
+                            .send(ServerMessage::Ack {
+                                ack_seq: seq,
+                                status: crate::protocol::AckStatus::Ok,
+                                reason: None,
+                            })
+                            .await;
+
+                        debug!("Session {} cell overlay updated by presenter", session_id);
                     }
                     Err(e) => {
                         let _ = tx
