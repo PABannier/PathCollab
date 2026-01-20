@@ -1,6 +1,7 @@
 //! Spatial indexing for efficient region queries using R-tree
 
 use rstar::{AABB, RTree, RTreeObject};
+use tracing::info;
 
 use super::proto::SlideSegmentationData;
 use super::types::{CellMask, Point};
@@ -34,19 +35,39 @@ impl OverlaySpatialIndex {
         let mut cells = Vec::new();
         let mut entries = Vec::new();
 
+        // Track bounds for debug logging
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+
+        // Compute scaling factor to resize coordinates (if necessary)
+        let tile_level = data.tiles[0].level;
+        let max_level = data.max_level;
+
+        let scale_factor = (1 << (max_level - tile_level)) as f32;
+
         // Iterate over all tiles and extract cell masks
         for tile in &data.tiles {
+            // Calculate tile offset in slide pixel coordinates
+            let tile_offset_x = tile.x * tile.width as f32;
+            let tile_offset_y = tile.y * tile.height as f32;
+
             for mask in &tile.masks {
-                // Access centroid directly (required field in proto)
+                // Add tile offset to centroid
                 let centroid = Point {
-                    x: mask.centroid.x,
-                    y: mask.centroid.y,
+                    x: (mask.centroid.x + tile_offset_x) * scale_factor,
+                    y: (mask.centroid.y + tile_offset_y) * scale_factor,
                 };
 
+                // Add tile offset to all polygon coordinates
                 let coordinates: Vec<Point> = mask
                     .coordinates
                     .iter()
-                    .map(|p| Point { x: p.x, y: p.y })
+                    .map(|p| Point {
+                        x: (p.x + tile_offset_x) * scale_factor,
+                        y: (p.y + tile_offset_y) * scale_factor,
+                    })
                     .collect();
 
                 let cell = CellMask {
@@ -56,6 +77,12 @@ impl OverlaySpatialIndex {
                     coordinates,
                     centroid,
                 };
+
+                // Update bounds
+                min_x = min_x.min(centroid.x);
+                min_y = min_y.min(centroid.y);
+                max_x = max_x.max(centroid.x);
+                max_y = max_y.max(centroid.y);
 
                 let index = cells.len();
                 entries.push(CellEntry {
@@ -67,6 +94,17 @@ impl OverlaySpatialIndex {
         }
 
         let tree = RTree::bulk_load(entries);
+
+        if !cells.is_empty() {
+            info!(
+                "Built spatial index for {} cells, bounds: ({:.0}, {:.0}) to ({:.0}, {:.0})",
+                cells.len(),
+                min_x,
+                min_y,
+                max_x,
+                max_y
+            );
+        }
 
         Self { tree, cells }
     }

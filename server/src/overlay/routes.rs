@@ -108,6 +108,15 @@ pub async fn get_cells_in_region(
 
     let total_count = cells.len();
 
+    tracing::debug!(
+        "Querying cells in region: ({}, {}) {}x{} - found {} cells",
+        params.x,
+        params.y,
+        params.width,
+        params.height,
+        total_count
+    );
+
     Ok(Json(CellsInRegionResponse {
         cells,
         total_count,

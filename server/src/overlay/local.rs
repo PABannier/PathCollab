@@ -48,13 +48,22 @@ impl LocalOverlayService {
 
     /// Find overlay file for a given slide ID
     fn find_overlay_file(&self, slide_id: &str) -> Option<PathBuf> {
-        // Try common extensions
+        // Try common extensions directly in overlays dir
         for ext in &["bin", "pb"] {
             let path = self.overlays_dir.join(format!("{}.{}", slide_id, ext));
             if path.exists() {
                 return Some(path);
             }
         }
+
+        // Try subdirectory structure: {slide_id}/cell_masks.bin
+        for filename in &["cell_masks.bin", "cell_masks.pb"] {
+            let path = self.overlays_dir.join(slide_id).join(filename);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+
         None
     }
 
@@ -119,15 +128,31 @@ impl LocalOverlayService {
         if let Ok(entries) = std::fs::read_dir(&self.overlays_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
+
+                // Check for direct files like {slide_id}.bin
                 if self.reader.can_read(&path)
                     && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
                 {
                     slide_ids.push(stem.to_string());
                 }
+
+                // Check for subdirectories with cell_masks.bin inside
+                if path.is_dir() {
+                    for filename in &["cell_masks.bin", "cell_masks.pb"] {
+                        let overlay_path = path.join(filename);
+                        if overlay_path.exists()
+                            && let Some(dir_name) = path.file_name().and_then(|s| s.to_str())
+                        {
+                            slide_ids.push(dir_name.to_string());
+                            break;
+                        }
+                    }
+                }
             }
         }
 
         slide_ids.sort();
+        slide_ids.dedup();
         slide_ids
     }
 }
