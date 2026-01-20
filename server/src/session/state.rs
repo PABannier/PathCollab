@@ -1,4 +1,4 @@
-use crate::protocol::{Participant, ParticipantRole, SlideInfo, Viewport};
+use crate::protocol::{CellOverlayState, Participant, ParticipantRole, SlideInfo, Viewport};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -84,6 +84,9 @@ pub struct Session {
     // Content
     pub slide: SlideInfo,
     pub presenter_viewport: Viewport,
+
+    // Cell overlay state (presenter-controlled)
+    pub cell_overlay: Option<CellOverlayState>,
 }
 
 /// Participant within a session (extended data)

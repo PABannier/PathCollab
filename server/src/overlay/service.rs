@@ -23,4 +23,14 @@ pub trait OverlayService: Send + Sync {
     async fn overlay_exists(&self, slide_id: &str) -> bool {
         self.get_overlay_metadata(slide_id).await.is_ok()
     }
+
+    /// Check overlay status: (file_exists, is_ready)
+    /// Returns (true, true) if overlay is loaded and ready
+    /// Returns (true, false) if overlay file exists but is still loading
+    /// Returns (false, false) if no overlay file exists
+    async fn get_overlay_status(&self, slide_id: &str) -> (bool, bool);
+
+    /// Initiate background loading for an overlay
+    /// This is a non-blocking call that starts loading in the background
+    async fn initiate_load(&self, slide_id: &str);
 }

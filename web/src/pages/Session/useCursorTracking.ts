@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SessionState, Viewport } from '../../hooks/useSession'
+import type { SessionState } from '../../hooks/useSession'
+
+/** Simple viewport type for cursor tracking (without timestamp) */
+interface SimpleViewport {
+  centerX: number
+  centerY: number
+  zoom: number
+}
 
 export interface UseCursorTrackingOptions {
   /** Current session (null if no active session) */
@@ -7,13 +14,13 @@ export interface UseCursorTrackingOptions {
   /** Viewer element bounds for coordinate conversion */
   viewerBounds: DOMRect | null
   /** Current viewport state */
-  currentViewport: Viewport
+  currentViewport: SimpleViewport
   /** Function to convert client coordinates to slide coordinates */
   convertToSlideCoords: (
     clientX: number,
     clientY: number,
     bounds: DOMRect,
-    viewport: Viewport
+    viewport: SimpleViewport
   ) => { x: number; y: number } | null
   /** Function to update cursor position in presence system */
   updateCursorPosition: (x: number, y: number) => void

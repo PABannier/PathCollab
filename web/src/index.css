@@ -75,3 +75,8 @@ body {
 .animate-fadeInUp {
   animation: fadeInUp 0.3s ease-out forwards;
 }
+
+/* OpenSeadragon navigator (minimap) should appear above cell overlays */
+.navigator {
+  z-index: 50 !important;
+}

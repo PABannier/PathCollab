@@ -23,6 +23,7 @@ interface SlideViewerProps {
   showMinimap?: boolean
   minimapPosition?: 'TOP_LEFT' | 'TOP_RIGHT' | 'BOTTOM_LEFT' | 'BOTTOM_RIGHT'
   onViewportChange?: (viewport: { centerX: number; centerY: number; zoom: number }) => void
+  onAnimationFrame?: (viewport: { centerX: number; centerY: number; zoom: number }) => void
   onTileLoadError?: (error: { level: number; x: number; y: number }) => void
 }
 
@@ -32,6 +33,7 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
     showMinimap = true,
     minimapPosition = 'BOTTOM_RIGHT',
     onViewportChange,
+    onAnimationFrame,
     onTileLoadError,
   },
   ref
@@ -44,12 +46,14 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
 
   // Store callbacks in refs to avoid recreating viewer when callbacks change
   const onViewportChangeRef = useRef(onViewportChange)
+  const onAnimationFrameRef = useRef(onAnimationFrame)
   const onTileLoadErrorRef = useRef(onTileLoadError)
 
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
+    onAnimationFrameRef.current = onAnimationFrame
     onTileLoadErrorRef.current = onTileLoadError
-  }, [onViewportChange, onTileLoadError])
+  }, [onViewportChange, onAnimationFrame, onTileLoadError])
 
   useImperativeHandle(
     ref,
@@ -203,6 +207,18 @@ export const SlideViewer = forwardRef<SlideViewerHandle, SlideViewerProps>(funct
           zoom,
         })
       }, 100)
+    })
+
+    // Real-time viewport updates during animation (60fps)
+    viewer.addHandler('animation', () => {
+      if (!viewer.viewport) return
+      const center = viewer.viewport.getCenter()
+      const zoom = viewer.viewport.getZoom()
+      onAnimationFrameRef.current?.({
+        centerX: center.x,
+        centerY: center.y,
+        zoom,
+      })
     })
 
     // Handle resize

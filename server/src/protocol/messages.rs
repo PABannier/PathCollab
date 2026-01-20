@@ -32,6 +32,13 @@ pub enum ClientMessage {
     ChangeSlide { slide_id: String, seq: u64 },
     /// Ping for keepalive
     Ping { seq: u64 },
+    /// Update cell overlay state (presenter only, broadcast to followers)
+    CellOverlayUpdate {
+        enabled: bool,
+        opacity: f64,
+        visible_cell_types: Vec<String>,
+        seq: u64,
+    },
 }
 
 /// Server to Client messages
@@ -80,6 +87,12 @@ pub enum ServerMessage {
     Ping,
     /// Pong response (to client's Ping)
     Pong,
+    /// Presenter cell overlay state update (broadcast to all participants)
+    PresenterCellOverlay {
+        enabled: bool,
+        opacity: f64,
+        visible_cell_types: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -107,6 +120,14 @@ pub enum SessionEndReason {
     PresenterLeft,
 }
 
+/// Cell overlay state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CellOverlayState {
+    pub enabled: bool,
+    pub opacity: f64,
+    pub visible_cell_types: Vec<String>,
+}
+
 /// Session snapshot for state transfer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSnapshot {
@@ -116,6 +137,8 @@ pub struct SessionSnapshot {
     pub presenter: Participant,
     pub followers: Vec<Participant>,
     pub presenter_viewport: Viewport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell_overlay: Option<CellOverlayState>,
 }
 
 /// Participant info
@@ -195,6 +218,7 @@ impl ClientMessage {
             ClientMessage::SnapToPresenter { .. } => "snap_to_presenter",
             ClientMessage::ChangeSlide { .. } => "change_slide",
             ClientMessage::Ping { .. } => "ping",
+            ClientMessage::CellOverlayUpdate { .. } => "cell_overlay_update",
         }
     }
 }
@@ -216,6 +240,7 @@ impl ServerMessage {
             ServerMessage::SlideChanged { .. } => "slide_changed",
             ServerMessage::Ping => "ping",
             ServerMessage::Pong => "pong",
+            ServerMessage::PresenterCellOverlay { .. } => "presenter_cell_overlay",
         }
     }
 }

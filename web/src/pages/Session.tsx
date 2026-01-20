@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { SlideViewerHandle } from '../components/viewer'
 import { Sidebar, StatusBar } from '../components/layout'
@@ -7,6 +7,7 @@ import {
   FollowModeIndicator,
   KeyboardShortcutsHelp,
   NetworkErrorBanner,
+  OverlayControls,
 } from '../components/ui'
 import {
   SessionFooter,
@@ -25,6 +26,7 @@ import { useShareUrl } from '../hooks/useShareUrl'
 import { useViewerViewport } from '../hooks/useViewerViewport'
 import { useHashParams } from '../hooks/useHashParams'
 import { useSlideInfo } from '../hooks/useSlideInfo'
+import { useCellOverlay } from '../hooks/useCellOverlay'
 import { useAutoCreateSession } from '../hooks/useAutoCreateSession'
 import { useCursorTracking } from './Session/useCursorTracking'
 import { useSessionKeyboardShortcuts } from './Session/useSessionKeyboardShortcuts'
@@ -38,6 +40,9 @@ export function Session() {
   const viewerRef = useRef<SlideViewerHandle | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
+  const [cellOverlaysEnabled, setCellOverlaysEnabled] = useState(false)
+  const [cellOverlayOpacity, setCellOverlayOpacity] = useState(0.9)
+  const [visibleCellTypes, setVisibleCellTypes] = useState<Set<string>>(new Set())
 
   // Parse secrets from URL hash fragment (never sent to server)
   const { joinSecret, presenterKey } = useHashParams()
@@ -71,6 +76,7 @@ export function Session() {
     secrets,
     isFollowing,
     hasDiverged,
+    presenterCellOverlay,
     createSession,
     updateCursor,
     updateViewport,
@@ -78,6 +84,7 @@ export function Session() {
     snapToPresenter,
     setIsFollowing,
     checkDivergence,
+    updateCellOverlay,
   } = useSession({
     sessionId,
     joinSecret,
@@ -132,6 +139,80 @@ export function Session() {
     checkDivergence,
     setIsFollowing,
   })
+
+  // Cell overlay data
+  const {
+    cells: allCells,
+    isLoading: isLoadingCells,
+    hasOverlay,
+    isOverlayLoading,
+    overlayMetadata,
+  } = useCellOverlay({
+    slideId: slide?.id,
+    viewport: currentViewport,
+    viewerBounds,
+    slideWidth: slide?.width ?? 0,
+    slideHeight: slide?.height ?? 0,
+    enabled: cellOverlaysEnabled && !!slide,
+  })
+
+  // Initialize visible cell types when metadata loads
+  // This is intentional state sync from external data (server response) to local state
+  useEffect(() => {
+    if (overlayMetadata?.cell_types) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing server state to local state
+      setVisibleCellTypes(new Set(overlayMetadata.cell_types))
+    }
+  }, [overlayMetadata?.cell_types])
+
+  // Filter cells by visible types
+  const cells = useMemo(() => {
+    if (visibleCellTypes.size === 0) return []
+    return allCells.filter((cell) => visibleCellTypes.has(cell.cell_type))
+  }, [allCells, visibleCellTypes])
+
+  // Wrapper functions that broadcast when presenter changes overlay settings
+  const handleCellOverlaysChange = useCallback(
+    (enabled: boolean) => {
+      setCellOverlaysEnabled(enabled)
+      if (isPresenter && session) {
+        updateCellOverlay(enabled, cellOverlayOpacity, Array.from(visibleCellTypes))
+      }
+    },
+    [isPresenter, session, cellOverlayOpacity, visibleCellTypes, updateCellOverlay]
+  )
+
+  const handleCellOverlayOpacityChange = useCallback(
+    (opacity: number) => {
+      setCellOverlayOpacity(opacity)
+      if (isPresenter && session) {
+        updateCellOverlay(cellOverlaysEnabled, opacity, Array.from(visibleCellTypes))
+      }
+    },
+    [isPresenter, session, cellOverlaysEnabled, visibleCellTypes, updateCellOverlay]
+  )
+
+  const handleVisibleCellTypesChange = useCallback(
+    (types: Set<string>) => {
+      setVisibleCellTypes(types)
+      if (isPresenter && session) {
+        updateCellOverlay(cellOverlaysEnabled, cellOverlayOpacity, Array.from(types))
+      }
+    },
+    [isPresenter, session, cellOverlaysEnabled, cellOverlayOpacity, updateCellOverlay]
+  )
+
+  // Sync follower state when presenter cell overlay changes
+  // This is intentional state sync: followers receive presenter's overlay state via WebSocket
+  useEffect(() => {
+    if (!isPresenter && presenterCellOverlay) {
+      /* eslint-disable react-hooks/set-state-in-effect -- syncing presenter state to follower */
+      setCellOverlaysEnabled(presenterCellOverlay.enabled)
+      setCellOverlayOpacity(presenterCellOverlay.opacity)
+      setVisibleCellTypes(new Set(presenterCellOverlay.visibleCellTypes))
+      /* eslint-enable react-hooks/set-state-in-effect */
+    }
+  }, [isPresenter, presenterCellOverlay])
 
   // Presence tracking
   const { startTracking, stopTracking, updateCursorPosition, convertToSlideCoords } = usePresence({
@@ -239,6 +320,22 @@ export function Session() {
             />
           )}
 
+          {/* Overlay controls */}
+          {slide && (
+            <OverlayControls
+              cellOverlaysEnabled={cellOverlaysEnabled}
+              onCellOverlaysChange={handleCellOverlaysChange}
+              hasCellOverlay={hasOverlay && !isOverlayLoading}
+              isOverlayLoading={isOverlayLoading}
+              cellCount={overlayMetadata?.cell_count}
+              opacity={cellOverlayOpacity}
+              onOpacityChange={handleCellOverlayOpacityChange}
+              cellTypes={overlayMetadata?.cell_types ?? []}
+              visibleCellTypes={visibleCellTypes}
+              onVisibleCellTypesChange={handleVisibleCellTypesChange}
+            />
+          )}
+
           {/* About section */}
           <AboutSection />
         </Sidebar>
@@ -265,6 +362,9 @@ export function Session() {
           onMouseLeave={handleMouseLeave}
           onReturnToPresenter={handleReturnToPresenter}
           onShowHelp={() => setShowHelp(true)}
+          cellOverlaysEnabled={cellOverlaysEnabled}
+          cells={cells}
+          cellOverlayOpacity={cellOverlayOpacity}
         />
       </div>
 
@@ -274,6 +374,7 @@ export function Session() {
         latency={latency}
         currentViewport={currentViewport}
         footerCursorPos={footerCursorPos}
+        isLoadingCells={cellOverlaysEnabled && isLoadingCells}
       />
 
       {/* Keyboard shortcuts help modal */}
