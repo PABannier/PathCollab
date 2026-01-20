@@ -13,7 +13,6 @@ interface UseTissueOverlayOptions {
   viewport: Viewport
   viewerBounds: DOMRect | null
   slideWidth: number
-  slideHeight: number
   enabled: boolean
 }
 
@@ -88,14 +87,14 @@ function tileKey(level: number, x: number, y: number): string {
 
 /**
  * Hook to fetch tissue overlay data from the backend API.
- * Fetches tiles for the visible viewport and caches them in-memory.
+ * Loads ALL tiles at the current zoom level upfront (not just visible ones)
+ * for instant pan/zoom performance. Tiles are cached permanently until slide changes.
  */
 export function useTissueOverlay({
   slideId,
   viewport,
   viewerBounds,
   slideWidth,
-  slideHeight,
   enabled,
 }: UseTissueOverlayOptions): UseTissueOverlayReturn {
   // Tile cache: key -> CachedTile (persisted across viewport changes and enable/disable)
@@ -175,83 +174,25 @@ export function useTissueOverlay({
     return closestLevel
   }, [metadata, viewport.zoom, viewerBounds, slideWidth, availableLevels])
 
-  // Calculate visible tiles based on viewport
-  const visibleTiles = useMemo(() => {
-    if (!metadata || !viewerBounds || viewport.zoom <= 0 || slideWidth <= 0 || slideHeight <= 0) {
+  // Get all tiles at the current level (load everything, not just visible)
+  const tilesToLoad = useMemo(() => {
+    if (!metadata) {
       return []
     }
 
-    // Convert viewport to slide pixel coordinates (full resolution)
-    // OpenSeadragon uses width-normalized coordinates
-    const viewportWidth = 1 / viewport.zoom
-    const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
+    // Return all tiles at the current level - we load everything upfront
+    // since tissue tiles are cheap to render and we want instant pan/zoom
+    return metadata.tiles.filter((tile) => tile.level === currentLevel)
+  }, [metadata, currentLevel])
 
-    const viewLeft = (viewport.centerX - viewportWidth / 2) * slideWidth
-    const viewTop = (viewport.centerY - viewportHeight / 2) * slideWidth
-    const viewRight = (viewport.centerX + viewportWidth / 2) * slideWidth
-    const viewBottom = (viewport.centerY + viewportHeight / 2) * slideWidth
-
-    // Find tiles that intersect with the viewport at the current level
-    const visibleTileInfos: TissueTileInfo[] = []
-
-    // The protobuf uses inverted level convention: maxLevel = full resolution
-    // levelScale converts from tile's level to full resolution
-    const levelScale = Math.pow(2, metadata.max_level - currentLevel)
-
-    for (const tile of metadata.tiles) {
-      if (tile.level !== currentLevel) continue
-
-      // Tile x, y are GRID indices (column, row), not pixel coordinates
-      // First convert to pixel coordinates at the tile's level, then scale to full resolution
-      const tileLeftAtLevel = tile.x * metadata.tile_size
-      const tileTopAtLevel = tile.y * metadata.tile_size
-
-      // Convert to full resolution coordinates
-      const tileLeft = tileLeftAtLevel * levelScale
-      const tileTop = tileTopAtLevel * levelScale
-      const tileRight = tileLeft + tile.width * levelScale
-      const tileBottom = tileTop + tile.height * levelScale
-
-      // Check intersection with some padding to prefetch nearby tiles
-      const padding = metadata.tile_size * levelScale * 0.5
-      if (
-        tileRight + padding > viewLeft &&
-        tileLeft - padding < viewRight &&
-        tileBottom + padding > viewTop &&
-        tileTop - padding < viewBottom
-      ) {
-        visibleTileInfos.push(tile)
-      }
-    }
-
-    // Sort tiles by distance from viewport center for priority loading
-    const viewCenterX = (viewLeft + viewRight) / 2
-    const viewCenterY = (viewTop + viewBottom) / 2
-
-    visibleTileInfos.sort((a, b) => {
-      const aX = (a.x * metadata.tile_size + a.width / 2) * levelScale
-      const aY = (a.y * metadata.tile_size + a.height / 2) * levelScale
-      const bX = (b.x * metadata.tile_size + b.width / 2) * levelScale
-      const bY = (b.y * metadata.tile_size + b.height / 2) * levelScale
-
-      const aDist = Math.abs(aX - viewCenterX) + Math.abs(aY - viewCenterY)
-      const bDist = Math.abs(bX - viewCenterX) + Math.abs(bY - viewCenterY)
-      return aDist - bDist
-    })
-
-    // Limit to reasonable number of tiles to avoid overwhelming fetches
-    const MAX_VISIBLE_TILES = 100
-    return visibleTileInfos.slice(0, MAX_VISIBLE_TILES)
-  }, [metadata, viewport, viewerBounds, slideWidth, slideHeight, currentLevel])
-
-  // Fetch visible tiles (uses ref to avoid recreating callback when tiles change)
+  // Fetch all tiles at current level (uses ref to avoid recreating callback when tiles change)
   const fetchTiles = useCallback(async () => {
-    if (!slideId || !metadata || !enabled || visibleTiles.length === 0) return
+    if (!slideId || !metadata || !enabled || tilesToLoad.length === 0) return
 
     const tilesToFetch: TissueTileInfo[] = []
     const currentTiles = tilesRef.current
 
-    for (const tile of visibleTiles) {
+    for (const tile of tilesToLoad) {
       const key = tileKey(tile.level, tile.x, tile.y)
       // Check both the ref (for already cached) and pending fetches
       if (!currentTiles.has(key) && !pendingFetchesRef.current.has(key)) {
@@ -262,8 +203,8 @@ export function useTissueOverlay({
 
     if (tilesToFetch.length === 0) return
 
-    // Fetch tiles in parallel (limit concurrency to avoid overwhelming the server)
-    const BATCH_SIZE = 4
+    // Fetch tiles in parallel with higher concurrency since tiles are small
+    const BATCH_SIZE = 16
     for (let i = 0; i < tilesToFetch.length; i += BATCH_SIZE) {
       const batch = tilesToFetch.slice(i, i + BATCH_SIZE)
 
@@ -294,17 +235,12 @@ export function useTissueOverlay({
         })
       )
     }
-  }, [slideId, metadata, enabled, visibleTiles])
+  }, [slideId, metadata, enabled, tilesToLoad])
 
-  // Debounce tile fetching
+  // Fetch all tiles when enabled (no debounce needed since we load everything)
   useEffect(() => {
     if (!enabled || !metadata) return
-
-    const timer = setTimeout(() => {
-      fetchTiles()
-    }, 150) // Small debounce to batch requests during rapid viewport changes
-
-    return () => clearTimeout(timer)
+    fetchTiles()
   }, [enabled, metadata, fetchTiles])
 
   // Clear tile cache when slide changes

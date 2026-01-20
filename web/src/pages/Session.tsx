@@ -173,7 +173,6 @@ export function Session() {
     viewport: currentViewport,
     viewerBounds,
     slideWidth: slide?.width ?? 0,
-    slideHeight: slide?.height ?? 0,
     enabled: tissueOverlaysEnabled && !!slide,
   })
 
