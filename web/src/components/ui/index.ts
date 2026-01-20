@@ -1,4 +1,5 @@
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from './Button'
+export { CellOverlayToggle } from './CellOverlayToggle'
 export {
   EmptyState,
   PresetEmptyState,

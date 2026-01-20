@@ -1,6 +1,8 @@
 import { type RefObject, useMemo } from 'react'
 import { SlideViewer, type SlideInfo, type SlideViewerHandle, ViewportLoader } from './index'
+import { CellOverlay } from './CellOverlay'
 import { CursorLayer } from './CursorLayer'
+import type { CellMask } from '../../types/overlay'
 import { MinimapOverlay } from './MinimapOverlay'
 import { PresetEmptyState } from '../ui/EmptyState'
 import { ReturnToPresenterButton } from '../ui/ReturnToPresenterButton'
@@ -57,6 +59,10 @@ export interface ViewerAreaProps {
   onReturnToPresenter: () => void
   /** Callback to show keyboard shortcuts help */
   onShowHelp: () => void
+  /** Whether cell overlays are enabled */
+  cellOverlaysEnabled?: boolean
+  /** Cell mask data for overlay */
+  cells?: CellMask[]
 }
 
 /**
@@ -84,6 +90,8 @@ export function ViewerArea({
   onMouseLeave,
   onReturnToPresenter,
   onShowHelp,
+  cellOverlaysEnabled,
+  cells,
 }: ViewerAreaProps) {
   // Memoize normalized cursors for minimap to avoid creating new array/objects on every render
   const normalizedCursors = useMemo(() => {
@@ -125,6 +133,17 @@ export function ViewerArea({
           slideWidth={slide.width}
           slideHeight={slide.height}
           currentUserId={currentUserId}
+        />
+      )}
+
+      {/* Cell overlay */}
+      {cellOverlaysEnabled && viewerBounds && slide && cells && cells.length > 0 && (
+        <CellOverlay
+          cells={cells}
+          viewerBounds={viewerBounds}
+          viewport={currentViewport}
+          slideWidth={slide.width}
+          slideHeight={slide.height}
         />
       )}
 

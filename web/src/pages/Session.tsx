@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { SlideViewerHandle } from '../components/viewer'
 import { Sidebar, StatusBar } from '../components/layout'
 import {
+  CellOverlayToggle,
   ErrorBanner,
   FollowModeIndicator,
   KeyboardShortcutsHelp,
@@ -25,6 +26,7 @@ import { useShareUrl } from '../hooks/useShareUrl'
 import { useViewerViewport } from '../hooks/useViewerViewport'
 import { useHashParams } from '../hooks/useHashParams'
 import { useSlideInfo } from '../hooks/useSlideInfo'
+import { useCellOverlay } from '../hooks/useCellOverlay'
 import { useAutoCreateSession } from '../hooks/useAutoCreateSession'
 import { useCursorTracking } from './Session/useCursorTracking'
 import { useSessionKeyboardShortcuts } from './Session/useSessionKeyboardShortcuts'
@@ -38,6 +40,7 @@ export function Session() {
   const viewerRef = useRef<SlideViewerHandle | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
+  const [cellOverlaysEnabled, setCellOverlaysEnabled] = useState(false)
 
   // Parse secrets from URL hash fragment (never sent to server)
   const { joinSecret, presenterKey } = useHashParams()
@@ -131,6 +134,16 @@ export function Session() {
     snapToPresenter,
     checkDivergence,
     setIsFollowing,
+  })
+
+  // Cell overlay data
+  const { cells, hasOverlay, overlayMetadata } = useCellOverlay({
+    slideId: slide?.id,
+    viewport: currentViewport,
+    viewerBounds,
+    slideWidth: slide?.width ?? 0,
+    slideHeight: slide?.height ?? 0,
+    enabled: cellOverlaysEnabled && !!slide,
   })
 
   // Presence tracking
@@ -239,6 +252,16 @@ export function Session() {
             />
           )}
 
+          {/* Cell Overlays toggle */}
+          {slide && (
+            <CellOverlayToggle
+              enabled={cellOverlaysEnabled}
+              onChange={setCellOverlaysEnabled}
+              hasOverlay={hasOverlay}
+              cellCount={overlayMetadata?.cell_count}
+            />
+          )}
+
           {/* About section */}
           <AboutSection />
         </Sidebar>
@@ -265,6 +288,8 @@ export function Session() {
           onMouseLeave={handleMouseLeave}
           onReturnToPresenter={handleReturnToPresenter}
           onShowHelp={() => setShowHelp(true)}
+          cellOverlaysEnabled={cellOverlaysEnabled}
+          cells={cells}
         />
       </div>
 
