@@ -19,26 +19,31 @@ const SLIDE_HEIGHT = 100000
 const TILE_SIZE = 512
 
 const mockMetadata: TissueOverlayMetadata = {
-  tile_size: TILE_SIZE,
-  num_levels: 5,
-  class_names: ['stroma', 'tumor', 'necrosis'],
-  level_dimensions: [
-    [6250, 6250], // Level 0 - coarsest
-    [12500, 12500],
-    [25000, 25000],
-    [50000, 50000],
-    [100000, 100000], // Level 4 - full resolution
+  slide_id: 'test-slide',
+  model_name: 'test-model',
+  classes: [
+    { id: 0, name: 'stroma' },
+    { id: 1, name: 'tumor' },
+    { id: 2, name: 'necrosis' },
   ],
+  tile_size: TILE_SIZE,
+  max_level: 4, // Level 4 is full resolution
+  tiles: [], // Tiles are added dynamically in tests
 }
 
 function createMockTile(level: number, x: number, y: number, bounds: TileBounds): CachedTile {
+  // Calculate scale factor based on max_level (4) - level
+  const scaleFactor = Math.pow(2, mockMetadata.max_level - level)
   return {
     level,
     x,
     y,
+    width: TILE_SIZE,
+    height: TILE_SIZE,
     bounds,
     data: new Uint8Array([0, 1, 2, 3]), // Minimal mock data
-    fetchedAt: Date.now(),
+    scaleFactor,
+    loadTime: performance.now(),
   }
 }
 
