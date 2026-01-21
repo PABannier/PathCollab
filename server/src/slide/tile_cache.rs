@@ -97,11 +97,6 @@ impl TileCache {
         }
     }
 
-    /// Create a tile cache with default configuration (256MB)
-    pub fn with_default_config() -> Self {
-        Self::new(TileCacheConfig::default())
-    }
-
     /// Get a cached tile if present
     pub async fn get(&self, key: &TileKey) -> Option<Bytes> {
         let result = self.cache.get(key).await;
@@ -131,46 +126,8 @@ impl TileCache {
         counter!("pathcollab_tile_cache_bytes_inserted_total").increment(size as u64);
     }
 
-    /// Get or insert a tile using the provided async function
-    ///
-    /// This is the recommended method for cache access as it handles
-    /// the cache-miss case atomically, preventing thundering herd.
-    pub async fn get_or_insert_with<F, Fut>(&self, key: TileKey, init: F) -> Bytes
-    where
-        F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = Bytes>,
-    {
-        // Check cache first
-        if let Some(cached) = self.get(&key).await {
-            return cached;
-        }
-
-        // Cache miss - compute and insert
-        // Note: moka handles concurrent requests for the same key gracefully
-        let value = init().await;
-        self.insert(key, value.clone()).await;
-        value
-    }
-
-    /// Get or try to insert a tile, returning an error if computation fails
-    pub async fn get_or_try_insert_with<F, Fut, E>(&self, key: TileKey, init: F) -> Result<Bytes, E>
-    where
-        F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = Result<Bytes, E>>,
-    {
-        // Check cache first
-        if let Some(cached) = self.get(&key).await {
-            return Ok(cached);
-        }
-
-        // Cache miss - compute and insert
-        let value = init().await?;
-        self.insert(key, value.clone()).await;
-        Ok(value)
-    }
-
     /// Get the current hit rate (0.0 to 1.0)
-    pub fn hit_rate(&self) -> f64 {
+    fn hit_rate(&self) -> f64 {
         let hits = self.hits.load(Ordering::Relaxed);
         let misses = self.misses.load(Ordering::Relaxed);
         let total = hits + misses;
@@ -182,16 +139,6 @@ impl TileCache {
         }
     }
 
-    /// Get cache statistics
-    pub fn stats(&self) -> TileCacheStats {
-        TileCacheStats {
-            hits: self.hits.load(Ordering::Relaxed),
-            misses: self.misses.load(Ordering::Relaxed),
-            entry_count: self.cache.entry_count(),
-            weighted_size: self.cache.weighted_size(),
-        }
-    }
-
     /// Update the hit rate gauge metric
     fn update_hit_rate_gauge(&self) {
         let rate = self.hit_rate();
@@ -199,32 +146,6 @@ impl TileCache {
         gauge!("pathcollab_tile_cache_entry_count").set(self.cache.entry_count() as f64);
         gauge!("pathcollab_tile_cache_size_bytes").set(self.cache.weighted_size() as f64);
     }
-
-    /// Invalidate all entries for a specific slide
-    ///
-    /// Call this when a slide is removed or modified (rare in practice
-    /// since slides are typically immutable).
-    pub async fn invalidate_slide(&self, slide_id: &str) {
-        // moka doesn't support prefix-based invalidation directly,
-        // so we'd need to track keys separately if this is needed.
-        // For now, tiles are immutable so this is rarely needed.
-        tracing::debug!("Tile cache invalidation requested for slide: {}", slide_id);
-        // If needed in the future: self.cache.invalidate_all()
-        let _ = slide_id; // Suppress unused warning
-    }
-}
-
-/// Cache statistics
-#[derive(Debug, Clone)]
-pub struct TileCacheStats {
-    /// Total cache hits
-    pub hits: u64,
-    /// Total cache misses
-    pub misses: u64,
-    /// Number of entries in cache
-    pub entry_count: u64,
-    /// Total size in bytes (approximate)
-    pub weighted_size: u64,
 }
 
 #[cfg(test)]
@@ -233,7 +154,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tile_cache_basic() {
-        let cache = TileCache::with_default_config();
+        let cache = TileCache::new(TileCacheConfig::default());
 
         let key = TileKey {
             slide_id: "test_slide".to_string(),
@@ -257,7 +178,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tile_cache_hit_rate() {
-        let cache = TileCache::with_default_config();
+        let cache = TileCache::new(TileCacheConfig::default());
 
         let key = TileKey {
             slide_id: "test".to_string(),
@@ -280,41 +201,5 @@ mod tests {
         // Another hit
         cache.get(&key).await;
         assert!((cache.hit_rate() - 0.666).abs() < 0.01); // 2 hits, 1 miss
-    }
-
-    #[tokio::test]
-    async fn test_tile_cache_get_or_insert() {
-        let cache = TileCache::with_default_config();
-
-        let key = TileKey {
-            slide_id: "slide1".to_string(),
-            level: 5,
-            x: 10,
-            y: 20,
-        };
-
-        // First call should compute
-        let computed = std::sync::atomic::AtomicBool::new(false);
-        let result = cache
-            .get_or_insert_with(key.clone(), || {
-                computed.store(true, Ordering::SeqCst);
-                async { Bytes::from(vec![42u8; 100]) }
-            })
-            .await;
-
-        assert!(computed.load(Ordering::SeqCst));
-        assert_eq!(result.len(), 100);
-
-        // Second call should use cache
-        computed.store(false, Ordering::SeqCst);
-        let result2 = cache
-            .get_or_insert_with(key.clone(), || {
-                computed.store(true, Ordering::SeqCst);
-                async { Bytes::from(vec![99u8; 100]) }
-            })
-            .await;
-
-        assert!(!computed.load(Ordering::SeqCst)); // Should NOT have computed
-        assert_eq!(result2, result); // Same value from cache
     }
 }
