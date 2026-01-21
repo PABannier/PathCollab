@@ -543,7 +543,7 @@ mod tests {
         let service = LocalSlideService {
             slides_dir: PathBuf::from("/tmp"),
             cache: SlideCache::new(10),
-            tile_cache: TileCache::with_default_config(),
+            tile_cache: TileCache::new(TileCacheConfig::default()),
             tile_size: 256,
             jpeg_quality: 85,
         };
