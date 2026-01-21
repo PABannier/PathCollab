@@ -344,7 +344,7 @@ export function useSession({
           const tissueOverlay: ServerTissueOverlayState = {
             enabled: message.enabled as boolean,
             opacity: message.opacity as number,
-            visible_tissue_types: message.visible_tissue_types as string[],
+            visible_tissue_types: message.visible_tissue_types as number[],
           }
           setPresenterTissueOverlay(toFrontendTissueOverlay(tissueOverlay))
           break
