@@ -56,7 +56,7 @@ Open **http://localhost:8080** → Create session → Share link → Collaborate
 |---------|--------------|
 | **Zero-Auth Sessions** | Share a link, start collaborating. No logins, no invites, no IT tickets. Sessions auto-expire in 4 hours. |
 | **Real-Time Presence** | See where everyone is looking—cursors update at 30Hz, viewports at 10Hz. "Follow me here..." actually works. |
-| **Million-Polygon Overlays** | Upload 300MB protobuf files with cell segmentation. Server indexes spatially; client renders via WebGL2. |
+| **Dual Overlay System** | Render tissue heatmaps (tile-based raster) and cell polygons (vector) simultaneously. WebGL2 handles 1M+ cells at 60fps with LOD. |
 | **Snap to Presenter** | One click to jump to exactly what the presenter sees—smooth 300ms animation, not jarring teleport. |
 | **Docker-Native** | Single `docker run` command. 150MB image. No nginx, no Redis, no docker-compose required. |
 
@@ -81,9 +81,15 @@ open http://localhost:8080
 
 # 5. Upload an AI overlay (presenter only)
 #    → Drag a .pb file onto the viewer
-#    → Cell polygons and tissue heatmaps appear for everyone
+#    → Tissue heatmap tiles load on-demand as you pan/zoom
+#    → Cell polygons render with automatic LOD (points → boxes → full polygons)
 
-# 6. Followers click "Snap to Presenter" to jump to your view
+# 6. Use the Layers panel to toggle visibility
+#    → Toggle tissue types (tumor, stroma, necrosis) independently
+#    → Toggle cell types (cancer cells, lymphocytes, fibroblasts)
+#    → Adjust overlay opacity with sliders
+
+# 7. Followers click "Snap to Presenter" to jump to your view
 ```
 
 **What it looks like:**
@@ -93,22 +99,23 @@ open http://localhost:8080
 │  PathCollab                          🔗 Share   👥 3 viewers       │
 ├──────────────────────────────────────┬─────────────────────────────┤
 │                                      │  Layers                     │
-│                                      │  ├─ ☑ Tissue Heatmap  ████  │
-│    [Whole Slide Image]               │  │   ├─ ☑ Tumor             │
-│                                      │  │   ├─ ☑ Stroma            │
-│         ◉ Dr. Smith (presenting)     │  │   └─ ☐ Necrosis          │
-│                 ↘                    │  │                          │
-│              ◉ You                   │  └─ ☑ Cell Polygons   ████  │
+│                                      │  ├─ ☑ Tissue Overlay  ▓▓▓▓  │
+│    [Whole Slide Image]               │  │   Opacity: ████████░░    │
+│                                      │  │   ├─ ☑ Tumor             │
+│         ◉ Dr. Smith (presenting)     │  │   ├─ ☑ Stroma            │
+│                 ↘                    │  │   └─ ☐ Necrosis          │
+│              ◉ You                   │  │                          │
+│                                      │  └─ ☑ Cell Overlay    ████  │
+│                    ◉ Dr. Lee         │      Opacity: ██████████    │
 │                                      │      ├─ ☑ Cancer cells      │
-│                    ◉ Dr. Lee         │      ├─ ☑ Lymphocytes       │
+│                                      │      ├─ ☑ Lymphocytes       │
 │                                      │      └─ ☐ Fibroblasts       │
-│                                      │                             │
-├──────────────────────────────────────┤  [Snap to Presenter]        │
-│ ┌──────────────────┐                 │                             │
-│ │ ▓▓░░░░░░░░░░░░░░ │ ← Minimap      │  Participants               │
-│ │ ▓▓░░░░░░░░░░░░░░ │   (presenter   │  ● Dr. Smith (presenter)    │
-│ │ ░░░░░░░░░░░░░░░░ │    viewport    │  ● You                      │
-│ └──────────────────┘    shown)      │  ● Dr. Lee                  │
+├──────────────────────────────────────┤                             │
+│ ┌──────────────────┐                 │  [Snap to Presenter]        │
+│ │ ▓▓░░░░░░░░░░░░░░ │ ← Minimap      │                             │
+│ │ ▓▓░░░░░░░░░░░░░░ │   (presenter   │  Participants               │
+│ │ ░░░░░░░░░░░░░░░░ │    viewport)   │  ● Dr. Smith (presenter)    │
+│ └──────────────────┘                 │  ● You  ● Dr. Lee           │
 └──────────────────────────────────────┴─────────────────────────────┘
 ```
 
@@ -303,17 +310,41 @@ PathCollab reads slides via OpenSlide. Supported formats:
 PathCollab expects overlays in a specific protobuf format:
 
 ```protobuf
-// See server/proto/overlay.proto for full schema
-message Overlay {
-  repeated TissueTile tissue_tiles = 1;  // 224x224 heatmap tiles
-  repeated Cell cells = 2;                // Polygon boundaries + class
+// See server/proto/overlays.proto for full schema
+message SlideSegmentationData {
+  string slide_id = 1;
+  string slide_path = 2;
+  float mpp = 3;                           // Microns per pixel
+  int32 max_level = 4;
+  string cell_model_name = 5;
+  string tissue_model_name = 6;
+  repeated TileSegmentationData tiles = 7;
+  map<int32, string> tissue_class_mapping = 8;
 }
 
-message Cell {
-  uint32 class_id = 1;                    // 0-14 for 15 classes
-  float confidence = 2;                   // 0.0-1.0
-  Point centroid = 3;
-  repeated Point vertices = 4;            // Polygon boundary
+message TileSegmentationData {
+  string tile_id = 1;
+  int32 level = 2;
+  int32 x = 3;
+  int32 y = 4;
+  int32 width = 5;
+  int32 height = 6;
+  repeated SegmentationPolygon masks = 7;  // Cell polygons
+  TissueSegmentationMap tissue_segmentation_map = 8;
+}
+
+message SegmentationPolygon {
+  string cell_id = 1;
+  string cell_type = 2;
+  float confidence = 3;
+  repeated Point coordinates = 4;          // Polygon boundary
+  Point centroid = 5;
+}
+
+message TissueSegmentationMap {
+  int32 width = 1;
+  int32 height = 2;
+  bytes data = 3;                          // Zlib-compressed class indices
 }
 ```
 
@@ -327,50 +358,57 @@ message Cell {
 │  ┌──────────────────────────────────────────────────────────────────────────┐   │
 │  │  React App                                                                │   │
 │  │  ├─ OpenSeadragon (tile rendering, pan/zoom)                             │   │
-│  │  ├─ WebGL2 Canvas (cell polygons, tissue heatmap)                        │   │
+│  │  ├─ WebGL2 Canvas                                                         │   │
+│  │  │   ├─ TissueOverlay (raster tiles, class→color LUT, per-type toggle)   │   │
+│  │  │   └─ CellOverlay (vector polygons, LOD: point→box→polygon)            │   │
 │  │  ├─ SVG Layer (cursors, viewport indicators)                             │   │
-│  │  └─ WebSocket Client (presence, session state)                           │   │
+│  │  └─ WebSocket Client (presence, session state, overlay sync)             │   │
 │  └──────────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────────┘
                                        │
-                                       │ HTTPS + WebSocket (same port)
-                                       ▼
+              ┌────────────────────────┼────────────────────────┐
+              │ WebSocket              │ HTTP                    │ HTTP
+              │ (presence, state)      │ (slide tiles)           │ (overlay data)
+              ▼                        ▼                         ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              PATHCOLLAB SERVER (Rust)                            │
 │  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐  ┌──────────────┐  │
-│  │ WebSocket      │  │ Session        │  │ Presence       │  │ Overlay      │  │
-│  │ Gateway        │  │ Manager        │  │ Engine         │  │ Manager      │  │
+│  │ WebSocket      │  │ Session        │  │ Slide          │  │ Overlay      │  │
+│  │ Gateway        │  │ Manager        │  │ Manager        │  │ Manager      │  │
 │  │                │  │                │  │                │  │              │  │
-│  │ • Connections  │  │ • Create/join  │  │ • Cursor agg   │  │ • PB parsing │  │
-│  │ • Routing      │  │ • Lifecycle    │  │ • 30Hz/10Hz    │  │ • R-tree idx │  │
-│  │ • Rate limits  │  │ • Expiry       │  │ • Broadcast    │  │ • Tile query │  │
+│  │ • Connections  │  │ • Create/join  │  │ • OpenSlide    │  │ • PB parsing │  │
+│  │ • Routing      │  │ • Lifecycle    │  │ • DZI tiles    │  │ • R-tree idx │  │
+│  │ • Rate limits  │  │ • Expiry       │  │ • LRU cache    │  │ • Tissue raw │  │
 │  └────────────────┘  └────────────────┘  └────────────────┘  └──────────────┘  │
-│           │                  │                   │                  │           │
-│           └──────────────────┴───────────────────┴──────────────────┘           │
-│                                       │                                          │
-│                              ┌────────┴────────┐                                │
-│                              │  In-Memory State │                                │
-│                              │  + Disk Cache    │                                │
-│                              └─────────────────┘                                │
+│                                                                                  │
+│  ┌────────────────┐  ┌────────────────────────────────────────────────────────┐ │
+│  │ Presence       │  │ Caching Layer                                          │ │
+│  │ Engine         │  │  ├─ SlideCache (probabilistic LRU, read-first pattern) │ │
+│  │                │  │  ├─ TileCache (moka async LRU)                         │ │
+│  │ • 30Hz cursor  │  │  └─ OverlayCache (DashMap + Arc)                       │ │
+│  │ • 10Hz viewport│  └────────────────────────────────────────────────────────┘ │
+│  │ • Broadcast    │                                                             │
+│  └────────────────┘                                                             │
 └─────────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                                       │ HTTP (tile requests)
-                                       ▼
-                              ┌─────────────────┐
-                              │  /slides volume │
-                              │  (WSI files)    │
-                              └─────────────────┘
+                │                              │
+                ▼                              ▼
+       ┌─────────────────┐           ┌─────────────────┐
+       │  /slides volume │           │  Overlay .pb    │
+       │  (WSI files)    │           │  (protobuf)     │
+       └─────────────────┘           └─────────────────┘
 ```
 
 ### Data Flow
 
 | Flow | Frequency | Payload | Transport |
 |------|-----------|---------|-----------|
-| Slide tiles | On viewport change | JPEG/PNG, ~50KB | HTTP GET (cached) |
+| Slide tiles | On viewport change | JPEG, ~50KB | HTTP GET (DZI) |
 | Cursor position | 30Hz | 32 bytes JSON | WebSocket |
 | Presenter viewport | 10Hz | 48 bytes JSON | WebSocket |
-| Overlay tiles | On viewport change | WebP/zstd, varies | HTTP GET (ETag cached) |
+| Tissue tiles | On viewport change | Raw bytes (class indices), ~50KB | HTTP GET (tiled) |
+| Cell polygons | On viewport change | JSON array, varies | HTTP GET (region query) |
 | Layer visibility | On change | ~100 bytes JSON | WebSocket |
+| Tissue overlay state | On change | ~80 bytes JSON | WebSocket |
 
 ---
 
@@ -398,8 +436,11 @@ Connect to `/ws` for real-time communication. Messages are JSON.
 // Toggle layer visibility (presenter only)
 { "type": "layer_update", "visibility": { "cell_polygons_visible": true, ... }, "seq": 5 }
 
+// Update tissue overlay state (presenter only)
+{ "type": "tissue_overlay_update", "enabled": true, "opacity": 0.7, "visible_tissue_types": [0, 1, 2], "seq": 6 }
+
 // Keepalive
-{ "type": "ping", "seq": 6 }
+{ "type": "ping", "seq": 7 }
 ```
 
 #### Server → Client
@@ -420,6 +461,9 @@ Connect to `/ws` for real-time communication. Messages are JSON.
 // Overlay ready
 { "type": "overlay_loaded", "overlay": {...}, "overlay_order": ["overlay-1"] }
 
+// Presenter tissue overlay state (followers receive this)
+{ "type": "presenter_tissue_overlay", "enabled": true, "opacity": 0.7, "visible_tissue_types": [0, 1, 2] }
+
 // Keepalive response
 { "type": "pong" }
 ```
@@ -429,10 +473,15 @@ Connect to `/ws` for real-time communication. Messages are JSON.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check (returns 200 if healthy) |
-| `POST` | `/api/overlay/upload?session_id=...` | Upload overlay protobuf (presenter only) |
-| `GET` | `/api/overlay/:id/manifest` | Get overlay metadata and tile URLs |
-| `GET` | `/api/overlay/:id/raster/:z/:x/:y.webp` | Get tissue heatmap tile |
-| `GET` | `/api/overlay/:id/vec/:z/:x/:y.bin` | Get vector cell data for tile |
+| `GET` | `/metrics` | JSON metrics |
+| `GET` | `/metrics/prometheus` | Prometheus-format metrics |
+| `GET` | `/dzi/slide/:id.dzi` | DZI metadata for OpenSeadragon |
+| `GET` | `/dzi/slide/:id_:z_:x_:y.jpg` | Slide tile JPEG |
+| `GET` | `/api/slide/:id/overlays` | List available overlays for slide |
+| `GET` | `/api/slide/:id/overlay/metadata` | Cell overlay metadata (bounds, classes) |
+| `GET` | `/api/slide/:id/overlay/cells?x=&y=&width=&height=` | Cell polygons in viewport region |
+| `GET` | `/api/slide/:id/overlay/tissue/metadata` | Tissue overlay metadata (tile grid, classes) |
+| `GET` | `/api/slide/:id/overlay/tissue/:level/:x/:y` | Raw tissue tile (zlib-decompressed class indices) |
 
 ---
 
@@ -465,7 +514,7 @@ lsof -i :8080
 # Connection: upgrade
 ```
 
-### "Overlay upload stuck at 0%"
+### "Overlay not loading / tiles missing"
 
 ```bash
 # Check file size (max 500MB by default)
@@ -475,8 +524,15 @@ ls -lh overlay.pb
 docker logs <container> 2>&1 | grep -i overlay
 
 # Verify protobuf format matches expected schema
-protoc --decode=Overlay server/proto/overlay.proto < overlay.pb
+protoc --decode=SlideSegmentationData server/proto/overlays.proto < overlay.pb
+
+# Check tissue tile endpoint directly
+curl -v "http://localhost:8080/api/slide/<id>/overlay/tissue/0/0/0"
 ```
+
+### "Overlay colors look wrong"
+
+The tissue overlay uses a predefined color palette. Verify your `tissue_class_mapping` in the protobuf matches expected class indices (0-15). Check browser console for WebGL errors—some browsers have stricter texture format requirements.
 
 ### "Cursors are laggy"
 
@@ -585,14 +641,17 @@ pathcollab/
 │   │   ├── session/       # Session management
 │   │   ├── presence/      # Cursor/viewport sync
 │   │   ├── overlay/       # Protobuf parsing, spatial index
+│   │   ├── cache/         # SlideCache, TileCache with probabilistic LRU
 │   │   └── protocol/      # WebSocket messages
-│   └── proto/             # Protobuf schemas
+│   └── proto/             # Protobuf schemas (overlays.proto)
 ├── web/                   # React frontend
 │   ├── src/
 │   │   ├── components/    # UI components
-│   │   ├── hooks/         # React hooks
-│   │   ├── webgl/         # Polygon/heatmap renderers
-│   │   └── lib/           # Utilities
+│   │   ├── hooks/         # React hooks (useTissueOverlay, etc.)
+│   │   ├── webgl/         # WebGL2 renderers
+│   │   │   ├── WebGLCellOverlay.tsx    # Vector cell polygons with LOD
+│   │   │   └── WebGLTissueOverlay.tsx  # Raster tissue tiles with LUT
+│   │   └── lib/           # Utilities (TissueTileIndex, etc.)
 │   └── tests/             # Vitest + Playwright
 ├── scripts/               # Dev scripts
 └── docker/                # Docker build files
