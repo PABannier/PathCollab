@@ -95,7 +95,7 @@ impl SlideCache {
             }
 
             slides.insert(id.to_string(), Arc::clone(&slide));
-            return Ok(slide);
+            Ok(slide)
         }
     }
 
