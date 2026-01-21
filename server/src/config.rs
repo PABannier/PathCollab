@@ -113,6 +113,9 @@ pub struct SlideConfig {
     pub jpeg_quality: u8,
     /// Maximum number of cached slide handles
     pub max_cached_slides: usize,
+    /// Maximum tile cache size in bytes (default: 256MB)
+    /// Set to 0 to disable tile caching
+    pub tile_cache_size_bytes: u64,
 }
 
 /// Overlay-related configuration
@@ -176,6 +179,7 @@ impl Default for SlideConfig {
             tile_size: 256,
             jpeg_quality: 85,
             max_cached_slides: 10,
+            tile_cache_size_bytes: 256 * 1024 * 1024, // 256 MB
         }
     }
 }
@@ -267,6 +271,11 @@ impl Config {
         if let Ok(val) = env::var("SLIDE_CACHE_SIZE") {
             if let Ok(size) = val.parse() {
                 config.slide.max_cached_slides = size;
+            }
+        }
+        if let Ok(val) = env::var("TILE_CACHE_SIZE_MB") {
+            if let Ok(mb) = val.parse::<u64>() {
+                config.slide.tile_cache_size_bytes = mb * 1024 * 1024;
             }
         }
 

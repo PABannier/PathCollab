@@ -42,6 +42,9 @@ metrics-exporter-prometheus = "0.16"
 indexmap = "2"
 dashmap = "6"
 
+# Concurrent LRU cache for tiles
+moka = { version = "0.12", features = ["future"] }
+
 # Protobuf parsing for overlays
 prost = "0.13"
 

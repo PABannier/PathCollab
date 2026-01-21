@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use image::codecs::jpeg::JpegEncoder;
 use image::{ImageEncoder, RgbaImage};
 use metrics::{counter, histogram};
@@ -14,6 +15,7 @@ use crate::config::SlideConfig;
 
 use super::cache::SlideCache;
 use super::service::SlideService;
+use super::tile_cache::{TileCache, TileCacheConfig, TileKey};
 use super::types::{SlideError, SlideMetadata, TileRequest};
 
 /// Supported slide file extensions
@@ -23,6 +25,7 @@ const SLIDE_EXTENSIONS: &[&str] = &["svs", "ndpi", "tiff", "tif", "vms", "vmu", 
 pub struct LocalSlideService {
     slides_dir: PathBuf,
     cache: SlideCache,
+    tile_cache: TileCache,
     tile_size: u32,
     jpeg_quality: u8,
 }
@@ -46,14 +49,23 @@ impl LocalSlideService {
             )));
         }
 
+        // Create tile cache with configured size
+        let tile_cache_config = TileCacheConfig {
+            max_size_bytes: config.tile_cache_size_bytes,
+            ..Default::default()
+        };
+        let tile_cache = TileCache::new(tile_cache_config);
+
         info!(
-            "Initialized local slide service with directory: {:?}",
-            slides_dir
+            "Initialized local slide service with directory: {:?}, tile cache: {}MB",
+            slides_dir,
+            config.tile_cache_size_bytes / (1024 * 1024)
         );
 
         Ok(Self {
             slides_dir: slides_dir.clone(),
             cache: SlideCache::new(config.max_cached_slides),
+            tile_cache,
             tile_size: config.tile_size,
             jpeg_quality: config.jpeg_quality,
         })
@@ -433,6 +445,21 @@ impl SlideService for LocalSlideService {
         let start = Instant::now();
         counter!("pathcollab_tile_requests_total").increment(1);
 
+        // Create cache key for this tile
+        let cache_key = TileKey {
+            slide_id: request.slide_id.clone(),
+            level: request.level,
+            x: request.x,
+            y: request.y,
+        };
+
+        // Fast path: check tile cache first
+        if let Some(cached_tile) = self.tile_cache.get(&cache_key).await {
+            histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
+            return Ok(cached_tile.to_vec());
+        }
+
+        // Cache miss - need to compute the tile
         // Helper to record metrics on all exit paths
         let record_metrics = |result: &Result<Vec<u8>, SlideError>, start: Instant| {
             histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
@@ -441,8 +468,7 @@ impl SlideService for LocalSlideService {
             }
         };
 
-        // Fast path: try to get cached metadata and slide handle directly
-        // This avoids the overhead of get_slide() when both are already cached
+        // Get cached metadata or load slide
         let metadata = if let Some(meta) = self.cache.get_metadata(&request.slide_id) {
             meta
         } else {
@@ -468,10 +494,17 @@ impl SlideService for LocalSlideService {
             }
         };
 
-        // Read and encode the tile - pass reference to avoid cloning metadata
+        // Read and encode the tile
         let result = self
             .read_tile_jpeg(slide, &metadata, request.level, request.x, request.y)
             .await;
+
+        // Cache the tile on success
+        if let Ok(ref tile_data) = result {
+            self.tile_cache
+                .insert(cache_key, Bytes::from(tile_data.clone()))
+                .await;
+        }
 
         // Record overall tile latency
         record_metrics(&result, start);
@@ -505,10 +538,12 @@ mod tests {
             tile_size: 256,
             jpeg_quality: 85,
             max_cached_slides: 10,
+            tile_cache_size_bytes: 256 * 1024 * 1024,
         };
         let service = LocalSlideService {
             slides_dir: PathBuf::from("/tmp"),
             cache: SlideCache::new(10),
+            tile_cache: TileCache::with_default_config(),
             tile_size: 256,
             jpeg_quality: 85,
         };
