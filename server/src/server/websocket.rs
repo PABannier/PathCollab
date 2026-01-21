@@ -87,8 +87,8 @@ impl AppState {
         if let Some(sender) = broadcasters.get(session_id) {
             sender.clone()
         } else {
-            // Create new broadcast channel with capacity for 64 messages
-            let (tx, _) = broadcast::channel(64);
+            // Create new broadcast channel with capacity for 256 messages
+            let (tx, _) = broadcast::channel(256);
             broadcasters.insert(session_id.to_string(), tx.clone());
             tx
         }
