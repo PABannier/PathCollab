@@ -31,3 +31,25 @@ export interface OverlayMetadata {
   cell_model_name: string
   tissue_model_name: string
 }
+
+export interface TissueClassInfo {
+  id: number
+  name: string
+}
+
+export interface TissueTileInfo {
+  level: number
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface TissueOverlayMetadata {
+  slide_id: string
+  model_name: string
+  classes: TissueClassInfo[]
+  tile_size: number
+  max_level: number
+  tiles: TissueTileInfo[]
+}

@@ -637,4 +637,144 @@ describe('useSession', () => {
       expect(result.current.session).toBeNull()
     })
   })
+
+  describe('tissue overlay sync', () => {
+    it('should update tissue overlay state on presenter_tissue_overlay message', async () => {
+      const { result } = renderHook(() => useSession({}))
+
+      // Setup: Join a session
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+        mockWs.getInstance()?.simulateMessage({
+          type: 'session_joined',
+          session: mockServerSession,
+          you: mockFollower1,
+        })
+      })
+
+      // Initially no tissue overlay state
+      expect(result.current.presenterTissueOverlay).toBeNull()
+
+      // Simulate presenter tissue overlay update (server sends snake_case with number[] for tissue types)
+      await act(async () => {
+        mockWs.getInstance()?.simulateMessage({
+          type: 'presenter_tissue_overlay',
+          enabled: true,
+          opacity: 0.8,
+          visible_tissue_types: [0, 1, 3], // Numbers, not strings
+        })
+      })
+
+      // Verify tissue overlay state is updated (frontend uses camelCase)
+      expect(result.current.presenterTissueOverlay).not.toBeNull()
+      expect(result.current.presenterTissueOverlay?.enabled).toBe(true)
+      expect(result.current.presenterTissueOverlay?.opacity).toBe(0.8)
+      expect(result.current.presenterTissueOverlay?.visibleTissueTypes).toEqual([0, 1, 3])
+    })
+
+    it('should send tissue_overlay_update when updateTissueOverlay is called', async () => {
+      const { result } = renderHook(() => useSession({}))
+
+      // Setup: Create session as presenter
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+        mockWs.getInstance()?.simulateMessage({
+          type: 'session_created',
+          session: mockServerSession,
+          join_secret: 'test-join-secret',
+          presenter_key: 'test-presenter-key',
+        })
+      })
+
+      // Send tissue overlay update
+      act(() => {
+        result.current.updateTissueOverlay(true, 0.65, [1, 2, 4])
+      })
+
+      // Verify message was sent with correct format
+      const sentMessages = mockWs.getInstance()?.getSentMessages()
+      const tissueMessage = sentMessages?.find((m) => m.type === 'tissue_overlay_update')
+      expect(tissueMessage).toBeDefined()
+      expect(tissueMessage?.enabled).toBe(true)
+      expect(tissueMessage?.opacity).toBe(0.65)
+      expect(tissueMessage?.visible_tissue_types).toEqual([1, 2, 4])
+    })
+
+    it('should include tissue overlay state in session snapshot when joining', async () => {
+      const { result } = renderHook(() =>
+        useSession({
+          sessionId: mockSession.id,
+          joinSecret: 'test-join-secret',
+        })
+      )
+
+      // Server session with tissue overlay already set (snake_case from server)
+      const serverSessionWithTissue = {
+        ...mockServerSession,
+        tissue_overlay: {
+          enabled: true,
+          opacity: 0.55,
+          visible_tissue_types: [2, 5],
+        },
+      }
+
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+        mockWs.getInstance()?.simulateMessage({
+          type: 'session_joined',
+          session: serverSessionWithTissue,
+          you: mockFollower1,
+        })
+      })
+
+      // Verify tissue overlay state from session snapshot is populated (frontend uses camelCase)
+      expect(result.current.presenterTissueOverlay).not.toBeNull()
+      expect(result.current.presenterTissueOverlay?.enabled).toBe(true)
+      expect(result.current.presenterTissueOverlay?.opacity).toBe(0.55)
+      expect(result.current.presenterTissueOverlay?.visibleTissueTypes).toEqual([2, 5])
+    })
+
+    it('should reset tissue overlay state when session ends', async () => {
+      const onError = vi.fn() // Capture error callback
+      const { result } = renderHook(() => useSession({ onError }))
+
+      // Setup: Join session with tissue overlay (snake_case from server)
+      const serverSessionWithTissue = {
+        ...mockServerSession,
+        tissue_overlay: {
+          enabled: true,
+          opacity: 0.7,
+          visible_tissue_types: [0, 1],
+        },
+      }
+
+      await act(async () => {
+        vi.advanceTimersByTime(10)
+        mockWs.getInstance()?.simulateOpen()
+        mockWs.getInstance()?.simulateMessage({
+          type: 'session_joined',
+          session: serverSessionWithTissue,
+          you: mockFollower1,
+        })
+      })
+
+      // Verify tissue overlay state is populated (frontend uses camelCase)
+      expect(result.current.presenterTissueOverlay).not.toBeNull()
+      expect(result.current.presenterTissueOverlay?.visibleTissueTypes).toEqual([0, 1])
+
+      // End session
+      await act(async () => {
+        mockWs.getInstance()?.simulateMessage({
+          type: 'session_ended',
+          reason: 'presenter_left',
+        })
+      })
+
+      // Tissue overlay state should be reset
+      expect(result.current.presenterTissueOverlay).toBeNull()
+    })
+  })
 })

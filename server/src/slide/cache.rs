@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -13,6 +14,9 @@ use tracing::debug;
 use super::types::{SlideError, SlideMetadata};
 
 const SLIDE_LIST_CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// Counter for probabilistic LRU updates - update every N accesses
+const LRU_UPDATE_FREQUENCY: u64 = 8;
 
 /// Cached slide list with timestamp
 struct SlideListCache {
@@ -29,15 +33,22 @@ struct SlideListCache {
 ///
 /// The metadata cache uses DashMap for lock-free concurrent reads, since metadata
 /// is checked on every tile request but rarely written.
+///
+/// Performance optimizations:
+/// - Read-first approach: check cache with read lock before taking write lock
+/// - Probabilistic LRU updates: only update LRU position 1 in N times to reduce contention
+/// - Arc<SlideMetadata> for cheap cloning on cache hits
 pub struct SlideCache {
     /// Cached slide handles with LRU ordering (most recent at end)
     slides: RwLock<IndexMap<String, Arc<OpenSlide>>>,
     /// Cached slide metadata
-    metadata: DashMap<String, SlideMetadata>,
+    metadata: DashMap<String, Arc<SlideMetadata>>,
     /// Maximum number of cached slides
     max_size: usize,
     /// Cached slide list (avoids repeated directory scans)
     slide_list_cache: RwLock<Option<SlideListCache>>,
+    /// Counter for probabilistic LRU updates
+    access_counter: AtomicU64,
 }
 
 impl SlideCache {
@@ -48,6 +59,7 @@ impl SlideCache {
             metadata: DashMap::new(),
             max_size,
             slide_list_cache: RwLock::new(None),
+            access_counter: AtomicU64::new(0),
         }
     }
 
@@ -90,27 +102,45 @@ impl SlideCache {
     }
 
     /// Get cached metadata for a slide
-    pub fn get_metadata(&self, id: &str) -> Option<SlideMetadata> {
-        self.metadata.get(id).map(|r| r.value().clone())
+    pub fn get_metadata(&self, id: &str) -> Option<Arc<SlideMetadata>> {
+        self.metadata.get(id).map(|r| Arc::clone(r.value()))
     }
 
     /// Get a cached slide handle without requiring a path
     /// Returns None if the slide is not in cache
+    ///
+    /// Uses a read-first approach with probabilistic LRU updates to minimize
+    /// write lock contention under high concurrency:
+    /// - First checks cache with read lock (fast path, no contention)
+    /// - Only takes write lock 1 in N times to update LRU order
     pub async fn get_cached(&self, id: &str) -> Option<Arc<OpenSlide>> {
-        let mut slides = self.slides.write().await;
-        // Remove and re-insert to update LRU order
-        if let Some(slide) = slides.shift_remove(id) {
-            let slide_clone = Arc::clone(&slide);
-            slides.insert(id.to_string(), slide);
-            Some(slide_clone)
-        } else {
-            None
+        // Fast path: read lock to check if item exists
+        {
+            let slides = self.slides.read().await;
+            if let Some(slide) = slides.get(id) {
+                let slide_clone = Arc::clone(slide);
+
+                // Probabilistic LRU update: only update every N accesses
+                // This dramatically reduces write lock contention under load
+                let count = self.access_counter.fetch_add(1, Ordering::Relaxed);
+                if count % LRU_UPDATE_FREQUENCY == 0 {
+                    // Drop read lock before taking write lock
+                    drop(slides);
+                    // Update LRU order (best effort - may race but that's OK)
+                    let mut slides_write = self.slides.write().await;
+                    if let Some(slide) = slides_write.shift_remove(id) {
+                        slides_write.insert(id.to_string(), slide);
+                    }
+                }
+                return Some(slide_clone);
+            }
         }
+        None
     }
 
     /// Set metadata for a slide
     pub fn set_metadata(&self, id: &str, meta: SlideMetadata) {
-        self.metadata.insert(id.to_string(), meta);
+        self.metadata.insert(id.to_string(), Arc::new(meta));
     }
 
     /// Get the cached slide list if still valid, or None if expired/empty

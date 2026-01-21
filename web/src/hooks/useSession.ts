@@ -55,11 +55,25 @@ interface ServerCellOverlayState {
   visible_cell_types: string[]
 }
 
+/** Tissue overlay state as received from server (snake_case) */
+interface ServerTissueOverlayState {
+  enabled: boolean
+  opacity: number
+  visible_tissue_types: number[]
+}
+
 /** Frontend cell overlay state (camelCase) */
 export interface CellOverlayState {
   enabled: boolean
   opacity: number
   visibleCellTypes: string[]
+}
+
+/** Frontend tissue overlay state (camelCase) */
+export interface TissueOverlayState {
+  enabled: boolean
+  opacity: number
+  visibleTissueTypes: number[]
 }
 
 /** Convert server cell overlay state to frontend cell overlay state */
@@ -68,6 +82,15 @@ function toFrontendCellOverlay(sc: ServerCellOverlayState): CellOverlayState {
     enabled: sc.enabled,
     opacity: sc.opacity,
     visibleCellTypes: sc.visible_cell_types,
+  }
+}
+
+/** Convert server tissue overlay state to frontend tissue overlay state */
+function toFrontendTissueOverlay(sc: ServerTissueOverlayState): TissueOverlayState {
+  return {
+    enabled: sc.enabled,
+    opacity: sc.opacity,
+    visibleTissueTypes: sc.visible_tissue_types,
   }
 }
 
@@ -137,6 +160,7 @@ interface UseSessionReturn {
   isFollowing: boolean
   hasDiverged: boolean
   presenterCellOverlay: CellOverlayState | null
+  presenterTissueOverlay: TissueOverlayState | null
 
   // Actions
   createSession: (slideId: string) => void
@@ -149,6 +173,7 @@ interface UseSessionReturn {
   setIsFollowing: (following: boolean) => void
   checkDivergence: (currentViewport: { centerX: number; centerY: number; zoom: number }) => void
   updateCellOverlay: (enabled: boolean, opacity: number, visibleCellTypes: string[]) => void
+  updateTissueOverlay: (enabled: boolean, opacity: number, visibleTissueTypes: number[]) => void
 }
 
 export function useSession({
@@ -169,6 +194,9 @@ export function useSession({
   const [isFollowing, setIsFollowing] = useState(true) // Default to following when joining
   const [hasDiverged, setHasDiverged] = useState(false)
   const [presenterCellOverlay, setPresenterCellOverlay] = useState<CellOverlayState | null>(null)
+  const [presenterTissueOverlay, setPresenterTissueOverlay] = useState<TissueOverlayState | null>(
+    null
+  )
   const pendingPresenterAuthSeqRef = useRef<number | null>(null)
   const presenterAuthSessionRef = useRef<string | null>(null)
   const sendMessageRef = useRef<((message: WebSocketMessage) => number) | null>(null)
@@ -187,6 +215,7 @@ export function useSession({
         case 'session_created': {
           const serverSession = message.session as ServerSessionState & {
             cell_overlay?: ServerCellOverlayState
+            tissue_overlay?: ServerTissueOverlayState
           }
           const sessionData = toFrontendSession(serverSession)
           setSession(sessionData)
@@ -198,6 +227,10 @@ export function useSession({
           // Extract initial cell overlay state if present
           if (serverSession.cell_overlay) {
             setPresenterCellOverlay(toFrontendCellOverlay(serverSession.cell_overlay))
+          }
+          // Extract initial tissue overlay state if present
+          if (serverSession.tissue_overlay) {
+            setPresenterTissueOverlay(toFrontendTissueOverlay(serverSession.tissue_overlay))
           }
           // Save secrets for sharing
           if (message.join_secret && message.presenter_key) {
@@ -217,6 +250,7 @@ export function useSession({
         case 'session_joined': {
           const serverSession = message.session as ServerSessionState & {
             cell_overlay?: ServerCellOverlayState
+            tissue_overlay?: ServerTissueOverlayState
           }
           const sessionData = toFrontendSession(serverSession)
           setSession(sessionData)
@@ -228,6 +262,10 @@ export function useSession({
           // Extract initial cell overlay state if present
           if (serverSession.cell_overlay) {
             setPresenterCellOverlay(toFrontendCellOverlay(serverSession.cell_overlay))
+          }
+          // Extract initial tissue overlay state if present
+          if (serverSession.tissue_overlay) {
+            setPresenterTissueOverlay(toFrontendTissueOverlay(serverSession.tissue_overlay))
           }
           break
         }
@@ -302,6 +340,16 @@ export function useSession({
           break
         }
 
+        case 'presenter_tissue_overlay': {
+          const tissueOverlay: ServerTissueOverlayState = {
+            enabled: message.enabled as boolean,
+            opacity: message.opacity as number,
+            visible_tissue_types: message.visible_tissue_types as number[],
+          }
+          setPresenterTissueOverlay(toFrontendTissueOverlay(tissueOverlay))
+          break
+        }
+
         case 'session_error': {
           setIsCreatingSession(false)
           onError?.(message.message as string)
@@ -314,6 +362,8 @@ export function useSession({
           setIsPresenter(false)
           setCursors([])
           setPresenterViewport(null)
+          setPresenterCellOverlay(null)
+          setPresenterTissueOverlay(null)
           presenterAuthSessionRef.current = null
           pendingPresenterAuthSeqRef.current = null
           onError?.(`Session ended: ${message.reason}`)
@@ -477,6 +527,19 @@ export function useSession({
     [sendMessage]
   )
 
+  // Update tissue overlay state (presenter only, broadcast to followers)
+  const updateTissueOverlay = useCallback(
+    (enabled: boolean, opacity: number, visibleTissueTypes: number[]) => {
+      sendMessage({
+        type: 'tissue_overlay_update',
+        enabled,
+        opacity,
+        visible_tissue_types: visibleTissueTypes,
+      })
+    },
+    [sendMessage]
+  )
+
   // Check if follower's viewport has diverged from presenter's
   const checkDivergence = useCallback(
     (currentViewport: { centerX: number; centerY: number; zoom: number }) => {
@@ -525,6 +588,7 @@ export function useSession({
       isFollowing: false,
       hasDiverged: false,
       presenterCellOverlay: null,
+      presenterTissueOverlay: null,
       createSession,
       joinSession,
       authenticatePresenter,
@@ -535,6 +599,7 @@ export function useSession({
       setIsFollowing: handleSetIsFollowing,
       checkDivergence,
       updateCellOverlay,
+      updateTissueOverlay,
     }
   }
 
@@ -551,6 +616,7 @@ export function useSession({
     isFollowing,
     hasDiverged,
     presenterCellOverlay,
+    presenterTissueOverlay,
     createSession,
     joinSession,
     authenticatePresenter,
@@ -561,5 +627,6 @@ export function useSession({
     setIsFollowing: handleSetIsFollowing,
     checkDivergence,
     updateCellOverlay,
+    updateTissueOverlay,
   }
 }

@@ -104,3 +104,38 @@ pub struct RegionInfo {
     pub width: f64,
     pub height: f64,
 }
+
+/// Information about a tissue class
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TissueClassInfo {
+    pub id: i32,
+    pub name: String,
+}
+
+/// Metadata about tissue overlay
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TissueOverlayMetadata {
+    pub slide_id: String,
+    pub model_name: String,
+    pub classes: Vec<TissueClassInfo>,
+    pub tile_size: u32,
+    pub max_level: u32,
+    pub tiles: Vec<TissueTileInfo>,
+}
+
+/// Information about a single tissue tile
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TissueTileInfo {
+    pub level: u32,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Raw tissue tile data (class indices per pixel)
+pub struct TissueTileData {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}

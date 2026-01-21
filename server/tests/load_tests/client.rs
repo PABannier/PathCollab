@@ -348,3 +348,36 @@ pub enum ClientEvent {
     },
     Error,
 }
+
+/// Slide info returned from the API
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct SlideInfo {
+    pub id: String,
+    pub name: String,
+    pub width: u64,
+    pub height: u64,
+}
+
+/// Fetch the first available slide from the server
+///
+/// This allows load tests to work with real slides instead of hardcoded test slides.
+pub async fn fetch_first_slide(
+    http_base_url: &str,
+) -> Result<SlideInfo, Box<dyn std::error::Error + Send + Sync>> {
+    let url = format!("{}/api/slides", http_base_url);
+
+    let client = reqwest::Client::new();
+    let resp = client.get(&url).send().await?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch slides: HTTP {}", resp.status()).into());
+    }
+
+    let slides: Vec<SlideInfo> = resp.json().await?;
+
+    slides
+        .into_iter()
+        .next()
+        .ok_or_else(|| "No slides available on server. Make sure slides are configured.".into())
+}

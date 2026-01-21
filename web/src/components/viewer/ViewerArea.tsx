@@ -1,8 +1,11 @@
 import { type RefObject, useMemo, useState, useCallback, useEffect } from 'react'
 import { SlideViewer, type SlideInfo, type SlideViewerHandle, ViewportLoader } from './index'
 import { WebGLCellOverlay } from './WebGLCellOverlay'
+import { WebGLTissueOverlay } from './WebGLTissueOverlay'
 import { CursorLayer } from './CursorLayer'
-import type { CellMask } from '../../types/overlay'
+import type { CellMask, TissueOverlayMetadata } from '../../types/overlay'
+import type { CachedTile } from '../../hooks/useTissueOverlay'
+import type { TissueTileIndex } from '../../utils/TissueTileIndex'
 import { MinimapOverlay } from './MinimapOverlay'
 import { PresetEmptyState } from '../ui/EmptyState'
 import { ReturnToPresenterButton } from '../ui/ReturnToPresenterButton'
@@ -73,6 +76,20 @@ export interface ViewerAreaProps {
   cells?: CellMask[]
   /** Opacity for cell overlays (0-1) */
   cellOverlayOpacity?: number
+  /** Whether tissue overlays are enabled */
+  tissueOverlaysEnabled?: boolean
+  /** Tissue overlay metadata */
+  tissueMetadata?: TissueOverlayMetadata | null
+  /** Cached tissue tiles */
+  tissueTiles?: Map<string, CachedTile>
+  /** Spatial index for tissue tiles */
+  tissueTileIndex?: TissueTileIndex | null
+  /** Current tissue tile level */
+  tissueCurrentLevel?: number
+  /** Opacity for tissue overlays (0-1) */
+  tissueOverlayOpacity?: number
+  /** Visible tissue class IDs */
+  visibleTissueClasses?: Set<number>
 }
 
 /**
@@ -103,6 +120,13 @@ export function ViewerArea({
   cellOverlaysEnabled,
   cells,
   cellOverlayOpacity,
+  tissueOverlaysEnabled,
+  tissueMetadata,
+  tissueTiles,
+  tissueTileIndex,
+  tissueCurrentLevel,
+  tissueOverlayOpacity,
+  visibleTissueClasses,
 }: ViewerAreaProps) {
   // Real-time viewport for overlay rendering (updated at 60fps during animation)
   const [realtimeViewport, setRealtimeViewport] = useState<RenderViewport>({
@@ -163,6 +187,28 @@ export function ViewerArea({
           onAnimationFrame={handleAnimationFrame}
         />
       )}
+
+      {/* Tissue overlay (WebGL-accelerated, rendered below cell overlay) */}
+      {tissueOverlaysEnabled &&
+        viewerBounds &&
+        slide &&
+        tissueMetadata &&
+        tissueTiles &&
+        tissueTileIndex &&
+        tissueCurrentLevel !== undefined &&
+        visibleTissueClasses && (
+          <WebGLTissueOverlay
+            metadata={tissueMetadata}
+            tiles={tissueTiles}
+            tileIndex={tissueTileIndex}
+            currentLevel={tissueCurrentLevel}
+            viewerBounds={viewerBounds}
+            viewport={realtimeViewport}
+            slideWidth={slide.width}
+            opacity={tissueOverlayOpacity}
+            visibleClasses={visibleTissueClasses}
+          />
+        )}
 
       {/* Cell overlay (WebGL-accelerated with LOD) */}
       {cellOverlaysEnabled && viewerBounds && slide && cells && cells.length > 0 && (

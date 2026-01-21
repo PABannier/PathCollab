@@ -39,6 +39,13 @@ pub enum ClientMessage {
         visible_cell_types: Vec<String>,
         seq: u64,
     },
+    /// Update tissue overlay state (presenter only, broadcast to followers)
+    TissueOverlayUpdate {
+        enabled: bool,
+        opacity: f64,
+        visible_tissue_types: Vec<i32>,
+        seq: u64,
+    },
 }
 
 /// Server to Client messages
@@ -93,6 +100,12 @@ pub enum ServerMessage {
         opacity: f64,
         visible_cell_types: Vec<String>,
     },
+    /// Presenter tissue overlay state update (broadcast to all participants)
+    PresenterTissueOverlay {
+        enabled: bool,
+        opacity: f64,
+        visible_tissue_types: Vec<i32>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -128,6 +141,14 @@ pub struct CellOverlayState {
     pub visible_cell_types: Vec<String>,
 }
 
+/// Tissue overlay state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TissueOverlayState {
+    pub enabled: bool,
+    pub opacity: f64,
+    pub visible_tissue_types: Vec<i32>,
+}
+
 /// Session snapshot for state transfer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSnapshot {
@@ -139,6 +160,8 @@ pub struct SessionSnapshot {
     pub presenter_viewport: Viewport,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cell_overlay: Option<CellOverlayState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tissue_overlay: Option<TissueOverlayState>,
 }
 
 /// Participant info
@@ -219,6 +242,7 @@ impl ClientMessage {
             ClientMessage::ChangeSlide { .. } => "change_slide",
             ClientMessage::Ping { .. } => "ping",
             ClientMessage::CellOverlayUpdate { .. } => "cell_overlay_update",
+            ClientMessage::TissueOverlayUpdate { .. } => "tissue_overlay_update",
         }
     }
 }
@@ -241,6 +265,7 @@ impl ServerMessage {
             ServerMessage::Ping => "ping",
             ServerMessage::Pong => "pong",
             ServerMessage::PresenterCellOverlay { .. } => "presenter_cell_overlay",
+            ServerMessage::PresenterTissueOverlay { .. } => "presenter_tissue_overlay",
         }
     }
 }

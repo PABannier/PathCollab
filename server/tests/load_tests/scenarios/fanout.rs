@@ -6,7 +6,9 @@
 
 #![allow(clippy::collapsible_if)]
 
-use super::super::client::{ClientEvent, LoadTestClient, ServerMessage, spawn_update_client};
+use super::super::client::{
+    ClientEvent, LoadTestClient, ServerMessage, fetch_first_slide, spawn_update_client,
+};
 use super::super::{LatencyStats, LoadTestConfig, LoadTestResults};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,6 +34,10 @@ impl FanOutScenario {
         let start = Instant::now();
         let mut results = LoadTestResults::new();
 
+        // Fetch available slide from server
+        let slide = fetch_first_slide(&self.config.http_url).await?;
+        println!("Using slide: {} ({})", slide.name, slide.id);
+
         // Channel for collecting events from all clients
         let (tx, mut rx) = mpsc::channel::<ClientEvent>(10000);
 
@@ -53,8 +59,8 @@ impl FanOutScenario {
             // Create presenter client
             let presenter = match LoadTestClient::connect(&self.config.ws_url).await {
                 Ok(mut client) => {
-                    // Create session
-                    if let Err(e) = client.create_session("test-slide").await {
+                    // Create session with the discovered slide
+                    if let Err(e) = client.create_session(&slide.id).await {
                         eprintln!("Failed to create session {}: {}", session_idx, e);
                         connection_errors.fetch_add(1, Ordering::SeqCst);
                         continue;
@@ -216,7 +222,7 @@ mod tests {
             cursor_hz: 10,
             viewport_hz: 5,
             duration: Duration::from_secs(5),
-            ws_url: "ws://127.0.0.1:8080/ws".to_string(),
+            ..Default::default()
         };
 
         let scenario = FanOutScenario::new(config);
@@ -239,7 +245,7 @@ mod tests {
             cursor_hz: 30,
             viewport_hz: 10,
             duration: Duration::from_secs(60),
-            ws_url: "ws://127.0.0.1:8080/ws".to_string(),
+            ..Default::default()
         };
 
         let scenario = FanOutScenario::new(config);

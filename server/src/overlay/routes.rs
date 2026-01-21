@@ -2,14 +2,16 @@
 
 use axum::{
     Json, Router,
+    body::Body,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+use super::local::LocalOverlayService;
 use super::service::OverlayService;
 use super::types::{
     CellsInRegionResponse, OverlayError, OverlayMetadata, RegionInfo, RegionRequest,
@@ -18,7 +20,7 @@ use super::types::{
 /// Application state containing the overlay service
 #[derive(Clone)]
 pub struct OverlayAppState {
-    pub overlay_service: Arc<dyn OverlayService>,
+    pub overlay_service: Arc<LocalOverlayService>,
 }
 
 /// Error response for overlay API
@@ -141,7 +143,7 @@ pub async fn get_overlay_metadata(
     State(state): State<OverlayAppState>,
     Path(id): Path<String>,
 ) -> Response {
-    let (exists, ready) = state.overlay_service.get_overlay_status(&id).await;
+    let (exists, ready) = state.overlay_service.get_overlay_status(&id);
 
     if !exists {
         return (
@@ -156,7 +158,7 @@ pub async fn get_overlay_metadata(
 
     if !ready {
         // Initiate loading if not already started
-        state.overlay_service.initiate_load(&id).await;
+        state.overlay_service.initiate_load(&id);
         // Return 202 Accepted
         return (
             StatusCode::ACCEPTED,
@@ -178,11 +180,115 @@ pub async fn get_overlay_metadata(
     }
 }
 
+/// Tile path parameters
+#[derive(Debug, Deserialize)]
+pub struct TilePathParams {
+    pub id: String,
+    pub level: u32,
+    pub x: u32,
+    pub y: u32,
+}
+
+/// GET /api/slide/:id/overlay/tissue/metadata - Get tissue overlay metadata
+pub async fn get_tissue_metadata(
+    State(state): State<OverlayAppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let (exists, ready) = state.overlay_service.get_overlay_status(&id);
+
+    if !exists {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(OverlayErrorResponse {
+                error: format!("No overlay found for slide '{}'", id),
+                code: "not_found".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    if !ready {
+        // Initiate loading if not already started
+        state.overlay_service.initiate_load(&id);
+        // Return 202 Accepted
+        return (
+            StatusCode::ACCEPTED,
+            Json(OverlayLoadingResponse {
+                slide_id: id,
+                status: "loading".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Ready - return tissue metadata
+    match state.overlay_service.get_tissue_metadata(&id) {
+        Ok(metadata) => (StatusCode::OK, Json(metadata)).into_response(),
+        Err(e) => {
+            tracing::debug!("No tissue metadata for slide {}: {}", id, e);
+            OverlayErrorResponse::from(e).into_response()
+        }
+    }
+}
+
+/// GET /api/slide/:id/overlay/tissue/:level/:x/:y - Get raw tissue tile data
+pub async fn get_tissue_tile(
+    State(state): State<OverlayAppState>,
+    Path(params): Path<TilePathParams>,
+) -> Response {
+    match state
+        .overlay_service
+        .get_tissue_tile(&params.id, params.level, params.x, params.y)
+    {
+        Ok(tile_data) => {
+            // Return raw bytes with metadata headers
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                "Content-Type",
+                HeaderValue::from_static("application/octet-stream"),
+            );
+            headers.insert(
+                "X-Tile-Width",
+                HeaderValue::from_str(&tile_data.width.to_string()).unwrap(),
+            );
+            headers.insert(
+                "X-Tile-Height",
+                HeaderValue::from_str(&tile_data.height.to_string()).unwrap(),
+            );
+            headers.insert(
+                "Cache-Control",
+                HeaderValue::from_static("public, max-age=31536000, immutable"),
+            );
+
+            (StatusCode::OK, headers, Body::from(tile_data.data)).into_response()
+        }
+        Err(e) => {
+            tracing::debug!(
+                "Tissue tile not found: slide={}, level={}, x={}, y={}: {}",
+                params.id,
+                params.level,
+                params.x,
+                params.y,
+                e
+            );
+            OverlayErrorResponse::from(e).into_response()
+        }
+    }
+}
+
 /// Build overlay API routes
 pub fn overlay_routes(state: OverlayAppState) -> Router {
     Router::new()
         .route("/slide/:id/overlays", get(list_overlays))
         .route("/slide/:id/overlay/cells", get(get_cells_in_region))
         .route("/slide/:id/overlay/metadata", get(get_overlay_metadata))
+        .route(
+            "/slide/:id/overlay/tissue/metadata",
+            get(get_tissue_metadata),
+        )
+        .route(
+            "/slide/:id/overlay/tissue/:level/:x/:y",
+            get(get_tissue_tile),
+        )
         .with_state(state)
 }
