@@ -1,5 +1,9 @@
 # PathCollab
 
+[![CI](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml/badge.svg)](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpabannier%2Fpathcollab-blue)](https://ghcr.io/pabannier/pathcollab)
+
 ---
 
 <div align="center">
@@ -7,12 +11,6 @@
 ![PathCollab, a self-hosted collaborative digital pathology viewer](./assets/pathcollab.png)
 
 **Collaborative whole-slide image viewer with real-time cursor presence and overlay rendering**
-
-[![CI](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml/badge.svg)](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpabannier%2Fpathcollab-blue)](https://ghcr.io/pabannier/pathcollab)
-
-<h3>One Command. Zero Auth. Everyone Sees the Same Slide.</h3>
 
 ```bash
 docker run -p 8080:8080 -v /path/to/slides:/slides ghcr.io/pabannier/pathcollab:latest
@@ -24,7 +22,7 @@ Open **http://localhost:8080** → Share link → Collaborate instantly
 
 ---
 
-## TL;DR
+## Why PathCollab?
 
 **The Problem**: Pathologists and ML scientists need to review slides together—but they're in different cities. Current options force a brutal tradeoff:
 
@@ -35,8 +33,6 @@ Open **http://localhost:8080** → Share link → Collaborate instantly
 | Enterprise pathology platforms | ✅ | ✅ | ✅ | Weeks + $$$$ |
 
 **The Solution**: PathCollab is a **presenter-led collaborative viewer** where one host guides up to 20 followers through a whole-slide image. Everyone sees real-time cursors, can snap to the presenter's view, and overlay millions of AI-detected cells—all from a shareable link with **no accounts required**.
-
-### Why PathCollab?
 
 | Feature | What It Does |
 |---------|--------------|
