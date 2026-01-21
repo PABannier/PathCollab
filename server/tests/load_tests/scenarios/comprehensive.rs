@@ -1,0 +1,736 @@
+//! Comprehensive stress test scenario
+//!
+//! Simulates 1000 concurrent users (500 sessions × 2 users each) hitting all server routes:
+//! - WebSocket sessions with cursor/viewport updates
+//! - HTTP tile requests
+//! - HTTP overlay requests (cell and tissue)
+//! - Metadata endpoints
+//!
+//! This tests the server's ability to handle realistic production-like load.
+
+#![allow(clippy::collapsible_if)]
+
+use super::super::LatencyStats;
+use super::super::client::{LoadTestClient, ServerMessage};
+use reqwest::Client;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
+
+/// Configuration for comprehensive stress test
+#[derive(Debug, Clone)]
+pub struct ComprehensiveStressConfig {
+    /// Number of sessions (each has 1 presenter + 1 follower = 2 users)
+    pub num_sessions: usize,
+    /// Test duration
+    pub duration: Duration,
+    /// Server WebSocket URL
+    pub ws_url: String,
+    /// Server HTTP base URL
+    pub http_url: String,
+    /// Slide ID to test with
+    pub slide_id: String,
+    /// Cursor update rate (Hz) per presenter
+    pub cursor_hz: u32,
+    /// Viewport update rate (Hz) per presenter
+    pub viewport_hz: u32,
+    /// Tile request rate (Hz) per client
+    pub tile_request_hz: u32,
+    /// Overlay request rate (Hz) per client (tissue tiles + cell queries)
+    pub overlay_request_hz: u32,
+}
+
+impl Default for ComprehensiveStressConfig {
+    fn default() -> Self {
+        Self {
+            num_sessions: 500, // 500 sessions × 2 users = 1000 users
+            duration: Duration::from_secs(60),
+            ws_url: "ws://127.0.0.1:8080/ws".to_string(),
+            http_url: "http://127.0.0.1:8080".to_string(),
+            slide_id: "test-slide".to_string(),
+            cursor_hz: 30,
+            viewport_hz: 10,
+            tile_request_hz: 5,
+            overlay_request_hz: 2,
+        }
+    }
+}
+
+/// Extended results for comprehensive stress test
+#[derive(Debug)]
+pub struct ComprehensiveStressResults {
+    /// WebSocket message stats
+    pub ws_messages_sent: u64,
+    pub ws_messages_received: u64,
+    pub ws_connection_errors: u64,
+
+    /// HTTP stats
+    pub http_requests_sent: u64,
+    pub http_requests_success: u64,
+    pub http_requests_failed: u64,
+
+    /// Latency stats by category
+    pub cursor_latencies: LatencyStats,
+    pub viewport_latencies: LatencyStats,
+    pub tile_latencies: LatencyStats,
+    pub overlay_latencies: LatencyStats,
+
+    /// Sessions stats
+    pub sessions_created: u64,
+    pub sessions_joined: u64,
+
+    /// Test duration
+    pub duration: Duration,
+}
+
+impl ComprehensiveStressResults {
+    pub fn new() -> Self {
+        Self {
+            ws_messages_sent: 0,
+            ws_messages_received: 0,
+            ws_connection_errors: 0,
+            http_requests_sent: 0,
+            http_requests_success: 0,
+            http_requests_failed: 0,
+            cursor_latencies: LatencyStats::new(),
+            viewport_latencies: LatencyStats::new(),
+            tile_latencies: LatencyStats::new(),
+            overlay_latencies: LatencyStats::new(),
+            sessions_created: 0,
+            sessions_joined: 0,
+            duration: Duration::ZERO,
+        }
+    }
+
+    /// Check if results meet performance budgets
+    pub fn meets_budgets(&self) -> bool {
+        // WebSocket latency budgets
+        let cursor_ok = self
+            .cursor_latencies
+            .p99()
+            .map(|p| p <= Duration::from_millis(100))
+            .unwrap_or(true);
+
+        let viewport_ok = self
+            .viewport_latencies
+            .p99()
+            .map(|p| p <= Duration::from_millis(150))
+            .unwrap_or(true);
+
+        // HTTP latency budgets
+        let tile_ok = self
+            .tile_latencies
+            .p99()
+            .map(|p| p <= Duration::from_millis(500))
+            .unwrap_or(true);
+
+        let overlay_ok = self
+            .overlay_latencies
+            .p99()
+            .map(|p| p <= Duration::from_millis(1000))
+            .unwrap_or(true);
+
+        // Error rate budget: < 1%
+        let total_requests = self.http_requests_sent + self.ws_messages_sent;
+        let total_errors = self.http_requests_failed + self.ws_connection_errors;
+        let error_rate_ok = if total_requests > 0 {
+            (total_errors as f64 / total_requests as f64) < 0.01
+        } else {
+            true
+        };
+
+        cursor_ok && viewport_ok && tile_ok && overlay_ok && error_rate_ok
+    }
+
+    /// Generate a summary report
+    pub fn report(&self) -> String {
+        let mut report = String::new();
+        report.push_str("=== Comprehensive Stress Test Results ===\n\n");
+
+        report.push_str(&format!("Duration: {:.2}s\n", self.duration.as_secs_f64()));
+        report.push_str(&format!(
+            "Total users: {} (sessions: {}, joined: {})\n",
+            self.sessions_created + self.sessions_joined,
+            self.sessions_created,
+            self.sessions_joined
+        ));
+
+        report.push_str("\n--- WebSocket Stats ---\n");
+        report.push_str(&format!("Messages sent: {}\n", self.ws_messages_sent));
+        report.push_str(&format!(
+            "Messages received: {}\n",
+            self.ws_messages_received
+        ));
+        report.push_str(&format!(
+            "Connection errors: {}\n",
+            self.ws_connection_errors
+        ));
+
+        let ws_throughput = self.ws_messages_sent as f64 / self.duration.as_secs_f64();
+        report.push_str(&format!("WS throughput: {:.1} msg/s\n", ws_throughput));
+
+        report.push_str("\n--- HTTP Stats ---\n");
+        report.push_str(&format!("Requests sent: {}\n", self.http_requests_sent));
+        report.push_str(&format!(
+            "Requests success: {}\n",
+            self.http_requests_success
+        ));
+        report.push_str(&format!("Requests failed: {}\n", self.http_requests_failed));
+
+        let http_throughput = self.http_requests_sent as f64 / self.duration.as_secs_f64();
+        report.push_str(&format!("HTTP throughput: {:.1} req/s\n", http_throughput));
+
+        let total_throughput = ws_throughput + http_throughput;
+        report.push_str(&format!(
+            "\nTotal throughput: {:.1} ops/s\n",
+            total_throughput
+        ));
+
+        report.push_str("\n--- Latencies ---\n");
+
+        report.push_str("\nCursor (WS) Latencies:\n");
+        if let Some(p50) = self.cursor_latencies.p50() {
+            report.push_str(&format!("  P50: {:?}\n", p50));
+        }
+        if let Some(p95) = self.cursor_latencies.p95() {
+            report.push_str(&format!("  P95: {:?}\n", p95));
+        }
+        if let Some(p99) = self.cursor_latencies.p99() {
+            let budget = Duration::from_millis(100);
+            report.push_str(&format!(
+                "  P99: {:?} (budget: {:?}) {}\n",
+                p99,
+                budget,
+                if p99 <= budget { "OK" } else { "EXCEEDED" }
+            ));
+        }
+
+        report.push_str("\nViewport (WS) Latencies:\n");
+        if let Some(p50) = self.viewport_latencies.p50() {
+            report.push_str(&format!("  P50: {:?}\n", p50));
+        }
+        if let Some(p95) = self.viewport_latencies.p95() {
+            report.push_str(&format!("  P95: {:?}\n", p95));
+        }
+        if let Some(p99) = self.viewport_latencies.p99() {
+            let budget = Duration::from_millis(150);
+            report.push_str(&format!(
+                "  P99: {:?} (budget: {:?}) {}\n",
+                p99,
+                budget,
+                if p99 <= budget { "OK" } else { "EXCEEDED" }
+            ));
+        }
+
+        report.push_str("\nTile (HTTP) Latencies:\n");
+        if let Some(p50) = self.tile_latencies.p50() {
+            report.push_str(&format!("  P50: {:?}\n", p50));
+        }
+        if let Some(p95) = self.tile_latencies.p95() {
+            report.push_str(&format!("  P95: {:?}\n", p95));
+        }
+        if let Some(p99) = self.tile_latencies.p99() {
+            let budget = Duration::from_millis(500);
+            report.push_str(&format!(
+                "  P99: {:?} (budget: {:?}) {}\n",
+                p99,
+                budget,
+                if p99 <= budget { "OK" } else { "EXCEEDED" }
+            ));
+        }
+
+        report.push_str("\nOverlay (HTTP) Latencies:\n");
+        if let Some(p50) = self.overlay_latencies.p50() {
+            report.push_str(&format!("  P50: {:?}\n", p50));
+        }
+        if let Some(p95) = self.overlay_latencies.p95() {
+            report.push_str(&format!("  P95: {:?}\n", p95));
+        }
+        if let Some(p99) = self.overlay_latencies.p99() {
+            let budget = Duration::from_millis(1000);
+            report.push_str(&format!(
+                "  P99: {:?} (budget: {:?}) {}\n",
+                p99,
+                budget,
+                if p99 <= budget { "OK" } else { "EXCEEDED" }
+            ));
+        }
+
+        let error_rate = if self.http_requests_sent + self.ws_messages_sent > 0 {
+            (self.http_requests_failed + self.ws_connection_errors) as f64
+                / (self.http_requests_sent + self.ws_messages_sent) as f64
+                * 100.0
+        } else {
+            0.0
+        };
+        report.push_str(&format!("\nError rate: {:.3}% (budget: <1%)\n", error_rate));
+
+        report.push_str(&format!(
+            "\nOverall: {}\n",
+            if self.meets_budgets() { "PASS" } else { "FAIL" }
+        ));
+
+        report
+    }
+}
+
+impl Default for ComprehensiveStressResults {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Event types for comprehensive test
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum ComprehensiveEvent {
+    WsMessageSent,
+    WsMessageReceived { msg_type: &'static str },
+    WsError,
+    HttpTileRequest { latency: Duration, success: bool },
+    HttpOverlayRequest { latency: Duration, success: bool },
+    SessionCreated,
+    SessionJoined,
+}
+
+/// Comprehensive stress test scenario
+pub struct ComprehensiveStressScenario {
+    config: ComprehensiveStressConfig,
+}
+
+impl ComprehensiveStressScenario {
+    pub fn new(config: ComprehensiveStressConfig) -> Self {
+        Self { config }
+    }
+
+    /// Run the comprehensive stress test
+    pub async fn run(
+        &self,
+    ) -> Result<ComprehensiveStressResults, Box<dyn std::error::Error + Send + Sync>> {
+        let start = Instant::now();
+        let mut results = ComprehensiveStressResults::new();
+
+        // Channels for collecting events
+        let (tx, mut rx) = mpsc::channel::<ComprehensiveEvent>(50000);
+
+        // Atomic counters
+        let ws_sent = Arc::new(AtomicU64::new(0));
+        let ws_recv = Arc::new(AtomicU64::new(0));
+        let ws_errors = Arc::new(AtomicU64::new(0));
+        let http_sent = Arc::new(AtomicU64::new(0));
+        let http_success = Arc::new(AtomicU64::new(0));
+        let http_failed = Arc::new(AtomicU64::new(0));
+        let sessions_created = Arc::new(AtomicU64::new(0));
+        let sessions_joined = Arc::new(AtomicU64::new(0));
+
+        let mut join_handles = Vec::new();
+
+        // Create HTTP client
+        let http_client = Client::builder()
+            .pool_max_idle_per_host(200)
+            .timeout(Duration::from_secs(30))
+            .build()?;
+
+        println!(
+            "Starting comprehensive stress test: {} sessions ({} users) for {:?}",
+            self.config.num_sessions,
+            self.config.num_sessions * 2,
+            self.config.duration
+        );
+
+        // Create sessions with presenter + follower pairs
+        for session_idx in 0..self.config.num_sessions {
+            if session_idx % 50 == 0 {
+                println!(
+                    "Setting up sessions {}-{}/{}",
+                    session_idx + 1,
+                    (session_idx + 50).min(self.config.num_sessions),
+                    self.config.num_sessions
+                );
+            }
+
+            // Create presenter
+            let presenter = match LoadTestClient::connect(&self.config.ws_url).await {
+                Ok(mut client) => {
+                    if let Err(e) = client.create_session(&self.config.slide_id).await {
+                        eprintln!("Failed to create session {}: {}", session_idx, e);
+                        ws_errors.fetch_add(1, Ordering::SeqCst);
+                        continue;
+                    }
+                    sessions_created.fetch_add(1, Ordering::SeqCst);
+                    client
+                }
+                Err(e) => {
+                    eprintln!("Failed to connect presenter {}: {}", session_idx, e);
+                    ws_errors.fetch_add(1, Ordering::SeqCst);
+                    continue;
+                }
+            };
+
+            let session_id = presenter.session_id.clone().unwrap();
+            let join_secret = presenter.join_secret.clone().unwrap();
+
+            // Spawn presenter task (WebSocket + HTTP)
+            let presenter_handle = self.spawn_user_task(
+                presenter,
+                true, // is_presenter
+                http_client.clone(),
+                tx.clone(),
+                ws_sent.clone(),
+                ws_recv.clone(),
+                ws_errors.clone(),
+                http_sent.clone(),
+                http_success.clone(),
+                http_failed.clone(),
+            );
+            join_handles.push(presenter_handle);
+
+            // Create and spawn follower
+            let follower = match LoadTestClient::connect(&self.config.ws_url).await {
+                Ok(mut client) => {
+                    if let Err(e) = client.join_session(&session_id, &join_secret).await {
+                        eprintln!("Follower {} failed to join: {}", session_idx, e);
+                        ws_errors.fetch_add(1, Ordering::SeqCst);
+                        continue;
+                    }
+                    sessions_joined.fetch_add(1, Ordering::SeqCst);
+                    client
+                }
+                Err(e) => {
+                    eprintln!("Failed to connect follower {}: {}", session_idx, e);
+                    ws_errors.fetch_add(1, Ordering::SeqCst);
+                    continue;
+                }
+            };
+
+            let follower_handle = self.spawn_user_task(
+                follower,
+                false, // is_presenter
+                http_client.clone(),
+                tx.clone(),
+                ws_sent.clone(),
+                ws_recv.clone(),
+                ws_errors.clone(),
+                http_sent.clone(),
+                http_success.clone(),
+                http_failed.clone(),
+            );
+            join_handles.push(follower_handle);
+
+            // Small stagger to avoid thundering herd
+            if session_idx % 10 == 9 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+
+        // Drop the original sender
+        drop(tx);
+
+        // Collect events
+        let mut tile_latencies = LatencyStats::new();
+        let mut overlay_latencies = LatencyStats::new();
+
+        let collect_duration = self.config.duration + Duration::from_secs(10);
+        let collect_start = Instant::now();
+
+        while collect_start.elapsed() < collect_duration {
+            match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
+                Ok(Some(event)) => match event {
+                    ComprehensiveEvent::HttpTileRequest {
+                        latency,
+                        success: true,
+                    } => {
+                        tile_latencies.record(latency);
+                    }
+                    ComprehensiveEvent::HttpOverlayRequest {
+                        latency,
+                        success: true,
+                    } => {
+                        overlay_latencies.record(latency);
+                    }
+                    _ => {}
+                },
+                Ok(None) => break,
+                Err(_) => {}
+            }
+        }
+
+        // Wait for all tasks
+        println!("Waiting for {} tasks to complete...", join_handles.len());
+        for handle in join_handles {
+            let _ = handle.await;
+        }
+
+        // Populate results
+        results.ws_messages_sent = ws_sent.load(Ordering::SeqCst);
+        results.ws_messages_received = ws_recv.load(Ordering::SeqCst);
+        results.ws_connection_errors = ws_errors.load(Ordering::SeqCst);
+        results.http_requests_sent = http_sent.load(Ordering::SeqCst);
+        results.http_requests_success = http_success.load(Ordering::SeqCst);
+        results.http_requests_failed = http_failed.load(Ordering::SeqCst);
+        results.sessions_created = sessions_created.load(Ordering::SeqCst);
+        results.sessions_joined = sessions_joined.load(Ordering::SeqCst);
+        results.tile_latencies = tile_latencies;
+        results.overlay_latencies = overlay_latencies;
+        results.duration = start.elapsed();
+
+        Ok(results)
+    }
+
+    /// Spawn a user task that does both WebSocket and HTTP operations
+    fn spawn_user_task(
+        &self,
+        mut client: LoadTestClient,
+        is_presenter: bool,
+        http_client: Client,
+        tx: mpsc::Sender<ComprehensiveEvent>,
+        ws_sent: Arc<AtomicU64>,
+        ws_recv: Arc<AtomicU64>,
+        ws_errors: Arc<AtomicU64>,
+        http_sent: Arc<AtomicU64>,
+        http_success: Arc<AtomicU64>,
+        http_failed: Arc<AtomicU64>,
+    ) -> tokio::task::JoinHandle<()> {
+        let duration = self.config.duration;
+        let cursor_hz = if is_presenter {
+            self.config.cursor_hz
+        } else {
+            0
+        };
+        let viewport_hz = if is_presenter {
+            self.config.viewport_hz
+        } else {
+            0
+        };
+        let tile_hz = self.config.tile_request_hz;
+        let overlay_hz = self.config.overlay_request_hz;
+        let http_url = self.config.http_url.clone();
+        let slide_id = self.config.slide_id.clone();
+
+        tokio::spawn(async move {
+            let cursor_interval = if cursor_hz > 0 {
+                Duration::from_secs_f64(1.0 / cursor_hz as f64)
+            } else {
+                Duration::from_secs(3600)
+            };
+
+            let viewport_interval = if viewport_hz > 0 {
+                Duration::from_secs_f64(1.0 / viewport_hz as f64)
+            } else {
+                Duration::from_secs(3600)
+            };
+
+            let tile_interval = if tile_hz > 0 {
+                Duration::from_secs_f64(1.0 / tile_hz as f64)
+            } else {
+                Duration::from_secs(3600)
+            };
+
+            let overlay_interval = if overlay_hz > 0 {
+                Duration::from_secs_f64(1.0 / overlay_hz as f64)
+            } else {
+                Duration::from_secs(3600)
+            };
+
+            let start = Instant::now();
+            let mut cursor_ticker = tokio::time::interval(cursor_interval);
+            let mut viewport_ticker = tokio::time::interval(viewport_interval);
+            let mut tile_ticker = tokio::time::interval(tile_interval);
+            let mut overlay_ticker = tokio::time::interval(overlay_interval);
+            let mut ws_recv_interval = tokio::time::interval(Duration::from_millis(50));
+
+            let mut x = 0.5f64;
+            let mut y = 0.5f64;
+            let mut tile_x = 0u32;
+            let mut tile_y = 0u32;
+
+            loop {
+                if start.elapsed() >= duration {
+                    break;
+                }
+
+                tokio::select! {
+                    // Presenter sends cursor updates
+                    _ = cursor_ticker.tick(), if is_presenter => {
+                        x = (x + 0.001).min(1.0);
+                        y = (y + 0.001).min(1.0);
+                        if x >= 1.0 { x = 0.0; }
+                        if y >= 1.0 { y = 0.0; }
+
+                        match client.send_cursor(x * 100000.0, y * 100000.0).await {
+                            Ok(_) => {
+                                ws_sent.fetch_add(1, Ordering::SeqCst);
+                                let _ = tx.send(ComprehensiveEvent::WsMessageSent).await;
+                            }
+                            Err(_) => {
+                                ws_errors.fetch_add(1, Ordering::SeqCst);
+                                let _ = tx.send(ComprehensiveEvent::WsError).await;
+                            }
+                        }
+                    }
+
+                    // Presenter sends viewport updates
+                    _ = viewport_ticker.tick(), if is_presenter => {
+                        match client.send_viewport(0.5, 0.5, 1.0).await {
+                            Ok(_) => {
+                                ws_sent.fetch_add(1, Ordering::SeqCst);
+                                let _ = tx.send(ComprehensiveEvent::WsMessageSent).await;
+                            }
+                            Err(_) => {
+                                ws_errors.fetch_add(1, Ordering::SeqCst);
+                                let _ = tx.send(ComprehensiveEvent::WsError).await;
+                            }
+                        }
+                    }
+
+                    // Both users request tiles
+                    _ = tile_ticker.tick() => {
+                        http_sent.fetch_add(1, Ordering::SeqCst);
+                        let level = 5;
+                        let url = format!(
+                            "{}/api/slide/{}/tile/{}/{}/{}",
+                            http_url, slide_id, level, tile_x, tile_y
+                        );
+
+                        let req_start = Instant::now();
+                        match http_client.get(&url).send().await {
+                            Ok(resp) => {
+                                let latency = req_start.elapsed();
+                                if resp.status().is_success() || resp.status().as_u16() == 404 {
+                                    http_success.fetch_add(1, Ordering::SeqCst);
+                                    let _ = tx.send(ComprehensiveEvent::HttpTileRequest {
+                                        latency,
+                                        success: true,
+                                    }).await;
+                                } else {
+                                    http_failed.fetch_add(1, Ordering::SeqCst);
+                                }
+                            }
+                            Err(_) => {
+                                http_failed.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+
+                        tile_x = (tile_x + 1) % 40;
+                        if tile_x == 0 {
+                            tile_y = (tile_y + 1) % 40;
+                        }
+                    }
+
+                    // Both users request overlays
+                    _ = overlay_ticker.tick() => {
+                        http_sent.fetch_add(1, Ordering::SeqCst);
+
+                        // Alternate between tissue tiles and cell queries
+                        let is_tissue = tile_x % 2 == 0;
+                        let url = if is_tissue {
+                            format!(
+                                "{}/api/slide/{}/overlay/tissue/{}/{}/{}",
+                                http_url, slide_id, 3, tile_x % 20, tile_y % 20
+                            )
+                        } else {
+                            format!(
+                                "{}/api/slide/{}/overlay/cells?x={}&y={}&width=5000&height=5000",
+                                http_url, slide_id, (tile_x as f64) * 1000.0, (tile_y as f64) * 1000.0
+                            )
+                        };
+
+                        let req_start = Instant::now();
+                        match http_client.get(&url).send().await {
+                            Ok(resp) => {
+                                let latency = req_start.elapsed();
+                                if resp.status().is_success() || resp.status().as_u16() == 404 {
+                                    http_success.fetch_add(1, Ordering::SeqCst);
+                                    let _ = tx.send(ComprehensiveEvent::HttpOverlayRequest {
+                                        latency,
+                                        success: true,
+                                    }).await;
+                                } else {
+                                    http_failed.fetch_add(1, Ordering::SeqCst);
+                                }
+                            }
+                            Err(_) => {
+                                http_failed.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+
+                    // Receive WebSocket messages (followers receive presence updates)
+                    _ = ws_recv_interval.tick() => {
+                        match client.recv_timeout(Duration::from_millis(10)).await {
+                            Ok(Some(msg)) => {
+                                ws_recv.fetch_add(1, Ordering::SeqCst);
+                                let msg_type = match &msg {
+                                    ServerMessage::PresenceDelta { .. } => "presence",
+                                    ServerMessage::PresenterViewport { .. } => "viewport",
+                                    ServerMessage::Ack { .. } => "ack",
+                                    _ => "other",
+                                };
+                                let _ = tx.send(ComprehensiveEvent::WsMessageReceived { msg_type }).await;
+                            }
+                            Ok(None) => {}
+                            Err(_) => {
+                                ws_errors.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+                }
+            }
+
+            let _ = client.close().await;
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires running server"]
+    async fn test_comprehensive_minimal() {
+        let config = ComprehensiveStressConfig {
+            num_sessions: 5, // 10 users
+            duration: Duration::from_secs(10),
+            cursor_hz: 10,
+            viewport_hz: 5,
+            tile_request_hz: 2,
+            overlay_request_hz: 1,
+            ..Default::default()
+        };
+
+        let scenario = ComprehensiveStressScenario::new(config);
+        let results = scenario.run().await.expect("Scenario should complete");
+
+        println!("{}", results.report());
+        assert!(results.ws_messages_sent > 0, "Should have sent WS messages");
+        assert!(
+            results.http_requests_sent > 0,
+            "Should have sent HTTP requests"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires running server - long running"]
+    async fn test_comprehensive_1000_users() {
+        let config = ComprehensiveStressConfig {
+            num_sessions: 500, // 1000 users
+            duration: Duration::from_secs(60),
+            cursor_hz: 30,
+            viewport_hz: 10,
+            tile_request_hz: 5,
+            overlay_request_hz: 2,
+            ..Default::default()
+        };
+
+        let scenario = ComprehensiveStressScenario::new(config);
+        let results = scenario.run().await.expect("Scenario should complete");
+
+        println!("{}", results.report());
+        assert!(
+            results.meets_budgets(),
+            "Should meet performance budgets under 1000 user load"
+        );
+    }
+}
