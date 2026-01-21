@@ -40,6 +40,8 @@ pub struct LoadTestConfig {
     pub duration: Duration,
     /// Server WebSocket URL
     pub ws_url: String,
+    /// Server HTTP base URL (for fetching slide info)
+    pub http_url: String,
 }
 
 impl Default for LoadTestConfig {
@@ -51,6 +53,7 @@ impl Default for LoadTestConfig {
             viewport_hz: 10,
             duration: Duration::from_secs(60),
             ws_url: "ws://127.0.0.1:8080/ws".to_string(),
+            http_url: "http://127.0.0.1:8080".to_string(),
         }
     }
 }

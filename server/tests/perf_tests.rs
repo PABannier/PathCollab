@@ -45,7 +45,13 @@ async fn test_connection() {
 #[tokio::test]
 #[ignore = "requires running server"]
 async fn test_create_session() {
-    use load_tests::client::LoadTestClient;
+    use load_tests::client::{LoadTestClient, fetch_first_slide};
+
+    // Fetch available slide from server
+    let slide = fetch_first_slide("http://127.0.0.1:8080")
+        .await
+        .expect("Should have slides available");
+    println!("Using slide: {} ({})", slide.name, slide.id);
 
     let url = "ws://127.0.0.1:8080/ws";
     let mut client: LoadTestClient = LoadTestClient::connect(url)
@@ -53,7 +59,7 @@ async fn test_create_session() {
         .expect("Should connect to server");
 
     client
-        .create_session("test-slide")
+        .create_session(&slide.id)
         .await
         .expect("Should create session");
 
@@ -75,7 +81,7 @@ async fn test_fanout_minimal() {
         cursor_hz: 10,
         viewport_hz: 5,
         duration: Duration::from_secs(3),
-        ws_url: "ws://127.0.0.1:8080/ws".to_string(),
+        ..Default::default()
     };
 
     let scenario = FanOutScenario::new(config);
@@ -95,7 +101,7 @@ async fn test_fanout_standard() {
         cursor_hz: 30,
         viewport_hz: 10,
         duration: Duration::from_secs(30),
-        ws_url: "ws://127.0.0.1:8080/ws".to_string(),
+        ..Default::default()
     };
 
     let scenario = FanOutScenario::new(config);
@@ -127,7 +133,7 @@ async fn test_fanout_extended() {
         cursor_hz: 30,
         viewport_hz: 10,
         duration: Duration::from_secs(300), // 5 minutes
-        ws_url: "ws://127.0.0.1:8080/ws".to_string(),
+        ..Default::default()
     };
 
     let scenario = FanOutScenario::new(config);

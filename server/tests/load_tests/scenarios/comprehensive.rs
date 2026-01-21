@@ -11,7 +11,7 @@
 #![allow(clippy::collapsible_if)]
 
 use super::super::LatencyStats;
-use super::super::client::{LoadTestClient, ServerMessage};
+use super::super::client::{LoadTestClient, ServerMessage, fetch_first_slide};
 use reqwest::Client;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,8 +29,6 @@ pub struct ComprehensiveStressConfig {
     pub ws_url: String,
     /// Server HTTP base URL
     pub http_url: String,
-    /// Slide ID to test with
-    pub slide_id: String,
     /// Cursor update rate (Hz) per presenter
     pub cursor_hz: u32,
     /// Viewport update rate (Hz) per presenter
@@ -48,7 +46,6 @@ impl Default for ComprehensiveStressConfig {
             duration: Duration::from_secs(60),
             ws_url: "ws://127.0.0.1:8080/ws".to_string(),
             http_url: "http://127.0.0.1:8080".to_string(),
-            slide_id: "test-slide".to_string(),
             cursor_hz: 30,
             viewport_hz: 10,
             tile_request_hz: 5,
@@ -311,6 +308,10 @@ impl ComprehensiveStressScenario {
         let start = Instant::now();
         let mut results = ComprehensiveStressResults::new();
 
+        // Fetch available slide from server
+        let slide = fetch_first_slide(&self.config.http_url).await?;
+        println!("Using slide: {} ({})", slide.name, slide.id);
+
         // Channels for collecting events
         let (tx, mut rx) = mpsc::channel::<ComprehensiveEvent>(50000);
 
@@ -353,7 +354,7 @@ impl ComprehensiveStressScenario {
             // Create presenter
             let presenter = match LoadTestClient::connect(&self.config.ws_url).await {
                 Ok(mut client) => {
-                    if let Err(e) = client.create_session(&self.config.slide_id).await {
+                    if let Err(e) = client.create_session(&slide.id).await {
                         eprintln!("Failed to create session {}: {}", session_idx, e);
                         ws_errors.fetch_add(1, Ordering::SeqCst);
                         continue;
@@ -376,6 +377,7 @@ impl ComprehensiveStressScenario {
                 presenter,
                 true, // is_presenter
                 http_client.clone(),
+                slide.id.clone(),
                 tx.clone(),
                 ws_sent.clone(),
                 ws_recv.clone(),
@@ -408,6 +410,7 @@ impl ComprehensiveStressScenario {
                 follower,
                 false, // is_presenter
                 http_client.clone(),
+                slide.id.clone(),
                 tx.clone(),
                 ws_sent.clone(),
                 ws_recv.clone(),
@@ -484,6 +487,7 @@ impl ComprehensiveStressScenario {
         mut client: LoadTestClient,
         is_presenter: bool,
         http_client: Client,
+        slide_id: String,
         tx: mpsc::Sender<ComprehensiveEvent>,
         ws_sent: Arc<AtomicU64>,
         ws_recv: Arc<AtomicU64>,
@@ -506,7 +510,6 @@ impl ComprehensiveStressScenario {
         let tile_hz = self.config.tile_request_hz;
         let overlay_hz = self.config.overlay_request_hz;
         let http_url = self.config.http_url.clone();
-        let slide_id = self.config.slide_id.clone();
 
         tokio::spawn(async move {
             let cursor_interval = if cursor_hz > 0 {

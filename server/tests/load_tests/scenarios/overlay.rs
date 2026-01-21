@@ -9,6 +9,7 @@
 
 #![allow(clippy::collapsible_if)]
 
+use super::super::client::fetch_first_slide;
 use super::super::{LatencyStats, LoadTestResults};
 use reqwest::Client;
 use std::sync::Arc;
@@ -25,8 +26,6 @@ pub struct OverlayStressConfig {
     pub duration: Duration,
     /// Server base URL (e.g., "http://127.0.0.1:8080")
     pub base_url: String,
-    /// Slide ID to test with
-    pub slide_id: String,
     /// Rate of tissue tile requests per client (Hz)
     pub tissue_tile_hz: u32,
     /// Rate of cell query requests per client (Hz)
@@ -39,7 +38,6 @@ impl Default for OverlayStressConfig {
             num_clients: 50,
             duration: Duration::from_secs(30),
             base_url: "http://127.0.0.1:8080".to_string(),
-            slide_id: "test-slide".to_string(),
             tissue_tile_hz: 10,
             cell_query_hz: 2,
         }
@@ -163,6 +161,10 @@ impl OverlayStressScenario {
         let start = Instant::now();
         let mut results = OverlayStressResults::new();
 
+        // Fetch available slide from server
+        let slide = fetch_first_slide(&self.config.base_url).await?;
+        println!("Using slide: {} ({})", slide.name, slide.id);
+
         // Channel for collecting events
         let (tx, mut rx) = mpsc::channel::<OverlayEvent>(10000);
 
@@ -190,7 +192,7 @@ impl OverlayStressScenario {
             let client = http_client.clone();
             let tx = tx.clone();
             let base_url = self.config.base_url.clone();
-            let slide_id = self.config.slide_id.clone();
+            let slide_id = slide.id.clone();
             let duration = self.config.duration;
             let tissue_hz = self.config.tissue_tile_hz;
             let cell_hz = self.config.cell_query_hz;
