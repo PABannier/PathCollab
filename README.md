@@ -1,14 +1,14 @@
 # PathCollab
 
-[![CI](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml/badge.svg)](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpabannier%2Fpathcollab-blue)](https://ghcr.io/pabannier/pathcollab)
-
 ---
 
 <div align="center">
 
 ![PathCollab, a self-hosted collaborative digital pathology viewer](./assets/pathcollab.png)
+
+[![CI](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml/badge.svg)](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpabannier%2Fpathcollab-blue)](https://ghcr.io/pabannier/pathcollab)
 
 **Collaborative whole-slide image viewer with real-time cursor presence and overlay rendering**
 
