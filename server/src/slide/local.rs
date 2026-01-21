@@ -347,13 +347,16 @@ impl LocalSlideService {
 ///
 /// Converts RGBA to RGB without cloning the entire image - we only allocate
 /// the RGB buffer needed for JPEG encoding.
+///
+/// Pre-allocates JPEG buffer based on expected output size to avoid reallocations.
 fn encode_jpeg_inner(rgba: &RgbaImage, jpeg_quality: u8) -> Result<Vec<u8>, SlideError> {
     let (width, height) = rgba.dimensions();
+    let pixel_count = (width * height) as usize;
 
     // Convert RGBA to RGB without cloning - preallocate exact size needed
     // Each pixel: 4 bytes RGBA -> 3 bytes RGB
     let rgba_raw = rgba.as_raw();
-    let mut rgb_data: Vec<u8> = Vec::with_capacity((width * height * 3) as usize);
+    let mut rgb_data: Vec<u8> = Vec::with_capacity(pixel_count * 3);
 
     // Copy RGB channels, skipping alpha (every 4th byte)
     for chunk in rgba_raw.chunks_exact(4) {
@@ -363,7 +366,12 @@ fn encode_jpeg_inner(rgba: &RgbaImage, jpeg_quality: u8) -> Result<Vec<u8>, Slid
         // Skip chunk[3] (alpha)
     }
 
-    let mut buffer = Vec::new();
+    // Pre-allocate JPEG buffer based on estimated compressed size
+    // Use ~15:1 compression ratio estimate with 20% margin for safety
+    // This avoids multiple reallocations during encoding
+    let estimated_jpeg_size = (pixel_count * 3) / 12; // ~12:1 ratio with margin
+    let mut buffer = Vec::with_capacity(estimated_jpeg_size.max(4096)); // At least 4KB
+
     let encoder = JpegEncoder::new_with_quality(&mut buffer, jpeg_quality);
     encoder
         .write_image(&rgb_data, width, height, image::ExtendedColorType::Rgb8)
@@ -381,7 +389,7 @@ impl SlideService for LocalSlideService {
         for (id, path) in slides {
             // Check cache first
             if let Some(meta) = self.cache.get_metadata(&id) {
-                metadata_list.push(meta);
+                metadata_list.push((*meta).clone());
                 continue;
             }
 
@@ -403,9 +411,8 @@ impl SlideService for LocalSlideService {
     }
 
     async fn get_slide(&self, id: &str) -> Result<SlideMetadata, SlideError> {
-        // Check cache first
         if let Some(meta) = self.cache.get_metadata(id) {
-            return Ok(meta);
+            return Ok((*meta).clone());
         }
 
         // Find the slide path
@@ -434,17 +441,23 @@ impl SlideService for LocalSlideService {
             }
         };
 
-        // Get metadata (will open slide if needed, caching the slide handle)
-        let metadata = match self.get_slide(&request.slide_id).await {
-            Ok(m) => m,
-            Err(e) => {
-                let result = Err(e);
-                record_metrics(&result, start);
-                return result;
+        // Fast path: try to get cached metadata and slide handle directly
+        // This avoids the overhead of get_slide() when both are already cached
+        let metadata = if let Some(meta) = self.cache.get_metadata(&request.slide_id) {
+            meta
+        } else {
+            // Slow path: need to load slide
+            match self.get_slide(&request.slide_id).await {
+                Ok(m) => std::sync::Arc::new(m),
+                Err(e) => {
+                    let result = Err(e);
+                    record_metrics(&result, start);
+                    return result;
+                }
             }
         };
 
-        // Get cached slide handle (already cached by get_slide above)
+        // Get cached slide handle (already cached by get_slide above or from previous request)
         let slide = match self.cache.get_cached(&request.slide_id).await {
             Some(s) => s,
             None => {
@@ -455,7 +468,7 @@ impl SlideService for LocalSlideService {
             }
         };
 
-        // Read and encode the tile
+        // Read and encode the tile - pass reference to avoid cloning metadata
         let result = self
             .read_tile_jpeg(slide, &metadata, request.level, request.x, request.y)
             .await;
