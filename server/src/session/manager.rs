@@ -198,7 +198,7 @@ impl SessionManager {
             participant_id, session_id
         );
 
-        let snapshot = create_session_snapshot(&*session);
+        let snapshot = create_session_snapshot(&session);
 
         // Record participants count in this session
         histogram!("pathcollab_session_participants").record(session.participants.len() as f64);
@@ -232,7 +232,7 @@ impl SessionManager {
             .get(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
-        Ok(create_session_snapshot(&*session))
+        Ok(create_session_snapshot(&session))
     }
 
     /// Update presenter viewport
