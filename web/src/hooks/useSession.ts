@@ -362,6 +362,8 @@ export function useSession({
           setIsPresenter(false)
           setCursors([])
           setPresenterViewport(null)
+          setPresenterCellOverlay(null)
+          setPresenterTissueOverlay(null)
           presenterAuthSessionRef.current = null
           pendingPresenterAuthSeqRef.current = null
           onError?.(`Session ended: ${message.reason}`)

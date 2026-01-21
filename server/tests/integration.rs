@@ -1872,3 +1872,288 @@ mod phase2_robustness {
         server_handle.abort();
     }
 }
+
+mod tissue_overlay_sync {
+    use super::*;
+    use axum::{Router, routing::get};
+    use pathcollab_server::protocol::{ClientMessage, ServerMessage};
+    use tokio_tungstenite::{connect_async, tungstenite::Message};
+
+    async fn start_test_server() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+        let state = create_test_app_state_with_slides();
+
+        let app = Router::new()
+            .route("/ws", get(pathcollab_server::server::ws_handler))
+            .with_state(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        (addr, handle)
+    }
+
+    /// Test: Presenter tissue overlay update is broadcast to followers
+    #[tokio::test]
+    async fn test_tissue_overlay_update_broadcast_to_follower() {
+        use futures_util::{SinkExt, StreamExt};
+
+        let (addr, server_handle) = start_test_server().await;
+        let ws_url = format!("ws://{}/ws", addr);
+
+        // Presenter creates session
+        let (mut presenter_ws, _) = connect_async(&ws_url).await.unwrap();
+        presenter_ws
+            .send(Message::Text(
+                serde_json::to_string(&ClientMessage::CreateSession {
+                    slide_id: "test-slide".to_string(),
+                    seq: 1,
+                })
+                .unwrap()
+                .into(),
+            ))
+            .await
+            .unwrap();
+
+        // Get session credentials
+        let mut session_id = String::new();
+        let mut join_secret = String::new();
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while let Some(msg) = presenter_ws.next().await {
+                if let Ok(Message::Text(text)) = msg {
+                    if let Ok(ServerMessage::SessionCreated {
+                        session,
+                        join_secret: js,
+                        ..
+                    }) = serde_json::from_str(&text)
+                    {
+                        session_id = session.id;
+                        join_secret = js;
+                        break;
+                    }
+                }
+            }
+        });
+        let _ = timeout.await;
+        assert!(!session_id.is_empty(), "Session should be created");
+
+        // Follower joins session
+        let (mut follower_ws, _) = connect_async(&ws_url).await.unwrap();
+        follower_ws
+            .send(Message::Text(
+                serde_json::to_string(&ClientMessage::JoinSession {
+                    session_id: session_id.clone(),
+                    join_secret: join_secret.clone(),
+                    last_seen_rev: None,
+                    seq: 1,
+                })
+                .unwrap()
+                .into(),
+            ))
+            .await
+            .unwrap();
+
+        // Wait for follower to join
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while let Some(msg) = follower_ws.next().await {
+                if let Ok(Message::Text(text)) = msg {
+                    if let Ok(ServerMessage::SessionJoined { .. }) = serde_json::from_str(&text) {
+                        break;
+                    }
+                }
+            }
+        });
+        let _ = timeout.await;
+
+        // Give time for the join to propagate
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Presenter sends tissue overlay update
+        let tissue_classes = vec![0, 1, 3]; // Example: stroma, tumor, necrosis
+        presenter_ws
+            .send(Message::Text(
+                serde_json::to_string(&ClientMessage::TissueOverlayUpdate {
+                    enabled: true,
+                    opacity: 0.75,
+                    visible_tissue_types: tissue_classes.clone(),
+                    seq: 2,
+                })
+                .unwrap()
+                .into(),
+            ))
+            .await
+            .unwrap();
+
+        // Follower should receive PresenterTissueOverlay broadcast
+        let mut received_tissue_overlay = false;
+        let mut received_enabled = false;
+        let mut received_opacity = 0.0;
+        let mut received_tissue_types: Vec<i32> = vec![];
+
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while let Some(msg) = follower_ws.next().await {
+                if let Ok(Message::Text(text)) = msg {
+                    if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
+                        if let ServerMessage::PresenterTissueOverlay {
+                            enabled,
+                            opacity,
+                            visible_tissue_types,
+                        } = server_msg
+                        {
+                            received_tissue_overlay = true;
+                            received_enabled = enabled;
+                            received_opacity = opacity;
+                            received_tissue_types = visible_tissue_types;
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        let _ = timeout.await;
+
+        assert!(
+            received_tissue_overlay,
+            "Follower should receive PresenterTissueOverlay message"
+        );
+        assert!(received_enabled, "Tissue overlay should be enabled");
+        assert!(
+            (received_opacity - 0.75).abs() < 0.001,
+            "Opacity should be 0.75"
+        );
+        assert_eq!(
+            received_tissue_types, tissue_classes,
+            "Visible tissue types should match what presenter sent"
+        );
+
+        server_handle.abort();
+    }
+
+    /// Test: Tissue overlay state is included in session snapshot when follower joins
+    #[tokio::test]
+    async fn test_tissue_overlay_state_included_in_session_snapshot() {
+        use futures_util::{SinkExt, StreamExt};
+
+        let (addr, server_handle) = start_test_server().await;
+        let ws_url = format!("ws://{}/ws", addr);
+
+        // Presenter creates session
+        let (mut presenter_ws, _) = connect_async(&ws_url).await.unwrap();
+        presenter_ws
+            .send(Message::Text(
+                serde_json::to_string(&ClientMessage::CreateSession {
+                    slide_id: "test-slide".to_string(),
+                    seq: 1,
+                })
+                .unwrap()
+                .into(),
+            ))
+            .await
+            .unwrap();
+
+        // Get session credentials
+        let mut session_id = String::new();
+        let mut join_secret = String::new();
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while let Some(msg) = presenter_ws.next().await {
+                if let Ok(Message::Text(text)) = msg {
+                    if let Ok(ServerMessage::SessionCreated {
+                        session,
+                        join_secret: js,
+                        ..
+                    }) = serde_json::from_str(&text)
+                    {
+                        session_id = session.id;
+                        join_secret = js;
+                        break;
+                    }
+                }
+            }
+        });
+        let _ = timeout.await;
+        assert!(!session_id.is_empty(), "Session should be created");
+
+        // Presenter sets tissue overlay state BEFORE follower joins
+        let tissue_classes = vec![2, 4]; // Different set of tissue classes
+        presenter_ws
+            .send(Message::Text(
+                serde_json::to_string(&ClientMessage::TissueOverlayUpdate {
+                    enabled: true,
+                    opacity: 0.5,
+                    visible_tissue_types: tissue_classes.clone(),
+                    seq: 2,
+                })
+                .unwrap()
+                .into(),
+            ))
+            .await
+            .unwrap();
+
+        // Wait for state to be updated
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        // NOW follower joins - they should get the tissue overlay state in the session snapshot
+        let (mut follower_ws, _) = connect_async(&ws_url).await.unwrap();
+        follower_ws
+            .send(Message::Text(
+                serde_json::to_string(&ClientMessage::JoinSession {
+                    session_id: session_id.clone(),
+                    join_secret: join_secret.clone(),
+                    last_seen_rev: None,
+                    seq: 1,
+                })
+                .unwrap()
+                .into(),
+            ))
+            .await
+            .unwrap();
+
+        // Check that session_joined includes tissue_overlay in session snapshot
+        let mut tissue_overlay_in_snapshot = false;
+        let mut snapshot_enabled = false;
+        let mut snapshot_opacity = 0.0;
+        let mut snapshot_tissue_types: Vec<i32> = vec![];
+
+        let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while let Some(msg) = follower_ws.next().await {
+                if let Ok(Message::Text(text)) = msg {
+                    if let Ok(ServerMessage::SessionJoined { session, .. }) =
+                        serde_json::from_str(&text)
+                    {
+                        if let Some(tissue_overlay) = session.tissue_overlay {
+                            tissue_overlay_in_snapshot = true;
+                            snapshot_enabled = tissue_overlay.enabled;
+                            snapshot_opacity = tissue_overlay.opacity;
+                            snapshot_tissue_types = tissue_overlay.visible_tissue_types;
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+        let _ = timeout.await;
+
+        assert!(
+            tissue_overlay_in_snapshot,
+            "Session snapshot should include tissue_overlay state"
+        );
+        assert!(
+            snapshot_enabled,
+            "Tissue overlay should be enabled in snapshot"
+        );
+        assert!(
+            (snapshot_opacity - 0.5).abs() < 0.001,
+            "Opacity should be 0.5 in snapshot"
+        );
+        assert_eq!(
+            snapshot_tissue_types, tissue_classes,
+            "Visible tissue types in snapshot should match what presenter set"
+        );
+
+        server_handle.abort();
+    }
+}
