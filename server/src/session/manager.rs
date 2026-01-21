@@ -6,12 +6,11 @@ use crate::session::state::{
     Session, SessionConfig, SessionId, SessionParticipant, SessionState, generate_participant_name,
     generate_secret, generate_session_id, get_participant_color, now_millis,
 };
+use dashmap::DashMap;
 use metrics::{counter, histogram};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
-use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -45,21 +44,21 @@ pub enum SessionError {
 
 /// Session manager: handles all session CRUD operations
 pub struct SessionManager {
-    sessions: Arc<RwLock<HashMap<SessionId, Session>>>,
+    sessions: DashMap<SessionId, Session>,
     config: SessionConfig,
 }
 
 impl SessionManager {
     pub fn new() -> Self {
         Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
+            sessions: DashMap::new(),
             config: SessionConfig::default(),
         }
     }
 
     pub fn with_config(config: SessionConfig) -> Self {
         Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
+            sessions: DashMap::new(),
             config,
         }
     }
@@ -128,22 +127,7 @@ impl SessionManager {
             session_id, presenter_connection_id
         );
 
-        // Store session and clone it before releasing lock
-        let session = {
-            let mut sessions = self.sessions.write().await;
-            sessions.insert(session_id.clone(), session);
-            // Clone immediately while we still hold the lock
-            sessions.get(&session_id).cloned()
-        };
-
-        // The session should always exist since we just inserted it
-        let session = session.ok_or_else(|| {
-            error!(
-                "Session {} disappeared immediately after creation",
-                session_id
-            );
-            SessionError::NotFound(session_id)
-        })?;
+        self.sessions.insert(session_id.clone(), session.clone());
 
         histogram!("pathcollab_session_create_duration_seconds").record(start.elapsed());
         Ok((session, join_secret, presenter_key))
@@ -158,9 +142,8 @@ impl SessionManager {
         let start = Instant::now();
         counter!("pathcollab_session_joins_total").increment(1);
 
-        let mut sessions = self.sessions.write().await;
-
-        let session = sessions
+        let mut session = self
+            .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
@@ -215,7 +198,7 @@ impl SessionManager {
             participant_id, session_id
         );
 
-        let snapshot = create_session_snapshot(session);
+        let snapshot = create_session_snapshot(&*session);
 
         // Record participants count in this session
         histogram!("pathcollab_session_participants").record(session.participants.len() as f64);
@@ -230,9 +213,8 @@ impl SessionManager {
         session_id: &str,
         presenter_key: &str,
     ) -> Result<(), SessionError> {
-        let sessions = self.sessions.read().await;
-
-        let session = sessions
+        let session = self
+            .sessions
             .get(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
@@ -245,13 +227,12 @@ impl SessionManager {
 
     /// Get session snapshot
     pub async fn get_session(&self, session_id: &str) -> Result<SessionSnapshot, SessionError> {
-        let sessions = self.sessions.read().await;
-
-        let session = sessions
+        let session = self
+            .sessions
             .get(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
-        Ok(create_session_snapshot(session))
+        Ok(create_session_snapshot(&*session))
     }
 
     /// Update presenter viewport
@@ -260,9 +241,8 @@ impl SessionManager {
         session_id: &str,
         viewport: Viewport,
     ) -> Result<u64, SessionError> {
-        let mut sessions = self.sessions.write().await;
-
-        let session = sessions
+        let mut session = self
+            .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
@@ -278,9 +258,8 @@ impl SessionManager {
         session_id: &str,
         slide: SlideInfo,
     ) -> Result<SlideInfo, SessionError> {
-        let mut sessions = self.sessions.write().await;
-
-        let session = sessions
+        let mut session = self
+            .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
@@ -306,9 +285,8 @@ impl SessionManager {
         session_id: &str,
         cell_overlay: CellOverlayState,
     ) -> Result<u64, SessionError> {
-        let mut sessions = self.sessions.write().await;
-
-        let session = sessions
+        let mut session = self
+            .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
@@ -326,9 +304,8 @@ impl SessionManager {
         session_id: &str,
         tissue_overlay: TissueOverlayState,
     ) -> Result<u64, SessionError> {
-        let mut sessions = self.sessions.write().await;
-
-        let session = sessions
+        let mut session = self
+            .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
@@ -348,9 +325,8 @@ impl SessionManager {
         x: f64,
         y: f64,
     ) -> Result<(), SessionError> {
-        let mut sessions = self.sessions.write().await;
-
-        let session = sessions
+        let mut session = self
+            .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
@@ -372,9 +348,8 @@ impl SessionManager {
         session_id: &str,
         participant_id: Uuid,
     ) -> Result<bool, SessionError> {
-        let mut sessions = self.sessions.write().await;
-
-        let session = sessions
+        let mut session = self
+            .sessions
             .get_mut(session_id)
             .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
 
@@ -408,38 +383,34 @@ impl SessionManager {
     /// Clean up expired sessions
     pub async fn cleanup_expired(&self) {
         let now = now_millis();
-        let mut sessions = self.sessions.write().await;
+        let grace_period_ms = self.config.presenter_grace_period.as_millis() as u64;
 
-        let expired: Vec<SessionId> = sessions
-            .iter()
-            .filter(|(_, session)| {
-                session.expires_at < now
-                    || matches!(
-                        session.state,
-                        SessionState::PresenterDisconnected { disconnect_at }
-                            if now - disconnect_at > self.config.presenter_grace_period.as_millis() as u64
-                    )
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
+        // DashMap's retain allows atomic filtering without holding a global lock
+        self.sessions.retain(|id, session| {
+            let should_remove = session.expires_at < now
+                || matches!(
+                    session.state,
+                    SessionState::PresenterDisconnected { disconnect_at }
+                        if now - disconnect_at > grace_period_ms
+                );
 
-        for id in expired {
-            info!("Removing expired session: {}", id);
-            sessions.remove(&id);
-            counter!("pathcollab_sessions_expired_total").increment(1);
-        }
+            if should_remove {
+                info!("Removing expired session: {}", id);
+                counter!("pathcollab_sessions_expired_total").increment(1);
+            }
+
+            !should_remove // retain returns true to keep, false to remove
+        });
     }
 
     /// Get count of active sessions
     pub async fn session_count_async(&self) -> usize {
-        let sessions = self.sessions.read().await;
-        sessions.len()
+        self.sessions.len()
     }
 
     /// Get count of active sessions (blocking version for sync contexts)
     pub fn session_count(&self) -> usize {
-        let sessions = self.sessions.blocking_read();
-        sessions.len()
+        self.sessions.len()
     }
 }
 
