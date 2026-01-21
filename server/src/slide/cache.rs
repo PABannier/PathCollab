@@ -65,26 +65,25 @@ impl SlideCache {
 
     /// Get or open a slide, caching the handle
     pub async fn get_or_open(&self, id: &str, path: &Path) -> Result<Arc<OpenSlide>, SlideError> {
-        // Check cache first and update access order (move to end)
-        {
-            let mut slides = self.slides.write().await;
-            if let Some(slide) = slides.shift_remove(id) {
-                // Re-insert at end to update LRU order (O(1) operation)
-                let slide_clone = Arc::clone(&slide);
-                slides.insert(id.to_string(), slide);
-                return Ok(slide_clone);
-            }
+        // Fast path: try read-first via get_cached() which uses probabilistic LRU
+        // This avoids write lock contention for the common case (cache hit)
+        if let Some(slide) = self.get_cached(id).await {
+            return Ok(slide);
         }
 
-        // Open the slide
-        debug!("Opening slide: {} at {:?}", id, path);
-        let slide = OpenSlide::new(path)
-            .map_err(|e| SlideError::OpenError(format!("Failed to open {:?}: {}", path, e)))?;
-        let slide = Arc::new(slide);
-
-        // Insert into cache
+        // Slow path: cache miss - need to open the slide
+        // Take write lock and double-check (another thread may have opened it)
         {
             let mut slides = self.slides.write().await;
+
+            if let Some(slide) = slides.get(id) {
+                return Ok(Arc::clone(slide));
+            }
+
+            debug!("Opening slide: {} at {:?}", id, path);
+            let slide = OpenSlide::new(path)
+                .map_err(|e| SlideError::OpenError(format!("Failed to open {:?}: {}", path, e)))?;
+            let slide = Arc::new(slide);
 
             // Evict LRU if needed (first item is oldest)
             if slides.len() >= self.max_size
@@ -96,9 +95,8 @@ impl SlideCache {
             }
 
             slides.insert(id.to_string(), Arc::clone(&slide));
+            return Ok(slide);
         }
-
-        Ok(slide)
     }
 
     /// Get cached metadata for a slide
