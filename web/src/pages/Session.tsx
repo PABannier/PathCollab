@@ -81,6 +81,7 @@ export function Session() {
     isFollowing,
     hasDiverged,
     presenterCellOverlay,
+    presenterTissueOverlay,
     createSession,
     updateCursor,
     updateViewport,
@@ -89,6 +90,7 @@ export function Session() {
     setIsFollowing,
     checkDivergence,
     updateCellOverlay,
+    updateTissueOverlay,
   } = useSession({
     sessionId,
     joinSecret,
@@ -232,18 +234,36 @@ export function Session() {
     [isPresenter, session, cellOverlaysEnabled, cellOverlayOpacity, updateCellOverlay]
   )
 
-  // Tissue overlay handlers (local state only - no sync for now)
-  const handleTissueOverlaysChange = useCallback((enabled: boolean) => {
-    setTissueOverlaysEnabled(enabled)
-  }, [])
+  // Tissue overlay handlers - broadcasts to followers when presenter changes settings
+  const handleTissueOverlaysChange = useCallback(
+    (enabled: boolean) => {
+      setTissueOverlaysEnabled(enabled)
+      if (isPresenter && session) {
+        updateTissueOverlay(enabled, tissueOverlayOpacity, Array.from(visibleTissueClasses))
+      }
+    },
+    [isPresenter, session, tissueOverlayOpacity, visibleTissueClasses, updateTissueOverlay]
+  )
 
-  const handleTissueOverlayOpacityChange = useCallback((opacity: number) => {
-    setTissueOverlayOpacity(opacity)
-  }, [])
+  const handleTissueOverlayOpacityChange = useCallback(
+    (opacity: number) => {
+      setTissueOverlayOpacity(opacity)
+      if (isPresenter && session) {
+        updateTissueOverlay(tissueOverlaysEnabled, opacity, Array.from(visibleTissueClasses))
+      }
+    },
+    [isPresenter, session, tissueOverlaysEnabled, visibleTissueClasses, updateTissueOverlay]
+  )
 
-  const handleVisibleTissueClassesChange = useCallback((classes: Set<number>) => {
-    setVisibleTissueClasses(classes)
-  }, [])
+  const handleVisibleTissueClassesChange = useCallback(
+    (types: Set<number>) => {
+      setVisibleTissueClasses(types)
+      if (isPresenter && session) {
+        updateTissueOverlay(tissueOverlaysEnabled, tissueOverlayOpacity, Array.from(types))
+      }
+    },
+    [isPresenter, session, tissueOverlaysEnabled, tissueOverlayOpacity, updateTissueOverlay]
+  )
 
   // Sync follower state when presenter cell overlay changes
   // This is intentional state sync: followers receive presenter's overlay state via WebSocket
@@ -256,6 +276,18 @@ export function Session() {
       /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [isPresenter, presenterCellOverlay])
+
+  // Sync follower state when presenter tissue overlay changes
+  // This is intentional state sync: followers receive presenter's overlay state via WebSocket
+  useEffect(() => {
+    if (!isPresenter && presenterTissueOverlay) {
+      /* eslint-disable react-hooks/set-state-in-effect -- syncing presenter state to follower */
+      setTissueOverlaysEnabled(presenterTissueOverlay.enabled)
+      setTissueOverlayOpacity(presenterTissueOverlay.opacity)
+      setVisibleTissueClasses(new Set(presenterTissueOverlay.visibleTissueTypes))
+      /* eslint-enable react-hooks/set-state-in-effect */
+    }
+  }, [isPresenter, presenterTissueOverlay])
 
   // Presence tracking
   const { startTracking, stopTracking, updateCursorPosition, convertToSlideCoords } = usePresence({

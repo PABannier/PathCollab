@@ -1,5 +1,6 @@
 use crate::protocol::{
-    CellOverlayState, Participant, ParticipantRole, SessionSnapshot, SlideInfo, Viewport,
+    CellOverlayState, Participant, ParticipantRole, SessionSnapshot, SlideInfo, TissueOverlayState,
+    Viewport,
 };
 use crate::session::state::{
     Session, SessionConfig, SessionId, SessionParticipant, SessionState, generate_participant_name,
@@ -119,6 +120,7 @@ impl SessionManager {
                 timestamp: now,
             },
             cell_overlay: None,
+            tissue_overlay: None,
         };
 
         info!(
@@ -318,6 +320,26 @@ impl SessionManager {
         Ok(session.rev)
     }
 
+    /// Update tissue overlay state (presenter only)
+    pub async fn update_tissue_overlay(
+        &self,
+        session_id: &str,
+        tissue_overlay: TissueOverlayState,
+    ) -> Result<u64, SessionError> {
+        let mut sessions = self.sessions.write().await;
+
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| SessionError::NotFound(session_id.to_string()))?;
+
+        session.tissue_overlay = Some(tissue_overlay);
+        session.rev += 1;
+
+        debug!("Session {} tissue overlay updated", session_id);
+
+        Ok(session.rev)
+    }
+
     /// Update participant cursor
     pub async fn update_cursor(
         &self,
@@ -444,6 +466,7 @@ impl Clone for Session {
             slide: self.slide.clone(),
             presenter_viewport: self.presenter_viewport.clone(),
             cell_overlay: self.cell_overlay.clone(),
+            tissue_overlay: self.tissue_overlay.clone(),
         }
     }
 }
@@ -477,6 +500,7 @@ fn create_session_snapshot(session: &Session) -> SessionSnapshot {
         followers,
         presenter_viewport: session.presenter_viewport.clone(),
         cell_overlay: session.cell_overlay.clone(),
+        tissue_overlay: session.tissue_overlay.clone(),
     }
 }
 

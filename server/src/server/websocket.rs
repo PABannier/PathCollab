@@ -1,5 +1,6 @@
 use crate::protocol::{
-    CellOverlayState, ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo, Viewport,
+    CellOverlayState, ClientMessage, CursorWithParticipant, ServerMessage, SlideInfo,
+    TissueOverlayState, Viewport,
 };
 use crate::session::manager::{SessionError, SessionManager};
 use crate::slide::SlideService;
@@ -1038,6 +1039,90 @@ async fn handle_client_message(
                             .await;
 
                         debug!("Session {} cell overlay updated by presenter", session_id);
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(ServerMessage::Ack {
+                                ack_seq: seq,
+                                status: crate::protocol::AckStatus::Rejected,
+                                reason: Some(e.to_string()),
+                            })
+                            .await;
+                    }
+                }
+            } else {
+                let _ = tx
+                    .send(ServerMessage::Ack {
+                        ack_seq: seq,
+                        status: crate::protocol::AckStatus::Rejected,
+                        reason: Some("Not in a session".to_string()),
+                    })
+                    .await;
+            }
+        }
+        ClientMessage::TissueOverlayUpdate {
+            enabled,
+            opacity,
+            visible_tissue_types,
+            seq,
+        } => {
+            // Get session ID and presenter status
+            let (session_id, is_presenter) = {
+                let connections = state.connections.read().await;
+                let conn = connections.get(&connection_id);
+                (
+                    conn.and_then(|c| c.session_id.clone()),
+                    conn.is_some_and(|c| c.is_presenter),
+                )
+            };
+
+            // Only presenter can broadcast tissue overlay updates
+            if !is_presenter {
+                let _ = tx
+                    .send(ServerMessage::Ack {
+                        ack_seq: seq,
+                        status: crate::protocol::AckStatus::Rejected,
+                        reason: Some("Only presenter can update tissue overlay".to_string()),
+                    })
+                    .await;
+                return;
+            }
+
+            if let Some(session_id) = session_id {
+                let tissue_overlay = TissueOverlayState {
+                    enabled,
+                    opacity,
+                    visible_tissue_types: visible_tissue_types.clone(),
+                };
+
+                // Update session state
+                match state
+                    .session_manager
+                    .update_tissue_overlay(&session_id, tissue_overlay)
+                    .await
+                {
+                    Ok(_) => {
+                        // Broadcast to all participants
+                        state
+                            .broadcast_to_session(
+                                &session_id,
+                                ServerMessage::PresenterTissueOverlay {
+                                    enabled,
+                                    opacity,
+                                    visible_tissue_types,
+                                },
+                            )
+                            .await;
+
+                        let _ = tx
+                            .send(ServerMessage::Ack {
+                                ack_seq: seq,
+                                status: crate::protocol::AckStatus::Ok,
+                                reason: None,
+                            })
+                            .await;
+
+                        debug!("Session {} tissue overlay updated by presenter", session_id);
                     }
                     Err(e) => {
                         let _ = tx
