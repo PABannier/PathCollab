@@ -118,13 +118,9 @@ interface PrioritizedTile {
   distance: number // Distance from viewport center
 }
 
-/** Batch sizes per priority level */
-const BATCH_SIZES: Record<TilePriorityType, number> = {
-  [TilePriority.COARSE_FALLBACK]: 4, // Load coarse tiles first in small batches
-  [TilePriority.URGENT]: 8,
-  [TilePriority.VISIBLE]: 12,
-  [TilePriority.PREFETCH]: 16,
-}
+// Maximum concurrent tile requests - high concurrency for fast loading
+// Modern browsers support 50+ concurrent requests on HTTP/2
+const MAX_CONCURRENT_REQUESTS = 50
 
 /** Calculate viewport bounds in tile grid coordinates */
 function calculateVisibleTileRange(
@@ -432,37 +428,33 @@ export function useTissueOverlay({
       pendingFetchesRef.current.add(tileKey(tile.level, tile.x, tile.y))
     }
 
-    // Fetch tiles in batches based on priority
-    let index = 0
-    while (index < prioritizedTiles.length) {
-      // Check if aborted
-      if (abortControllerRef.current?.signal.aborted) break
+    // Use a concurrent request pool - fire all requests immediately with concurrency limit
+    // This is MUCH faster than sequential batching because:
+    // 1. All requests start immediately (up to MAX_CONCURRENT_REQUESTS)
+    // 2. As each completes, the next one starts right away
+    // 3. No waiting for batches to complete
+    const queue = prioritizedTiles.map(({ tile }) => tile)
+    let activeRequests = 0
+    let queueIndex = 0
 
-      // Determine batch size based on current priority
-      const currentPriority = prioritizedTiles[index].priority
-      const batchSize = BATCH_SIZES[currentPriority]
+    const processNext = async (): Promise<void> => {
+      while (queueIndex < queue.length && activeRequests < MAX_CONCURRENT_REQUESTS) {
+        if (abortControllerRef.current?.signal.aborted) return
 
-      // Get batch of tiles with same or higher priority
-      const batch: TissueTileInfo[] = []
-      while (index < prioritizedTiles.length && batch.length < batchSize) {
-        batch.push(prioritizedTiles[index].tile)
-        index++
-      }
+        const tile = queue[queueIndex++]
+        const key = tileKey(tile.level, tile.x, tile.y)
 
-      // Fetch batch in parallel
-      await Promise.all(
-        batch.map(async (tile) => {
-          const key = tileKey(tile.level, tile.x, tile.y)
+        // Skip if already loaded
+        if (tilesRef.current.has(key)) {
+          pendingFetchesRef.current.delete(key)
+          continue
+        }
 
-          // Skip if already loaded (race condition check)
-          if (tilesRef.current.has(key)) {
-            pendingFetchesRef.current.delete(key)
-            return
-          }
+        activeRequests++
 
-          try {
-            const result = await fetchTissueTile(slideId, tile.level, tile.x, tile.y)
-
+        // Fire request immediately without awaiting
+        fetchTissueTile(slideId, tile.level, tile.x, tile.y)
+          .then((result) => {
             // Check if aborted before processing result
             if (abortControllerRef.current?.signal.aborted) return
 
@@ -494,17 +486,24 @@ export function useTissueOverlay({
               next.set(key, cachedTile)
               return next
             })
-          } catch (error) {
+          })
+          .catch((error) => {
             // Ignore abort errors
             if (error instanceof Error && error.name !== 'AbortError') {
               console.error(`Failed to fetch tissue tile ${key}:`, error)
             }
-          } finally {
+          })
+          .finally(() => {
             pendingFetchesRef.current.delete(key)
-          }
-        })
-      )
+            activeRequests--
+            // Immediately start next request when one completes
+            processNext()
+          })
+      }
     }
+
+    // Start initial batch of concurrent requests
+    processNext()
   }, [
     slideId,
     metadata,
@@ -517,7 +516,10 @@ export function useTissueOverlay({
     tileIndex,
   ])
 
-  // Fetch tiles with 150ms debounce on viewport changes
+  // Track if this is the initial load (no debounce needed)
+  const isInitialLoadRef = useRef(true)
+
+  // Fetch tiles - immediate on first load, debounced on viewport changes
   useEffect(() => {
     if (!enabled || !metadata) return
 
@@ -526,10 +528,17 @@ export function useTissueOverlay({
       clearTimeout(fetchTimeoutRef.current)
     }
 
-    // Debounce tile fetching to avoid excessive requests during pan/zoom
-    fetchTimeoutRef.current = setTimeout(() => {
+    // First load: fetch immediately for fast initial display
+    // Subsequent loads: small debounce to batch rapid viewport changes
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false
       fetchTiles()
-    }, 150)
+    } else {
+      // Short debounce (50ms) for viewport changes during pan/zoom
+      fetchTimeoutRef.current = setTimeout(() => {
+        fetchTiles()
+      }, 50)
+    }
 
     return () => {
       if (fetchTimeoutRef.current) {
@@ -552,6 +561,8 @@ export function useTissueOverlay({
     if (fetchTimeoutRef.current) {
       clearTimeout(fetchTimeoutRef.current)
     }
+    // Reset initial load flag for new slide
+    isInitialLoadRef.current = true
   }, [slideId])
 
   return {
