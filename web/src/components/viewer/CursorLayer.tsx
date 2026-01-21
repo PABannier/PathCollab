@@ -70,7 +70,7 @@ export const CursorLayer = memo(function CursorLayer({
   return (
     <svg
       className="pointer-events-none absolute inset-0"
-      style={{ width: viewerBounds.width, height: viewerBounds.height }}
+      style={{ width: viewerBounds.width, height: viewerBounds.height, zIndex: 20 }}
     >
       {screenCursors.map((cursor) => (
         <g

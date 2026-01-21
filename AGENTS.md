@@ -372,3 +372,63 @@ Key metrics:
 | Stale closures in effects | Use refs for values that change frequently |
 | Layout thrashing | Animate only `transform` and `opacity` |
 | Memory leaks | Clean up WS listeners and intervals in effect cleanup |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                   BROWSER                                        │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │  React App                                                                │   │
+│  │  ├─ OpenSeadragon (tile rendering, pan/zoom)                             │   │
+│  │  ├─ WebGL2 Canvas                                                         │   │
+│  │  │   ├─ TissueOverlay (raster tiles, class→color LUT, per-type toggle)   │   │
+│  │  │   └─ CellOverlay (vector polygons, LOD: point→box→polygon)            │   │
+│  │  ├─ SVG Layer (cursors, viewport indicators)                             │   │
+│  │  └─ WebSocket Client (presence, session state, overlay sync)             │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+              ┌────────────────────────┼────────────────────────┐
+              │ WebSocket              │ HTTP                    │ HTTP
+              │ (presence, state)      │ (slide tiles)           │ (overlay data)
+              ▼                        ▼                         ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              PATHCOLLAB SERVER (Rust)                            │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐  ┌──────────────┐  │
+│  │ WebSocket      │  │ Session        │  │ Slide          │  │ Overlay      │  │
+│  │ Gateway        │  │ Manager        │  │ Manager        │  │ Manager      │  │
+│  │                │  │                │  │                │  │              │  │
+│  │ • Connections  │  │ • Create/join  │  │ • OpenSlide    │  │ • PB parsing │  │
+│  │ • Routing      │  │ • Lifecycle    │  │ • DZI tiles    │  │ • R-tree idx │  │
+│  │ • Rate limits  │  │ • Expiry       │  │ • LRU cache    │  │ • Tissue raw │  │
+│  └────────────────┘  └────────────────┘  └────────────────┘  └──────────────┘  │
+│                                                                                  │
+│  ┌────────────────┐  ┌────────────────────────────────────────────────────────┐ │
+│  │ Presence       │  │ Caching Layer                                          │ │
+│  │ Engine         │  │  ├─ SlideCache (probabilistic LRU, read-first pattern) │ │
+│  │                │  │  ├─ TileCache (moka async LRU)                         │ │
+│  │ • 30Hz cursor  │  │  └─ OverlayCache (DashMap + Arc)                       │ │
+│  │ • 10Hz viewport│  └────────────────────────────────────────────────────────┘ │
+│  │ • Broadcast    │                                                             │
+│  └────────────────┘                                                             │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                │                              │
+                ▼                              ▼
+       ┌─────────────────┐           ┌─────────────────┐
+       │  /slides volume │           │  Overlay .pb    │
+       │  (WSI files)    │           │  (protobuf)     │
+       └─────────────────┘           └─────────────────┘
+```
+
+### Data Flow
+
+| Flow | Frequency | Payload | Transport |
+|------|-----------|---------|-----------|
+| Slide tiles | On viewport change | JPEG, ~50KB | HTTP GET (DZI) |
+| Cursor position | 30Hz | 32 bytes JSON | WebSocket |
+| Presenter viewport | 10Hz | 48 bytes JSON | WebSocket |
+| Tissue tiles | On viewport change | Raw bytes (class indices), ~50KB | HTTP GET (tiled) |
+| Cell polygons | On viewport change | JSON array, varies | HTTP GET (region query) |
+| Layer visibility | On change | ~100 bytes JSON | WebSocket |
+| Tissue overlay state | On change | ~80 bytes JSON | WebSocket |
