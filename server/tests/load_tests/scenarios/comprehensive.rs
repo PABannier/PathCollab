@@ -224,16 +224,11 @@ impl Default for ComprehensiveStressResults {
 
 /// Event types for comprehensive test
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum ComprehensiveEvent {
     WsCursorAck { latency: Duration },
     WsViewportAck { latency: Duration },
-    WsMessageReceived { msg_type: &'static str },
-    WsError,
     HttpTileRequest { latency: Duration, success: bool },
     HttpOverlayRequest { latency: Duration, success: bool },
-    SessionCreated,
-    SessionJoined,
 }
 
 /// Comprehensive stress test scenario
@@ -549,7 +544,6 @@ impl ComprehensiveStressScenario {
                             }
                             Err(_) => {
                                 ws_errors.fetch_add(1, Ordering::SeqCst);
-                                let _ = tx.send(ComprehensiveEvent::WsError).await;
                             }
                         }
                     }
@@ -564,7 +558,6 @@ impl ComprehensiveStressScenario {
                             }
                             Err(_) => {
                                 ws_errors.fetch_add(1, Ordering::SeqCst);
-                                let _ = tx.send(ComprehensiveEvent::WsError).await;
                             }
                         }
                     }
@@ -654,26 +647,16 @@ impl ComprehensiveStressScenario {
                         match client.recv_timeout(Duration::from_millis(10)).await {
                             Ok(Some(msg)) => {
                                 ws_recv.fetch_add(1, Ordering::SeqCst);
-                                match &msg {
-                                    ServerMessage::Ack { ack_seq, status, .. } => {
-                                        if status == "ok" {
-                                            if let Some((send_time, is_cursor)) = pending_ws.remove(ack_seq) {
-                                                let latency = send_time.elapsed();
-                                                if is_cursor {
-                                                    let _ = tx.send(ComprehensiveEvent::WsCursorAck { latency }).await;
-                                                } else {
-                                                    let _ = tx.send(ComprehensiveEvent::WsViewportAck { latency }).await;
-                                                }
+                                if let ServerMessage::Ack { ack_seq, status, .. } = &msg {
+                                    if status == "ok" {
+                                        if let Some((send_time, is_cursor)) = pending_ws.remove(ack_seq) {
+                                            let latency = send_time.elapsed();
+                                            if is_cursor {
+                                                let _ = tx.send(ComprehensiveEvent::WsCursorAck { latency }).await;
+                                            } else {
+                                                let _ = tx.send(ComprehensiveEvent::WsViewportAck { latency }).await;
                                             }
                                         }
-                                    }
-                                    _ => {
-                                        let msg_type = match &msg {
-                                            ServerMessage::PresenceDelta { .. } => "presence",
-                                            ServerMessage::PresenterViewport { .. } => "viewport",
-                                            _ => "other",
-                                        };
-                                        let _ = tx.send(ComprehensiveEvent::WsMessageReceived { msg_type }).await;
                                     }
                                 }
                             }

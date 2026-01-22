@@ -397,8 +397,6 @@ impl BenchmarkRunner {
 
         Ok(BenchmarkResult {
             report,
-            baseline,
-            comparisons,
             has_regression,
             all_passed,
         })
@@ -531,11 +529,8 @@ impl BenchmarkRunner {
 }
 
 /// Full benchmark result
-#[allow(dead_code)]
 pub struct BenchmarkResult {
     pub report: BenchmarkReport,
-    pub baseline: Option<Baseline>,
-    pub comparisons: Vec<Comparison>,
     pub has_regression: bool,
     pub all_passed: bool,
 }
