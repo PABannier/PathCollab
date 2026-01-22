@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 
-
 /// Configuration for benchmark runs
 #[derive(Debug, Clone)]
 pub struct BenchmarkRunConfig {
