@@ -1,18 +1,17 @@
 # PathCollab
 
-<div align="center">
-
-![PathCollab, a self-hosted collaborative digital pathology viewer](./assets/pathcollab.png)
-
 [![CI](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml/badge.svg)](https://github.com/pabannier/pathcollab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpabannier%2Fpathcollab-blue)](https://ghcr.io/pabannier/pathcollab)
 
-**A self-hostable collaborative whole-slide image viewer with real-time cursor presence and overlay rendering**
+A self-hostable collaborative whole-slide image viewer with real-time cursor presence and overlay rendering
 
-Demo at <b><a href="https://pathcollab.io">pathcollab.io</a></b>
-
-</div>
+<p align="center">
+<a href="https://pathcollab.io">
+<img src="./assets/pathcollab.png" alt="PathCollab, a self-hosted collaborative digital pathology viewer" width="800"><br>
+<strong>pathcollab.io</strong>
+</a>
+</p>
 
 ---
 
@@ -31,8 +30,6 @@ PathCollab is a **presenter-led collaborative viewer** where one host guides up 
 
 ## Quick Example
 
-![PathCollab Home](./assets/pathcollab-home.png)
-
 ```bash
 # 1. Start PathCollab with your slides directory
 docker run -p 8080:8080 \
@@ -45,7 +42,9 @@ open http://localhost:8080
 ``` 
 
 <div align="center">
-Open <b>http://localhost:8080</b> → Share link → Collaborate instantly
+  Open <b>http://localhost:8080</b> → Share link → Collaborate instantly
+  <br/><br/>
+  <video src="https://github.com/user-attachments/assets/f26aa108-6f21-497a-9a78-39a89338e857" controls></video>
 </div>
 
 ---
@@ -383,4 +382,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE) for details.
