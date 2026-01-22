@@ -12,12 +12,12 @@ on:
           - smoke
           - standard
           - stress
-  pull_request:
-    branches: [main]
-    paths:
-      - 'server/**'
-      - 'bench/**'
-      - '.github/workflows/perf.yml'
+  # pull_request:
+  #   branches: [main]
+  #   paths:
+  #     - 'server/**'
+  #     - 'bench/**'
+  #     - '.github/workflows/perf.yml'
 
 env:
   CARGO_TERM_COLOR: always
