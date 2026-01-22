@@ -106,7 +106,7 @@ impl TileCache {
             counter!("pathcollab_tile_cache_hits_total").increment(1);
 
             // Update hit rate gauge periodically (every 100 hits)
-            if hits % 100 == 0 {
+            if hits.is_multiple_of(100) {
                 self.update_hit_rate_gauge();
             }
         } else {

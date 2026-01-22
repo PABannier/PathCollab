@@ -121,7 +121,7 @@ impl SlideCache {
                 // Probabilistic LRU update: only update every N accesses
                 // This dramatically reduces write lock contention under load
                 let count = self.access_counter.fetch_add(1, Ordering::Relaxed);
-                if count % LRU_UPDATE_FREQUENCY == 0 {
+                if count.is_multiple_of(LRU_UPDATE_FREQUENCY) {
                     // Drop read lock before taking write lock
                     drop(slides);
                     // Update LRU order (best effort - may race but that's OK)
