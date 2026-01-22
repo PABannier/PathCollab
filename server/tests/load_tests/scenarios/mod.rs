@@ -1,14 +1,10 @@
 //! Load test scenarios
 //!
-//! The primary benchmark system uses `ComprehensiveStressScenario` with
-//! tiered configurations (Smoke, Standard, Stress).
-//!
-//! Other scenarios are kept for specialized testing:
-//! - `fanout`: WebSocket fan-out testing
-//! - `overlay`: Cell overlay stress testing
+//! Single comprehensive benchmark that tests all hot paths:
+//! - WebSocket cursor/viewport broadcasts
+//! - HTTP tile serving
+//! - HTTP overlay requests
 
 pub mod comprehensive;
-pub mod fanout;
-pub mod overlay;
 
 pub use comprehensive::{ComprehensiveStressConfig, ComprehensiveStressScenario};

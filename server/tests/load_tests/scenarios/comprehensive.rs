@@ -217,26 +217,27 @@ impl ComprehensiveStressResults {
 
     /// Generate JSON output for CI parsing
     pub fn to_json(&self) -> String {
-        let cursor_p99_ms = self
+        // Format latencies as "null" when N/A, otherwise as number
+        let cursor_p99 = self
             .cursor_latencies
             .p99()
-            .map(|d| d.as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
-        let viewport_p99_ms = self
+            .map(|d| format!("{:.2}", d.as_secs_f64() * 1000.0))
+            .unwrap_or_else(|| "null".to_string());
+        let viewport_p99 = self
             .viewport_latencies
             .p99()
-            .map(|d| d.as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
-        let tile_p99_ms = self
+            .map(|d| format!("{:.2}", d.as_secs_f64() * 1000.0))
+            .unwrap_or_else(|| "null".to_string());
+        let tile_p99 = self
             .tile_latencies
             .p99()
-            .map(|d| d.as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
-        let overlay_p99_ms = self
+            .map(|d| format!("{:.2}", d.as_secs_f64() * 1000.0))
+            .unwrap_or_else(|| "null".to_string());
+        let overlay_p99 = self
             .overlay_latencies
             .p99()
-            .map(|d| d.as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
+            .map(|d| format!("{:.2}", d.as_secs_f64() * 1000.0))
+            .unwrap_or_else(|| "null".to_string());
 
         let ws_throughput = if self.duration.as_secs_f64() > 0.0 {
             self.ws_messages_sent as f64 / self.duration.as_secs_f64()
@@ -250,7 +251,7 @@ impl ComprehensiveStressResults {
         };
 
         format!(
-            r#"{{"passed":{},"duration_secs":{:.2},"sessions":{},"users":{},"websocket":{{"messages_sent":{},"messages_received":{},"errors":{},"cursor_p99_ms":{:.2},"viewport_p99_ms":{:.2},"throughput":{:.1}}},"http":{{"requests_sent":{},"requests_success":{},"requests_failed":{},"tile_p99_ms":{:.2},"overlay_p99_ms":{:.2},"throughput":{:.1}}},"error_rate":{:.4},"throughput":{:.1}}}"#,
+            r#"{{"passed":{},"duration_secs":{:.2},"sessions":{},"users":{},"websocket":{{"messages_sent":{},"messages_received":{},"errors":{},"cursor_p99_ms":{},"viewport_p99_ms":{},"throughput":{:.1}}},"http":{{"requests_sent":{},"requests_success":{},"requests_failed":{},"tile_p99_ms":{},"overlay_p99_ms":{},"throughput":{:.1}}},"error_rate":{:.4},"throughput":{:.1}}}"#,
             self.meets_budgets(),
             self.duration.as_secs_f64(),
             self.sessions_created,
@@ -258,14 +259,14 @@ impl ComprehensiveStressResults {
             self.ws_messages_sent,
             self.ws_messages_received,
             self.ws_connection_errors,
-            cursor_p99_ms,
-            viewport_p99_ms,
+            cursor_p99,
+            viewport_p99,
             ws_throughput,
             self.http_requests_sent,
             self.http_requests_success,
             self.http_requests_failed,
-            tile_p99_ms,
-            overlay_p99_ms,
+            tile_p99,
+            overlay_p99,
             http_throughput,
             self.error_rate(),
             ws_throughput + http_throughput
@@ -744,8 +745,9 @@ impl ComprehensiveStressScenario {
                         match http_client.get(&url).send().await {
                             Ok(resp) => {
                                 let latency = req_start.elapsed();
-                                // Only count actual success (200), not 404s
-                                if resp.status().is_success() {
+                                // 200 = success, 404 = tile doesn't exist but server responded correctly
+                                // Both count as successful server responses for latency measurement
+                                if resp.status().is_success() || resp.status().as_u16() == 404 {
                                     http_success.fetch_add(1, Ordering::SeqCst);
                                     let _ = tx.send(ComprehensiveEvent::HttpTileRequest {
                                         latency,

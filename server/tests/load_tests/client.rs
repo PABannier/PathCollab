@@ -7,11 +7,9 @@
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 
 /// Client message types (mirror of server protocol)
@@ -89,8 +87,6 @@ pub enum ServerMessage {
 pub struct LoadTestClient {
     ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
     seq: AtomicU64,
-    /// Timestamps of sent messages for latency calculation
-    pending_acks: Arc<tokio::sync::RwLock<std::collections::HashMap<u64, Instant>>>,
     /// Session info after join/create
     pub session_id: Option<String>,
     pub join_secret: Option<String>,
@@ -104,7 +100,6 @@ impl LoadTestClient {
         Ok(Self {
             ws,
             seq: AtomicU64::new(1),
-            pending_acks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             session_id: None,
             join_secret: None,
             presenter_key: None,
@@ -116,7 +111,7 @@ impl LoadTestClient {
         self.seq.fetch_add(1, Ordering::SeqCst)
     }
 
-    /// Send a message and track for latency measurement
+    /// Send a message and return the sequence number
     pub async fn send(
         &mut self,
         msg: ClientMessage,
@@ -129,12 +124,6 @@ impl LoadTestClient {
             ClientMessage::ViewportUpdate { seq, .. } => *seq,
             ClientMessage::Ping { seq } => *seq,
         };
-
-        // Track send time for latency calculation
-        {
-            let mut pending = self.pending_acks.write().await;
-            pending.insert(seq, Instant::now());
-        }
 
         let json = serde_json::to_string(&msg)?;
         self.ws.send(Message::Text(json.into())).await?;
@@ -272,81 +261,6 @@ impl LoadTestClient {
         self.ws.close(None).await?;
         Ok(())
     }
-}
-
-/// Spawn a client that sends updates at specified rates
-pub async fn spawn_update_client(
-    mut client: LoadTestClient,
-    cursor_hz: u32,
-    viewport_hz: u32,
-    duration: Duration,
-    results_tx: mpsc::Sender<ClientEvent>,
-) {
-    let cursor_interval = if cursor_hz > 0 {
-        Duration::from_secs_f64(1.0 / cursor_hz as f64)
-    } else {
-        Duration::from_secs(3600) // Effectively disabled
-    };
-
-    let viewport_interval = if viewport_hz > 0 {
-        Duration::from_secs_f64(1.0 / viewport_hz as f64)
-    } else {
-        Duration::from_secs(3600)
-    };
-
-    let start = Instant::now();
-    let mut cursor_ticker = tokio::time::interval(cursor_interval);
-    let mut viewport_ticker = tokio::time::interval(viewport_interval);
-    let mut x = 0.5f64;
-    let mut y = 0.5f64;
-
-    loop {
-        if start.elapsed() >= duration {
-            break;
-        }
-
-        tokio::select! {
-            _ = cursor_ticker.tick() => {
-                // Simulate cursor movement
-                x = (x + 0.001).min(1.0);
-                y = (y + 0.001).min(1.0);
-                if x >= 1.0 { x = 0.0; }
-                if y >= 1.0 { y = 0.0; }
-
-                match client.send_cursor(x, y).await {
-                    Ok(_) => {
-                        let _ = results_tx.send(ClientEvent::MessageSent).await;
-                    }
-                    Err(_) => {
-                        let _ = results_tx.send(ClientEvent::Error).await;
-                    }
-                }
-            }
-            _ = viewport_ticker.tick() => {
-                match client.send_viewport(0.5, 0.5, 1.0).await {
-                    Ok(_) => {
-                        let _ = results_tx.send(ClientEvent::MessageSent).await;
-                    }
-                    Err(_) => {
-                        let _ = results_tx.send(ClientEvent::Error).await;
-                    }
-                }
-            }
-        }
-    }
-
-    let _ = client.close().await;
-}
-
-/// Events from client tasks
-#[derive(Debug)]
-pub enum ClientEvent {
-    MessageSent,
-    MessageReceived {
-        latency: Option<Duration>,
-        msg_type: &'static str,
-    },
-    Error,
 }
 
 /// Slide info returned from the API
