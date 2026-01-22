@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 
+
 /// Configuration for benchmark runs
 #[derive(Debug, Clone)]
 pub struct BenchmarkRunConfig {
@@ -438,6 +439,7 @@ impl BenchmarkRunner {
         ]
     }
 
+    #[allow(clippy::print_literal)]
     fn print_comparison(
         &self,
         report: &BenchmarkReport,
