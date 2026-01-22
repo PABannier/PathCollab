@@ -84,7 +84,7 @@ export function setupVerboseLogging(page: Page, testName: string): TestLogger {
 
   // Network responses
   page.on('response', (res) => {
-    const timing = res.timing()
+    const timing = res.request().timing()
     const duration = timing?.responseEnd ? Math.round(timing.responseEnd) : 0
     logger.log('Network', 'response', `${res.status()} ${res.url()} (${duration}ms)`)
   })
