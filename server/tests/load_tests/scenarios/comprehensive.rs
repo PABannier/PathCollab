@@ -21,6 +21,9 @@
 use super::super::BenchmarkTier;
 use super::super::LatencyStats;
 use super::super::client::{LoadTestClient, ServerMessage, fetch_first_slide};
+use rand::Rng;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use reqwest::Client;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -46,6 +49,8 @@ pub struct ComprehensiveStressConfig {
     pub tile_request_hz: u32,
     /// Overlay request rate (Hz) per client (tissue tiles + cell queries)
     pub overlay_request_hz: u32,
+    /// Seed for deterministic randomization
+    pub seed: u64,
 }
 
 impl Default for ComprehensiveStressConfig {
@@ -59,6 +64,7 @@ impl Default for ComprehensiveStressConfig {
             viewport_hz: 10,
             tile_request_hz: 5,
             overlay_request_hz: 2,
+            seed: 12345,
         }
     }
 }
@@ -280,6 +286,9 @@ impl ComprehensiveStressScenario {
             self.config.duration
         );
 
+        // User counter for unique per-user seeding
+        let mut user_counter: u32 = 0;
+
         // Create sessions with presenter + follower pairs
         for session_idx in 0..self.config.num_sessions {
             if session_idx % 50 == 0 {
@@ -320,6 +329,10 @@ impl ComprehensiveStressScenario {
                 slide.id.clone(),
                 slide.width,
                 slide.height,
+                slide.num_levels,
+                slide.tile_size,
+                user_counter,
+                self.config.seed,
                 tx.clone(),
                 ws_sent.clone(),
                 ws_recv.clone(),
@@ -328,6 +341,7 @@ impl ComprehensiveStressScenario {
                 http_success.clone(),
                 http_failed.clone(),
             );
+            user_counter += 1;
             join_handles.push(presenter_handle);
 
             // Create and spawn follower
@@ -355,6 +369,10 @@ impl ComprehensiveStressScenario {
                 slide.id.clone(),
                 slide.width,
                 slide.height,
+                slide.num_levels,
+                slide.tile_size,
+                user_counter,
+                self.config.seed,
                 tx.clone(),
                 ws_sent.clone(),
                 ws_recv.clone(),
@@ -363,6 +381,7 @@ impl ComprehensiveStressScenario {
                 http_success.clone(),
                 http_failed.clone(),
             );
+            user_counter += 1;
             join_handles.push(follower_handle);
 
             // Small stagger to avoid thundering herd
@@ -445,6 +464,10 @@ impl ComprehensiveStressScenario {
         slide_id: String,
         slide_width: u64,
         slide_height: u64,
+        num_levels: u32,
+        tile_size: u32,
+        user_id: u32,
+        seed: u64,
         tx: mpsc::Sender<ComprehensiveEvent>,
         ws_sent: Arc<AtomicU64>,
         ws_recv: Arc<AtomicU64>,
@@ -468,20 +491,34 @@ impl ComprehensiveStressScenario {
         let overlay_hz = self.config.overlay_request_hz;
         let http_url = self.config.http_url.clone();
 
-        // Calculate valid tile range based on slide dimensions
-        // DZI convention: max_level = ceil(log2(max(width, height)))
-        // At level N, dimensions are width/2^(max_level-N) x height/2^(max_level-N)
-        let tile_size = 256u64;
-        let max_level = (slide_width.max(slide_height) as f64).log2().ceil() as u32;
-        // Use a level 3-4 below max to get ~50-200 tiles (good for testing)
-        let test_level = max_level.saturating_sub(3);
-        let level_scale = 1u64 << (max_level - test_level);
-        let level_width = slide_width / level_scale.max(1);
-        let level_height = slide_height / level_scale.max(1);
-        let max_tile_x = level_width.div_ceil(tile_size).max(1) as u32;
-        let max_tile_y = level_height.div_ceil(tile_size).max(1) as u32;
+        // Use server-provided num_levels (DZI max_level = num_levels - 1)
+        let dzi_max_level = num_levels.saturating_sub(1);
+
+        // Build valid test levels (avoid tiny levels 0-7, avoid full-res top 2 levels)
+        let min_test_level = 8.min(dzi_max_level);
+        let max_test_level = dzi_max_level.saturating_sub(2);
+        let test_levels: Vec<u32> = (min_test_level..=max_test_level).collect();
+
+        // Pre-calculate tile bounds for each level
+        let level_tile_counts: Vec<(u32, u32, u32)> = test_levels
+            .iter()
+            .map(|&level| {
+                let levels_from_max = dzi_max_level - level;
+                let scale = 1u64 << levels_from_max;
+                let level_w = (slide_width as f64 / scale as f64).ceil() as u64;
+                let level_h = (slide_height as f64 / scale as f64).ceil() as u64;
+                let max_x = level_w.div_ceil(tile_size as u64).max(1) as u32;
+                let max_y = level_h.div_ceil(tile_size as u64).max(1) as u32;
+                (level, max_x, max_y)
+            })
+            .collect();
+
+        // Create seeded RNG unique to this user
+        let user_seed = seed.wrapping_add(user_id as u64);
 
         tokio::spawn(async move {
+            // Initialize RNG inside the async block
+            let mut rng = ChaCha8Rng::seed_from_u64(user_seed);
             let cursor_interval = if cursor_hz > 0 {
                 Duration::from_secs_f64(1.0 / cursor_hz as f64)
             } else {
@@ -515,8 +552,6 @@ impl ComprehensiveStressScenario {
 
             let mut x = 0.5f64;
             let mut y = 0.5f64;
-            let mut tile_x = 0u32;
-            let mut tile_y = 0u32;
 
             // Track pending operations for latency measurement
             // Key: seq number, Value: (send_time, is_cursor)
@@ -562,82 +597,99 @@ impl ComprehensiveStressScenario {
                         }
                     }
 
-                    // Both users request tiles - use valid coordinates
+                    // Both users request tiles - use random multi-level selection
                     _ = tile_ticker.tick() => {
-                        http_sent.fetch_add(1, Ordering::SeqCst);
-                        let url = format!(
-                            "{}/api/slide/{}/tile/{}/{}/{}",
-                            http_url, slide_id, test_level, tile_x % max_tile_x, tile_y % max_tile_y
-                        );
+                        if !level_tile_counts.is_empty() {
+                            http_sent.fetch_add(1, Ordering::SeqCst);
 
-                        let req_start = Instant::now();
-                        match http_client.get(&url).send().await {
-                            Ok(resp) => {
-                                let latency = req_start.elapsed();
-                                // 200 = success, 404 = tile doesn't exist but server responded correctly
-                                // Both count as successful server responses for latency measurement
-                                if resp.status().is_success() || resp.status().as_u16() == 404 {
-                                    http_success.fetch_add(1, Ordering::SeqCst);
-                                    let _ = tx.send(ComprehensiveEvent::HttpTileRequest {
-                                        latency,
-                                        success: true,
-                                    }).await;
-                                } else {
+                            // Pick random level and coordinates
+                            let idx = rng.random_range(0..level_tile_counts.len());
+                            let (level, max_x, max_y) = level_tile_counts[idx];
+                            let tile_x = rng.random_range(0..max_x);
+                            let tile_y = rng.random_range(0..max_y);
+
+                            let url = format!(
+                                "{}/api/slide/{}/tile/{}/{}/{}",
+                                http_url, slide_id, level, tile_x, tile_y
+                            );
+
+                            let req_start = Instant::now();
+                            match http_client.get(&url).send().await {
+                                Ok(resp) => {
+                                    let latency = req_start.elapsed();
+                                    // 200 = success, 404 = tile doesn't exist but server responded correctly
+                                    // Both count as successful server responses for latency measurement
+                                    if resp.status().is_success() || resp.status().as_u16() == 404 {
+                                        http_success.fetch_add(1, Ordering::SeqCst);
+                                        let _ = tx.send(ComprehensiveEvent::HttpTileRequest {
+                                            latency,
+                                            success: true,
+                                        }).await;
+                                    } else {
+                                        http_failed.fetch_add(1, Ordering::SeqCst);
+                                        let _ = tx.send(ComprehensiveEvent::HttpTileRequest {
+                                            latency,
+                                            success: false,
+                                        }).await;
+                                    }
+                                }
+                                Err(_) => {
                                     http_failed.fetch_add(1, Ordering::SeqCst);
-                                    let _ = tx.send(ComprehensiveEvent::HttpTileRequest {
-                                        latency,
-                                        success: false,
-                                    }).await;
                                 }
                             }
-                            Err(_) => {
-                                http_failed.fetch_add(1, Ordering::SeqCst);
-                            }
-                        }
-
-                        tile_x = tile_x.wrapping_add(1);
-                        if tile_x.is_multiple_of(max_tile_x) {
-                            tile_y = tile_y.wrapping_add(1);
                         }
                     }
 
                     // Both users request overlays
                     _ = overlay_ticker.tick() => {
-                        http_sent.fetch_add(1, Ordering::SeqCst);
+                        if !level_tile_counts.is_empty() {
+                            http_sent.fetch_add(1, Ordering::SeqCst);
 
-                        // Alternate between tissue tiles and cell queries
-                        let is_tissue = tile_x.is_multiple_of(2);
-                        let url = if is_tissue {
-                            format!(
-                                "{}/api/slide/{}/overlay/tissue/{}/{}/{}",
-                                http_url, slide_id, test_level.saturating_sub(2), tile_x % max_tile_x, tile_y % max_tile_y
-                            )
-                        } else {
-                            format!(
-                                "{}/api/slide/{}/overlay/cells?x={}&y={}&width=5000&height=5000",
-                                http_url, slide_id,
-                                ((tile_x % max_tile_x) as f64) * 256.0 * (level_scale as f64),
-                                ((tile_y % max_tile_y) as f64) * 256.0 * (level_scale as f64)
-                            )
-                        };
+                            // Pick random level and coordinates for overlay
+                            let idx = rng.random_range(0..level_tile_counts.len());
+                            let (level, max_x, max_y) = level_tile_counts[idx];
+                            let tile_x = rng.random_range(0..max_x);
+                            let tile_y = rng.random_range(0..max_y);
 
-                        let req_start = Instant::now();
-                        match http_client.get(&url).send().await {
-                            Ok(resp) => {
-                                let latency = req_start.elapsed();
-                                // Overlays may legitimately 404 if no overlay data exists
-                                if resp.status().is_success() || resp.status().as_u16() == 404 {
-                                    http_success.fetch_add(1, Ordering::SeqCst);
-                                    let _ = tx.send(ComprehensiveEvent::HttpOverlayRequest {
-                                        latency,
-                                        success: true,
-                                    }).await;
-                                } else {
+                            // Alternate between tissue tiles and cell queries
+                            let is_tissue = rng.random_bool(0.5);
+                            let url = if is_tissue {
+                                // Use a lower zoom level for tissue overlays
+                                let tissue_level = level.saturating_sub(2).max(8);
+                                format!(
+                                    "{}/api/slide/{}/overlay/tissue/{}/{}/{}",
+                                    http_url, slide_id, tissue_level, tile_x, tile_y
+                                )
+                            } else {
+                                // Calculate pixel coordinates for cell query
+                                let levels_from_max = dzi_max_level - level;
+                                let scale = 1u64 << levels_from_max;
+                                format!(
+                                    "{}/api/slide/{}/overlay/cells?x={}&y={}&width=5000&height=5000",
+                                    http_url, slide_id,
+                                    (tile_x as f64) * (tile_size as f64) * (scale as f64),
+                                    (tile_y as f64) * (tile_size as f64) * (scale as f64)
+                                )
+                            };
+
+                            let req_start = Instant::now();
+                            match http_client.get(&url).send().await {
+                                Ok(resp) => {
+                                    let latency = req_start.elapsed();
+                                    // Overlays may legitimately 404 if no overlay data exists
+                                    if resp.status().is_success() || resp.status().as_u16() == 404 {
+                                        http_success.fetch_add(1, Ordering::SeqCst);
+                                        let _ = tx.send(ComprehensiveEvent::HttpOverlayRequest {
+                                            latency,
+                                            success: true,
+                                        }).await;
+                                    } else {
+                                        http_failed.fetch_add(1, Ordering::SeqCst);
+                                    }
+                                }
+                                Err(_) => {
                                     http_failed.fetch_add(1, Ordering::SeqCst);
                                 }
-                            }
-                            Err(_) => {
-                                http_failed.fetch_add(1, Ordering::SeqCst);
                             }
                         }
                     }

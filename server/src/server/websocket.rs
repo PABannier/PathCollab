@@ -11,13 +11,13 @@ use axum::{
     },
     response::Response,
 };
+use dashmap::DashMap;
 use metrics::{counter, histogram};
 use std::{
-    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -36,10 +36,12 @@ pub struct Connection {
 }
 
 /// Global connection registry
-pub type ConnectionRegistry = Arc<RwLock<HashMap<Uuid, Connection>>>;
+// pub type ConnectionRegistry = Arc<RwLock<HashMap<Uuid, Connection>>>;
+pub type ConnectionRegistry = Arc<DashMap<Uuid, Connection>>;
 
 /// Session broadcast channels: session_id -> broadcast sender
-pub type SessionBroadcasters = Arc<RwLock<HashMap<String, broadcast::Sender<ServerMessage>>>>;
+// pub type SessionBroadcasters = Arc<RwLock<HashMap<String, broadcast::Sender<ServerMessage>>>>;
+pub type SessionBroadcasters = Arc<DashMap<String, broadcast::Sender<ServerMessage>>>;
 
 /// Shared application state
 #[derive(Clone)]
@@ -55,9 +57,11 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            connections: Arc::new(RwLock::new(HashMap::new())),
+            // connections: Arc::new(RwLock::new(HashMap::new())),
+            connections: Arc::new(DashMap::new()),
             session_manager: Arc::new(SessionManager::new()),
-            session_broadcasters: Arc::new(RwLock::new(HashMap::new())),
+            // session_broadcasters: Arc::new(RwLock::new(HashMap::new())),
+            session_broadcasters: Arc::new(DashMap::new()),
             slide_service: None,
             public_base_url: None,
         }
@@ -83,13 +87,13 @@ impl AppState {
         &self,
         session_id: &str,
     ) -> broadcast::Sender<ServerMessage> {
-        let mut broadcasters = self.session_broadcasters.write().await;
-        if let Some(sender) = broadcasters.get(session_id) {
+        if let Some(sender) = self.session_broadcasters.get(session_id) {
             sender.clone()
         } else {
             // Create new broadcast channel with capacity for 256 messages
             let (tx, _) = broadcast::channel(256);
-            broadcasters.insert(session_id.to_string(), tx.clone());
+            self.session_broadcasters
+                .insert(session_id.to_string(), tx.clone());
             tx
         }
     }
@@ -97,8 +101,7 @@ impl AppState {
     /// Broadcast a message to all participants in a session
     pub async fn broadcast_to_session(&self, session_id: &str, msg: ServerMessage) {
         let start = Instant::now();
-        let broadcasters = self.session_broadcasters.read().await;
-        if let Some(sender) = broadcasters.get(session_id) {
+        if let Some(sender) = self.session_broadcasters.get(session_id) {
             let msg_type = msg.message_type();
             let receiver_count = sender.receiver_count();
 
@@ -120,7 +123,7 @@ impl AppState {
     /// Get server statistics for monitoring (async version)
     pub async fn get_stats(&self) -> (usize, usize) {
         let sessions = self.session_manager.session_count_async().await;
-        let connections = self.connections.read().await.len();
+        let connections = self.connections.len();
         (sessions, connections)
     }
 }
@@ -163,8 +166,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // Register connection
     {
-        let mut connections = state.connections.write().await;
-        connections.insert(
+        state.connections.insert(
             connection_id,
             Connection {
                 id: connection_id,
@@ -212,8 +214,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
             // Check if connection is still alive
             let should_close = {
-                let connections = ping_state.connections.read().await;
-                if let Some(conn) = connections.get(&ping_connection_id) {
+                if let Some(conn) = ping_state.connections.get(&ping_connection_id) {
                     conn.last_ping.elapsed() > config.ping_timeout + config.ping_interval
                 } else {
                     true
@@ -244,8 +245,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         loop {
             // Check if session_id changed
             let session_id = {
-                let connections = broadcast_state.connections.read().await;
-                connections
+                broadcast_state
+                    .connections
                     .get(&broadcast_connection_id)
                     .and_then(|c| c.session_id.clone())
             };
@@ -303,8 +304,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     Message::Text(text) => {
                         // Update last ping time
                         {
-                            let mut connections = state.connections.write().await;
-                            if let Some(conn) = connections.get_mut(&connection_id) {
+                            if let Some(mut conn) = state.connections.get_mut(&connection_id) {
                                 conn.last_ping = Instant::now();
                             }
                         }
@@ -336,8 +336,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     }
                     Message::Pong(_) => {
                         // Update last ping time
-                        let mut connections = state.connections.write().await;
-                        if let Some(conn) = connections.get_mut(&connection_id) {
+                        if let Some(mut conn) = state.connections.get_mut(&connection_id) {
                             conn.last_ping = Instant::now();
                         }
                     }
@@ -356,10 +355,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // Cleanup: handle participant removal from session
     let (session_id, participant_id) = {
-        let connections = state.connections.read().await;
-        let conn = connections.get(&connection_id);
+        let conn = state.connections.get(&connection_id);
         (
-            conn.and_then(|c| c.session_id.clone()),
+            conn.as_ref().and_then(|c| c.session_id.clone()),
             conn.and_then(|c| c.participant_id),
         )
     };
@@ -399,8 +397,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     // Remove from registry
     {
-        let mut connections = state.connections.write().await;
-        connections.remove(&connection_id);
+        state.connections.remove(&connection_id);
     }
 
     info!("WebSocket connection closed: {}", connection_id);
@@ -526,8 +523,7 @@ async fn handle_client_message(
 
                     // Update connection with session info and cached participant data
                     {
-                        let mut connections = state.connections.write().await;
-                        if let Some(conn) = connections.get_mut(&connection_id) {
+                        if let Some(mut conn) = state.connections.get_mut(&connection_id) {
                             conn.session_id = Some(session_id.clone());
                             conn.participant_id = Some(presenter_id);
                             conn.is_presenter = true;
@@ -613,8 +609,7 @@ async fn handle_client_message(
 
                     // Update connection with session info and cached participant data
                     {
-                        let mut connections = state.connections.write().await;
-                        if let Some(conn) = connections.get_mut(&connection_id) {
+                        if let Some(mut conn) = state.connections.get_mut(&connection_id) {
                             conn.session_id = Some(session_id.clone());
                             conn.participant_id = Some(participant_id);
                             conn.is_presenter = false;
@@ -694,13 +689,12 @@ async fn handle_client_message(
         ClientMessage::CursorUpdate { x, y, seq: _ } => {
             // Get session and participant info from cached connection data
             let (session_id, participant_id, name, color, is_presenter) = {
-                let connections = state.connections.read().await;
-                let conn = connections.get(&connection_id);
+                let conn = state.connections.get(&connection_id);
                 (
-                    conn.and_then(|c| c.session_id.clone()),
-                    conn.and_then(|c| c.participant_id),
-                    conn.and_then(|c| c.name.clone()),
-                    conn.and_then(|c| c.color.clone()),
+                    conn.as_ref().and_then(|c| c.session_id.clone()),
+                    conn.as_ref().and_then(|c| c.participant_id),
+                    conn.as_ref().and_then(|c| c.name.clone()),
+                    conn.as_ref().and_then(|c| c.color.clone()),
                     conn.is_some_and(|c| c.is_presenter),
                 )
             };
@@ -748,10 +742,9 @@ async fn handle_client_message(
         } => {
             // Get session and presenter status
             let (session_id, is_presenter) = {
-                let connections = state.connections.read().await;
-                let conn = connections.get(&connection_id);
+                let conn = state.connections.get(&connection_id);
                 (
-                    conn.and_then(|c| c.session_id.clone()),
+                    conn.as_ref().and_then(|c| c.session_id.clone()),
                     conn.is_some_and(|c| c.is_presenter),
                 )
             };
@@ -787,8 +780,8 @@ async fn handle_client_message(
         ClientMessage::PresenterAuth { presenter_key, seq } => {
             // Get session ID
             let session_id = {
-                let connections = state.connections.read().await;
-                connections
+                state
+                    .connections
                     .get(&connection_id)
                     .and_then(|c| c.session_id.clone())
             };
@@ -803,8 +796,7 @@ async fn handle_client_message(
                         Ok(()) => {
                             // Mark connection as presenter
                             {
-                                let mut connections = state.connections.write().await;
-                                if let Some(conn) = connections.get_mut(&connection_id) {
+                                if let Some(mut conn) = state.connections.get_mut(&connection_id) {
                                     conn.is_presenter = true;
                                 }
                             }
@@ -842,8 +834,8 @@ async fn handle_client_message(
         ClientMessage::SnapToPresenter { seq } => {
             // Get presenter viewport and send it back
             let session_id = {
-                let connections = state.connections.read().await;
-                connections
+                state
+                    .connections
                     .get(&connection_id)
                     .and_then(|c| c.session_id.clone())
             };
@@ -870,10 +862,9 @@ async fn handle_client_message(
         ClientMessage::ChangeSlide { slide_id, seq } => {
             // Get session ID and presenter status
             let (session_id, is_presenter) = {
-                let connections = state.connections.read().await;
-                let conn = connections.get(&connection_id);
+                let conn = state.connections.get(&connection_id);
                 (
-                    conn.and_then(|c| c.session_id.clone()),
+                    conn.as_ref().and_then(|c| c.session_id.clone()),
                     conn.is_some_and(|c| c.is_presenter),
                 )
             };
@@ -984,10 +975,9 @@ async fn handle_client_message(
         } => {
             // Get session ID and presenter status
             let (session_id, is_presenter) = {
-                let connections = state.connections.read().await;
-                let conn = connections.get(&connection_id);
+                let conn = state.connections.get(&connection_id);
                 (
-                    conn.and_then(|c| c.session_id.clone()),
+                    conn.as_ref().and_then(|c| c.session_id.clone()),
                     conn.is_some_and(|c| c.is_presenter),
                 )
             };
@@ -1068,10 +1058,9 @@ async fn handle_client_message(
         } => {
             // Get session ID and presenter status
             let (session_id, is_presenter) = {
-                let connections = state.connections.read().await;
-                let conn = connections.get(&connection_id);
+                let conn = state.connections.get(&connection_id);
                 (
-                    conn.and_then(|c| c.session_id.clone()),
+                    conn.as_ref().and_then(|c| c.session_id.clone()),
                     conn.is_some_and(|c| c.is_presenter),
                 )
             };
