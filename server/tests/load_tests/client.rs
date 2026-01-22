@@ -270,27 +270,47 @@ pub struct SlideInfo {
     pub name: String,
     pub width: u64,
     pub height: u64,
+    pub num_levels: u32,
+    pub tile_size: u32,
+}
+
+/// Basic slide info returned from /api/slides list endpoint
+#[derive(Debug, Clone, Deserialize)]
+struct SlideListItem {
+    id: String,
 }
 
 /// Fetch the first available slide from the server
 ///
 /// This allows load tests to work with real slides instead of hardcoded test slides.
+/// Fetches both the slide list and full metadata to get num_levels and tile_size.
 pub async fn fetch_first_slide(
     http_base_url: &str,
 ) -> Result<SlideInfo, Box<dyn std::error::Error + Send + Sync>> {
-    let url = format!("{}/api/slides", http_base_url);
-
     let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await?;
+
+    // Step 1: Get the list of slides
+    let list_url = format!("{}/api/slides", http_base_url);
+    let resp = client.get(&list_url).send().await?;
 
     if !resp.status().is_success() {
         return Err(format!("Failed to fetch slides: HTTP {}", resp.status()).into());
     }
 
-    let slides: Vec<SlideInfo> = resp.json().await?;
-
-    slides
+    let slides: Vec<SlideListItem> = resp.json().await?;
+    let first_slide = slides
         .into_iter()
         .next()
-        .ok_or_else(|| "No slides available on server. Make sure slides are configured.".into())
+        .ok_or("No slides available on server. Make sure slides are configured.")?;
+
+    // Step 2: Get full metadata for the first slide (includes num_levels, tile_size)
+    let detail_url = format!("{}/api/slide/{}", http_base_url, first_slide.id);
+    let resp = client.get(&detail_url).send().await?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Failed to fetch slide metadata: HTTP {}", resp.status()).into());
+    }
+
+    let slide_info: SlideInfo = resp.json().await?;
+    Ok(slide_info)
 }

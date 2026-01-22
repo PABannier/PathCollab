@@ -325,7 +325,7 @@ The benchmark system runs 3 iterations with warm-up and compares against stored 
 
 ```bash
 # Start the server first
-SLIDES_DIR=~/Documents/tcga_slides cargo run --release &
+SLIDES_DIR=~/Documents/tcga_slides RUST_LOG=pathcollab=info,tower_http=info cargo run --release &
 
 # Quick smoke test (~30s) - runs on every PR
 cd server && cargo test --test perf_tests bench_smoke --release -- --ignored --nocapture

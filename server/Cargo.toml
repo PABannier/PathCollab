@@ -61,3 +61,5 @@ prost-build = "0.13"
 tokio-tungstenite = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 chrono = { version = "0.4", features = ["serde"] }
+rand = "0.9"
+rand_chacha = "0.9"
