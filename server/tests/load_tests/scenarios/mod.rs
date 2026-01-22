@@ -1,9 +1,10 @@
 //! Load test scenarios
+//!
+//! Single comprehensive benchmark that tests all hot paths:
+//! - WebSocket cursor/viewport broadcasts
+//! - HTTP tile serving
+//! - HTTP overlay requests
 
 pub mod comprehensive;
-pub mod fanout;
-pub mod overlay;
 
 pub use comprehensive::{ComprehensiveStressConfig, ComprehensiveStressScenario};
-pub use fanout::FanOutScenario;
-pub use overlay::{OverlayStressConfig, OverlayStressScenario};

@@ -316,25 +316,31 @@ cd web && bun test
 cargo test
 
 # 4. Quick perf check (if touching hot paths)
-./bench/load_tests/scenarios/tile_stress.sh --quick
+cd server && cargo test --test perf_tests bench_smoke --release -- --ignored --nocapture
 ```
 
 ### Performance Testing
 
+The benchmark system runs 3 iterations with warm-up and compares against stored baselines.
+
 ```bash
-# Quick performance check
-SLIDES_DIR=/data/wsi_slides DEMO_ENABLED=true cargo run --release
-./bench/load_tests/scenarios/tile_stress.sh --quick
-python3 ./bench/scripts/compare_baseline.py \
-  --current bench/load_tests/results/tile_current.json \
-  --baseline bench/baselines/tile_baseline.json
+# Start the server first
+SLIDES_DIR=~/Documents/tcga_slides cargo run --release &
 
-# Full benchmark suite (before major changes)
-./bench/scripts/run_all.sh --compare-baseline
+# Quick smoke test (~30s) - runs on every PR
+cd server && cargo test --test perf_tests bench_smoke --release -- --ignored --nocapture
 
-# Save new baseline after confirmed improvements
-./bench/scripts/run_all.sh --save-baseline
+# Standard test (~2min) - PR merge gate
+cd server && cargo test --test perf_tests bench_standard --release -- --ignored --nocapture
+
+# Full stress test (~4min) - before releases
+cd server && cargo test --test perf_tests bench_stress --release -- --ignored --nocapture
+
+# Save current results as baseline
+SAVE_BASELINE=1 cargo test --test perf_tests bench_smoke --release -- --ignored --nocapture
 ```
+
+Baselines are stored in `.benchmark-baseline.json`. The system detects regressions >15% automatically.
 
 ### Live Metrics
 
