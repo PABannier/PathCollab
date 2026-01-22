@@ -1,15 +1,24 @@
 //! Comprehensive stress test scenario
 //!
-//! Simulates 1000 concurrent users (500 sessions × 2 users each) hitting all server routes:
+//! Simulates concurrent users hitting all server routes:
 //! - WebSocket sessions with cursor/viewport updates
 //! - HTTP tile requests
 //! - HTTP overlay requests (cell and tissue)
 //! - Metadata endpoints
 //!
 //! This tests the server's ability to handle realistic production-like load.
+//!
+//! ## Benchmark Tiers
+//!
+//! | Tier     | Sessions | Users | Duration |
+//! |----------|----------|-------|----------|
+//! | Smoke    | 5        | 10    | 10s      |
+//! | Standard | 25       | 50    | 30s      |
+//! | Stress   | 100      | 200   | 60s      |
 
 #![allow(clippy::collapsible_if)]
 
+use super::super::BenchmarkTier;
 use super::super::LatencyStats;
 use super::super::client::{LoadTestClient, ServerMessage, fetch_first_slide};
 use reqwest::Client;
@@ -54,6 +63,41 @@ impl Default for ComprehensiveStressConfig {
     }
 }
 
+impl ComprehensiveStressConfig {
+    /// Create configuration for a specific benchmark tier
+    pub fn for_tier(tier: BenchmarkTier) -> Self {
+        match tier {
+            BenchmarkTier::Smoke => Self {
+                num_sessions: 5, // 10 users
+                duration: Duration::from_secs(10),
+                cursor_hz: 10,
+                viewport_hz: 5,
+                tile_request_hz: 2,
+                overlay_request_hz: 1,
+                ..Default::default()
+            },
+            BenchmarkTier::Standard => Self {
+                num_sessions: 25, // 50 users
+                duration: Duration::from_secs(30),
+                cursor_hz: 30,
+                viewport_hz: 10,
+                tile_request_hz: 5,
+                overlay_request_hz: 2,
+                ..Default::default()
+            },
+            BenchmarkTier::Stress => Self {
+                num_sessions: 100, // 200 users
+                duration: Duration::from_secs(60),
+                cursor_hz: 30,
+                viewport_hz: 10,
+                tile_request_hz: 5,
+                overlay_request_hz: 2,
+                ..Default::default()
+            },
+        }
+    }
+}
+
 /// Extended results for comprehensive stress test
 #[derive(Debug)]
 pub struct ComprehensiveStressResults {
@@ -81,6 +125,22 @@ pub struct ComprehensiveStressResults {
     pub duration: Duration,
 }
 
+/// Performance budgets for benchmarks
+pub mod budgets {
+    use std::time::Duration;
+
+    /// Maximum acceptable P99 cursor broadcast latency
+    pub const CURSOR_P99_MAX: Duration = Duration::from_millis(100);
+    /// Maximum acceptable P99 viewport broadcast latency
+    pub const VIEWPORT_P99_MAX: Duration = Duration::from_millis(150);
+    /// Maximum acceptable P99 tile serving latency
+    pub const TILE_P99_MAX: Duration = Duration::from_millis(500);
+    /// Maximum acceptable P99 overlay latency
+    pub const OVERLAY_P99_MAX: Duration = Duration::from_millis(1000);
+    /// Maximum acceptable error rate
+    pub const ERROR_RATE_MAX: f64 = 0.01; // 1%
+}
+
 impl ComprehensiveStressResults {
     pub fn new() -> Self {
         Self {
@@ -100,47 +160,205 @@ impl ComprehensiveStressResults {
         }
     }
 
+    /// Calculate error rate as a fraction (0.0 to 1.0)
+    pub fn error_rate(&self) -> f64 {
+        let total_requests = self.http_requests_sent + self.ws_messages_sent;
+        let total_errors = self.http_requests_failed + self.ws_connection_errors;
+        if total_requests > 0 {
+            total_errors as f64 / total_requests as f64
+        } else {
+            0.0
+        }
+    }
+
     /// Check if results meet performance budgets
     pub fn meets_budgets(&self) -> bool {
         // WebSocket latency budgets
         let cursor_ok = self
             .cursor_latencies
             .p99()
-            .map(|p| p <= Duration::from_millis(100))
+            .map(|p| p <= budgets::CURSOR_P99_MAX)
             .unwrap_or(true);
 
         let viewport_ok = self
             .viewport_latencies
             .p99()
-            .map(|p| p <= Duration::from_millis(150))
+            .map(|p| p <= budgets::VIEWPORT_P99_MAX)
             .unwrap_or(true);
 
         // HTTP latency budgets
         let tile_ok = self
             .tile_latencies
             .p99()
-            .map(|p| p <= Duration::from_millis(500))
+            .map(|p| p <= budgets::TILE_P99_MAX)
             .unwrap_or(true);
 
         let overlay_ok = self
             .overlay_latencies
             .p99()
-            .map(|p| p <= Duration::from_millis(1000))
+            .map(|p| p <= budgets::OVERLAY_P99_MAX)
             .unwrap_or(true);
 
-        // Error rate budget: < 1%
-        let total_requests = self.http_requests_sent + self.ws_messages_sent;
-        let total_errors = self.http_requests_failed + self.ws_connection_errors;
-        let error_rate_ok = if total_requests > 0 {
-            (total_errors as f64 / total_requests as f64) < 0.01
-        } else {
-            true
-        };
+        // Error rate budget
+        let error_rate_ok = self.error_rate() < budgets::ERROR_RATE_MAX;
 
         cursor_ok && viewport_ok && tile_ok && overlay_ok && error_rate_ok
     }
 
-    /// Generate a summary report
+    /// Generate JSON output for CI parsing
+    pub fn to_json(&self) -> String {
+        let cursor_p99_ms = self
+            .cursor_latencies
+            .p99()
+            .map(|d| d.as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
+        let viewport_p99_ms = self
+            .viewport_latencies
+            .p99()
+            .map(|d| d.as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
+        let tile_p99_ms = self
+            .tile_latencies
+            .p99()
+            .map(|d| d.as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
+
+        let ws_throughput = if self.duration.as_secs_f64() > 0.0 {
+            self.ws_messages_sent as f64 / self.duration.as_secs_f64()
+        } else {
+            0.0
+        };
+        let http_throughput = if self.duration.as_secs_f64() > 0.0 {
+            self.http_requests_sent as f64 / self.duration.as_secs_f64()
+        } else {
+            0.0
+        };
+
+        format!(
+            r#"{{"passed":{},"duration_secs":{:.2},"sessions":{},"users":{},"websocket":{{"messages_sent":{},"messages_received":{},"errors":{},"cursor_p99_ms":{:.2},"viewport_p99_ms":{:.2},"throughput":{:.1}}},"http":{{"requests_sent":{},"requests_success":{},"requests_failed":{},"tile_p99_ms":{:.2},"throughput":{:.1}}},"error_rate":{:.4},"throughput":{:.1}}}"#,
+            self.meets_budgets(),
+            self.duration.as_secs_f64(),
+            self.sessions_created,
+            self.sessions_created + self.sessions_joined,
+            self.ws_messages_sent,
+            self.ws_messages_received,
+            self.ws_connection_errors,
+            cursor_p99_ms,
+            viewport_p99_ms,
+            ws_throughput,
+            self.http_requests_sent,
+            self.http_requests_success,
+            self.http_requests_failed,
+            tile_p99_ms,
+            http_throughput,
+            self.error_rate(),
+            ws_throughput + http_throughput
+        )
+    }
+
+    /// Format a duration as a human-readable string
+    fn format_duration(d: Duration) -> String {
+        let ms = d.as_secs_f64() * 1000.0;
+        if ms < 1.0 {
+            format!("{:.2}µs", ms * 1000.0)
+        } else if ms < 1000.0 {
+            format!("{:.1}ms", ms)
+        } else {
+            format!("{:.2}s", ms / 1000.0)
+        }
+    }
+
+    /// Format a latency with PASS/FAIL status
+    fn format_latency_check(p99: Option<Duration>, budget: Duration) -> String {
+        match p99 {
+            Some(latency) => {
+                let status = if latency <= budget {
+                    "[PASS]"
+                } else {
+                    "[FAIL]"
+                };
+                format!(
+                    "{:<8} {} (budget: {})",
+                    Self::format_duration(latency),
+                    status,
+                    Self::format_duration(budget)
+                )
+            }
+            None => "N/A".to_string(),
+        }
+    }
+
+    /// Print formatted summary to stdout with box-drawing characters
+    pub fn print_summary(&self, tier: BenchmarkTier) {
+        let ws_throughput = if self.duration.as_secs_f64() > 0.0 {
+            self.ws_messages_sent as f64 / self.duration.as_secs_f64()
+        } else {
+            0.0
+        };
+        let http_throughput = if self.duration.as_secs_f64() > 0.0 {
+            self.http_requests_sent as f64 / self.duration.as_secs_f64()
+        } else {
+            0.0
+        };
+        let total_throughput = ws_throughput + http_throughput;
+        let error_rate_pct = self.error_rate() * 100.0;
+
+        println!();
+        println!("═══════════════════════════════════════════════════════════════");
+        println!(" BENCHMARK RESULTS: {}", tier.name());
+        println!("═══════════════════════════════════════════════════════════════");
+        println!();
+        println!(
+            " Duration: {:.1}s | Sessions: {} | Users: {}",
+            self.duration.as_secs_f64(),
+            self.sessions_created,
+            self.sessions_created + self.sessions_joined
+        );
+        println!();
+        println!(" ─── WebSocket ───────────────────────────────────────────────");
+        println!(
+            "   Messages:     {:>6} sent | {:>6} received | {} errors",
+            self.ws_messages_sent, self.ws_messages_received, self.ws_connection_errors
+        );
+        println!(
+            "   Cursor P99:   {}",
+            Self::format_latency_check(self.cursor_latencies.p99(), budgets::CURSOR_P99_MAX)
+        );
+        println!(
+            "   Viewport P99: {}",
+            Self::format_latency_check(self.viewport_latencies.p99(), budgets::VIEWPORT_P99_MAX)
+        );
+        println!();
+        println!(" ─── HTTP ────────────────────────────────────────────────────");
+        println!(
+            "   Requests:     {:>6} sent | {:>6} success | {} failed",
+            self.http_requests_sent, self.http_requests_success, self.http_requests_failed
+        );
+        println!(
+            "   Tile P99:     {}",
+            Self::format_latency_check(self.tile_latencies.p99(), budgets::TILE_P99_MAX)
+        );
+        println!();
+        println!(" ─── Summary ─────────────────────────────────────────────────");
+        let error_status = if self.error_rate() < budgets::ERROR_RATE_MAX {
+            "[PASS]"
+        } else {
+            "[FAIL]"
+        };
+        println!(
+            "   Error Rate:   {:.2}%    {} (budget: <1%)",
+            error_rate_pct, error_status
+        );
+        println!("   Throughput:   {:.1} ops/s", total_throughput);
+        println!();
+        println!("═══════════════════════════════════════════════════════════════");
+        let overall = if self.meets_budgets() { "PASS" } else { "FAIL" };
+        println!(" OVERALL: {}", overall);
+        println!("═══════════════════════════════════════════════════════════════");
+        println!();
+    }
+
+    /// Generate a summary report (legacy format, kept for compatibility)
     pub fn report(&self) -> String {
         let mut report = String::new();
         report.push_str("=== Comprehensive Stress Test Results ===\n\n");
@@ -164,7 +382,11 @@ impl ComprehensiveStressResults {
             self.ws_connection_errors
         ));
 
-        let ws_throughput = self.ws_messages_sent as f64 / self.duration.as_secs_f64();
+        let ws_throughput = if self.duration.as_secs_f64() > 0.0 {
+            self.ws_messages_sent as f64 / self.duration.as_secs_f64()
+        } else {
+            0.0
+        };
         report.push_str(&format!("WS throughput: {:.1} msg/s\n", ws_throughput));
 
         report.push_str("\n--- HTTP Stats ---\n");
@@ -175,7 +397,11 @@ impl ComprehensiveStressResults {
         ));
         report.push_str(&format!("Requests failed: {}\n", self.http_requests_failed));
 
-        let http_throughput = self.http_requests_sent as f64 / self.duration.as_secs_f64();
+        let http_throughput = if self.duration.as_secs_f64() > 0.0 {
+            self.http_requests_sent as f64 / self.duration.as_secs_f64()
+        } else {
+            0.0
+        };
         report.push_str(&format!("HTTP throughput: {:.1} req/s\n", http_throughput));
 
         let total_throughput = ws_throughput + http_throughput;
@@ -194,12 +420,15 @@ impl ComprehensiveStressResults {
             report.push_str(&format!("  P95: {:?}\n", p95));
         }
         if let Some(p99) = self.cursor_latencies.p99() {
-            let budget = Duration::from_millis(100);
             report.push_str(&format!(
                 "  P99: {:?} (budget: {:?}) {}\n",
                 p99,
-                budget,
-                if p99 <= budget { "OK" } else { "EXCEEDED" }
+                budgets::CURSOR_P99_MAX,
+                if p99 <= budgets::CURSOR_P99_MAX {
+                    "OK"
+                } else {
+                    "EXCEEDED"
+                }
             ));
         }
 
@@ -211,12 +440,15 @@ impl ComprehensiveStressResults {
             report.push_str(&format!("  P95: {:?}\n", p95));
         }
         if let Some(p99) = self.viewport_latencies.p99() {
-            let budget = Duration::from_millis(150);
             report.push_str(&format!(
                 "  P99: {:?} (budget: {:?}) {}\n",
                 p99,
-                budget,
-                if p99 <= budget { "OK" } else { "EXCEEDED" }
+                budgets::VIEWPORT_P99_MAX,
+                if p99 <= budgets::VIEWPORT_P99_MAX {
+                    "OK"
+                } else {
+                    "EXCEEDED"
+                }
             ));
         }
 
@@ -228,12 +460,15 @@ impl ComprehensiveStressResults {
             report.push_str(&format!("  P95: {:?}\n", p95));
         }
         if let Some(p99) = self.tile_latencies.p99() {
-            let budget = Duration::from_millis(500);
             report.push_str(&format!(
                 "  P99: {:?} (budget: {:?}) {}\n",
                 p99,
-                budget,
-                if p99 <= budget { "OK" } else { "EXCEEDED" }
+                budgets::TILE_P99_MAX,
+                if p99 <= budgets::TILE_P99_MAX {
+                    "OK"
+                } else {
+                    "EXCEEDED"
+                }
             ));
         }
 
@@ -245,23 +480,23 @@ impl ComprehensiveStressResults {
             report.push_str(&format!("  P95: {:?}\n", p95));
         }
         if let Some(p99) = self.overlay_latencies.p99() {
-            let budget = Duration::from_millis(1000);
             report.push_str(&format!(
                 "  P99: {:?} (budget: {:?}) {}\n",
                 p99,
-                budget,
-                if p99 <= budget { "OK" } else { "EXCEEDED" }
+                budgets::OVERLAY_P99_MAX,
+                if p99 <= budgets::OVERLAY_P99_MAX {
+                    "OK"
+                } else {
+                    "EXCEEDED"
+                }
             ));
         }
 
-        let error_rate = if self.http_requests_sent + self.ws_messages_sent > 0 {
-            (self.http_requests_failed + self.ws_connection_errors) as f64
-                / (self.http_requests_sent + self.ws_messages_sent) as f64
-                * 100.0
-        } else {
-            0.0
-        };
-        report.push_str(&format!("\nError rate: {:.3}% (budget: <1%)\n", error_rate));
+        let error_rate_pct = self.error_rate() * 100.0;
+        report.push_str(&format!(
+            "\nError rate: {:.3}% (budget: <1%)\n",
+            error_rate_pct
+        ));
 
         report.push_str(&format!(
             "\nOverall: {}\n",
@@ -686,54 +921,4 @@ impl ComprehensiveStressScenario {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    #[ignore = "requires running server"]
-    async fn test_comprehensive_minimal() {
-        let config = ComprehensiveStressConfig {
-            num_sessions: 5, // 10 users
-            duration: Duration::from_secs(10),
-            cursor_hz: 10,
-            viewport_hz: 5,
-            tile_request_hz: 2,
-            overlay_request_hz: 1,
-            ..Default::default()
-        };
-
-        let scenario = ComprehensiveStressScenario::new(config);
-        let results = scenario.run().await.expect("Scenario should complete");
-
-        println!("{}", results.report());
-        assert!(results.ws_messages_sent > 0, "Should have sent WS messages");
-        assert!(
-            results.http_requests_sent > 0,
-            "Should have sent HTTP requests"
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "requires running server - long running"]
-    async fn test_comprehensive_1000_users() {
-        let config = ComprehensiveStressConfig {
-            num_sessions: 500, // 1000 users
-            duration: Duration::from_secs(60),
-            cursor_hz: 30,
-            viewport_hz: 10,
-            tile_request_hz: 5,
-            overlay_request_hz: 2,
-            ..Default::default()
-        };
-
-        let scenario = ComprehensiveStressScenario::new(config);
-        let results = scenario.run().await.expect("Scenario should complete");
-
-        println!("{}", results.report());
-        assert!(
-            results.meets_budgets(),
-            "Should meet performance budgets under 1000 user load"
-        );
-    }
-}
+// Tests are in perf_tests.rs using the tier-based approach

@@ -3,6 +3,13 @@
 //! This module provides load testing infrastructure to validate
 //! that PathCollab can handle activity spikes with 20 followers
 //! per session at 30Hz cursor + 10Hz viewport updates.
+//!
+//! ## Benchmark Tiers
+//!
+//! The benchmark system uses three tiers:
+//! - **Smoke**: Quick CI validation on every push (<30s)
+//! - **Standard**: PR merge gate (~2min)
+//! - **Stress**: Manual/release testing (~5min)
 
 #![allow(clippy::collapsible_if)]
 
@@ -10,6 +17,28 @@ pub mod client;
 pub mod scenarios;
 
 use std::time::Duration;
+
+/// Benchmark tier for different testing scenarios
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BenchmarkTier {
+    /// Quick CI validation: 5 sessions, 10 users, 10s
+    Smoke,
+    /// PR merge gate: 25 sessions, 50 users, 30s
+    Standard,
+    /// Manual/release testing: 100 sessions, 200 users, 60s
+    Stress,
+}
+
+impl BenchmarkTier {
+    /// Get the tier name for display
+    pub fn name(&self) -> &'static str {
+        match self {
+            BenchmarkTier::Smoke => "SMOKE",
+            BenchmarkTier::Standard => "STANDARD",
+            BenchmarkTier::Stress => "STRESS",
+        }
+    }
+}
 
 /// Performance budget thresholds
 pub mod budgets {
