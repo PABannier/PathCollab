@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpabannier%2Fpathcollab-blue)](https://ghcr.io/pabannier/pathcollab)
 
-**Collaborative whole-slide image viewer with real-time cursor presence and overlay rendering**
+**A self-hostable collaborative whole-slide image viewer with real-time cursor presence and overlay rendering**
 
 ```bash
 docker run -p 8080:8080 -v /path/to/slides:/slides ghcr.io/pabannier/pathcollab:latest
