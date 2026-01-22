@@ -1,8 +1,0 @@
-# Ignore all benchmark results (raw data)
-*
-
-# But track this .gitignore
-!.gitignore
-
-# And track any README
-!README.md
