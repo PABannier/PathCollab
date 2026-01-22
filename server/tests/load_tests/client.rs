@@ -351,7 +351,6 @@ pub enum ClientEvent {
 
 /// Slide info returned from the API
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)]
 pub struct SlideInfo {
     pub id: String,
     pub name: String,

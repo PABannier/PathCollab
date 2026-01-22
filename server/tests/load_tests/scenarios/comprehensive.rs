@@ -171,33 +171,43 @@ impl ComprehensiveStressResults {
         }
     }
 
+    /// Minimum samples required to consider a latency measurement valid
+    const MIN_LATENCY_SAMPLES: usize = 10;
+
     /// Check if results meet performance budgets
     pub fn meets_budgets(&self) -> bool {
         // WebSocket latency budgets
+        // Note: The server doesn't send Acks for cursor/viewport updates (fire-and-forget
+        // for performance), so latency samples may be empty. That's OK - we check if
+        // we have samples, and only fail if samples exceed budget.
         let cursor_ok = self
             .cursor_latencies
             .p99()
             .map(|p| p <= budgets::CURSOR_P99_MAX)
-            .unwrap_or(true);
+            .unwrap_or(true); // OK if no samples (server doesn't Ack cursor updates)
 
         let viewport_ok = self
             .viewport_latencies
             .p99()
             .map(|p| p <= budgets::VIEWPORT_P99_MAX)
-            .unwrap_or(true);
+            .unwrap_or(true); // OK if no samples (server doesn't Ack viewport updates)
 
-        // HTTP latency budgets
-        let tile_ok = self
-            .tile_latencies
-            .p99()
-            .map(|p| p <= budgets::TILE_P99_MAX)
-            .unwrap_or(true);
+        // HTTP latency budgets - require samples if we had successful requests
+        let tile_ok = if self.http_requests_success > 0 {
+            self.tile_latencies
+                .p99()
+                .map(|p| p <= budgets::TILE_P99_MAX)
+                .unwrap_or_else(|| self.tile_latencies.samples.len() >= Self::MIN_LATENCY_SAMPLES)
+        } else {
+            true
+        };
 
+        // Overlay is optional - many test setups don't have overlay data
         let overlay_ok = self
             .overlay_latencies
             .p99()
             .map(|p| p <= budgets::OVERLAY_P99_MAX)
-            .unwrap_or(true);
+            .unwrap_or(true); // OK if no overlay data
 
         // Error rate budget
         let error_rate_ok = self.error_rate() < budgets::ERROR_RATE_MAX;
@@ -222,6 +232,11 @@ impl ComprehensiveStressResults {
             .p99()
             .map(|d| d.as_secs_f64() * 1000.0)
             .unwrap_or(0.0);
+        let overlay_p99_ms = self
+            .overlay_latencies
+            .p99()
+            .map(|d| d.as_secs_f64() * 1000.0)
+            .unwrap_or(0.0);
 
         let ws_throughput = if self.duration.as_secs_f64() > 0.0 {
             self.ws_messages_sent as f64 / self.duration.as_secs_f64()
@@ -235,7 +250,7 @@ impl ComprehensiveStressResults {
         };
 
         format!(
-            r#"{{"passed":{},"duration_secs":{:.2},"sessions":{},"users":{},"websocket":{{"messages_sent":{},"messages_received":{},"errors":{},"cursor_p99_ms":{:.2},"viewport_p99_ms":{:.2},"throughput":{:.1}}},"http":{{"requests_sent":{},"requests_success":{},"requests_failed":{},"tile_p99_ms":{:.2},"throughput":{:.1}}},"error_rate":{:.4},"throughput":{:.1}}}"#,
+            r#"{{"passed":{},"duration_secs":{:.2},"sessions":{},"users":{},"websocket":{{"messages_sent":{},"messages_received":{},"errors":{},"cursor_p99_ms":{:.2},"viewport_p99_ms":{:.2},"throughput":{:.1}}},"http":{{"requests_sent":{},"requests_success":{},"requests_failed":{},"tile_p99_ms":{:.2},"overlay_p99_ms":{:.2},"throughput":{:.1}}},"error_rate":{:.4},"throughput":{:.1}}}"#,
             self.meets_budgets(),
             self.duration.as_secs_f64(),
             self.sessions_created,
@@ -250,6 +265,7 @@ impl ComprehensiveStressResults {
             self.http_requests_success,
             self.http_requests_failed,
             tile_p99_ms,
+            overlay_p99_ms,
             http_throughput,
             self.error_rate(),
             ws_throughput + http_throughput
@@ -338,6 +354,10 @@ impl ComprehensiveStressResults {
             "   Tile P99:     {}",
             Self::format_latency_check(self.tile_latencies.p99(), budgets::TILE_P99_MAX)
         );
+        println!(
+            "   Overlay P99:  {}",
+            Self::format_latency_check(self.overlay_latencies.p99(), budgets::OVERLAY_P99_MAX)
+        );
         println!();
         println!(" ─── Summary ─────────────────────────────────────────────────");
         let error_status = if self.error_rate() < budgets::ERROR_RATE_MAX {
@@ -357,154 +377,6 @@ impl ComprehensiveStressResults {
         println!("═══════════════════════════════════════════════════════════════");
         println!();
     }
-
-    /// Generate a summary report (legacy format, kept for compatibility)
-    pub fn report(&self) -> String {
-        let mut report = String::new();
-        report.push_str("=== Comprehensive Stress Test Results ===\n\n");
-
-        report.push_str(&format!("Duration: {:.2}s\n", self.duration.as_secs_f64()));
-        report.push_str(&format!(
-            "Total users: {} (sessions: {}, joined: {})\n",
-            self.sessions_created + self.sessions_joined,
-            self.sessions_created,
-            self.sessions_joined
-        ));
-
-        report.push_str("\n--- WebSocket Stats ---\n");
-        report.push_str(&format!("Messages sent: {}\n", self.ws_messages_sent));
-        report.push_str(&format!(
-            "Messages received: {}\n",
-            self.ws_messages_received
-        ));
-        report.push_str(&format!(
-            "Connection errors: {}\n",
-            self.ws_connection_errors
-        ));
-
-        let ws_throughput = if self.duration.as_secs_f64() > 0.0 {
-            self.ws_messages_sent as f64 / self.duration.as_secs_f64()
-        } else {
-            0.0
-        };
-        report.push_str(&format!("WS throughput: {:.1} msg/s\n", ws_throughput));
-
-        report.push_str("\n--- HTTP Stats ---\n");
-        report.push_str(&format!("Requests sent: {}\n", self.http_requests_sent));
-        report.push_str(&format!(
-            "Requests success: {}\n",
-            self.http_requests_success
-        ));
-        report.push_str(&format!("Requests failed: {}\n", self.http_requests_failed));
-
-        let http_throughput = if self.duration.as_secs_f64() > 0.0 {
-            self.http_requests_sent as f64 / self.duration.as_secs_f64()
-        } else {
-            0.0
-        };
-        report.push_str(&format!("HTTP throughput: {:.1} req/s\n", http_throughput));
-
-        let total_throughput = ws_throughput + http_throughput;
-        report.push_str(&format!(
-            "\nTotal throughput: {:.1} ops/s\n",
-            total_throughput
-        ));
-
-        report.push_str("\n--- Latencies ---\n");
-
-        report.push_str("\nCursor (WS) Latencies:\n");
-        if let Some(p50) = self.cursor_latencies.p50() {
-            report.push_str(&format!("  P50: {:?}\n", p50));
-        }
-        if let Some(p95) = self.cursor_latencies.p95() {
-            report.push_str(&format!("  P95: {:?}\n", p95));
-        }
-        if let Some(p99) = self.cursor_latencies.p99() {
-            report.push_str(&format!(
-                "  P99: {:?} (budget: {:?}) {}\n",
-                p99,
-                budgets::CURSOR_P99_MAX,
-                if p99 <= budgets::CURSOR_P99_MAX {
-                    "OK"
-                } else {
-                    "EXCEEDED"
-                }
-            ));
-        }
-
-        report.push_str("\nViewport (WS) Latencies:\n");
-        if let Some(p50) = self.viewport_latencies.p50() {
-            report.push_str(&format!("  P50: {:?}\n", p50));
-        }
-        if let Some(p95) = self.viewport_latencies.p95() {
-            report.push_str(&format!("  P95: {:?}\n", p95));
-        }
-        if let Some(p99) = self.viewport_latencies.p99() {
-            report.push_str(&format!(
-                "  P99: {:?} (budget: {:?}) {}\n",
-                p99,
-                budgets::VIEWPORT_P99_MAX,
-                if p99 <= budgets::VIEWPORT_P99_MAX {
-                    "OK"
-                } else {
-                    "EXCEEDED"
-                }
-            ));
-        }
-
-        report.push_str("\nTile (HTTP) Latencies:\n");
-        if let Some(p50) = self.tile_latencies.p50() {
-            report.push_str(&format!("  P50: {:?}\n", p50));
-        }
-        if let Some(p95) = self.tile_latencies.p95() {
-            report.push_str(&format!("  P95: {:?}\n", p95));
-        }
-        if let Some(p99) = self.tile_latencies.p99() {
-            report.push_str(&format!(
-                "  P99: {:?} (budget: {:?}) {}\n",
-                p99,
-                budgets::TILE_P99_MAX,
-                if p99 <= budgets::TILE_P99_MAX {
-                    "OK"
-                } else {
-                    "EXCEEDED"
-                }
-            ));
-        }
-
-        report.push_str("\nOverlay (HTTP) Latencies:\n");
-        if let Some(p50) = self.overlay_latencies.p50() {
-            report.push_str(&format!("  P50: {:?}\n", p50));
-        }
-        if let Some(p95) = self.overlay_latencies.p95() {
-            report.push_str(&format!("  P95: {:?}\n", p95));
-        }
-        if let Some(p99) = self.overlay_latencies.p99() {
-            report.push_str(&format!(
-                "  P99: {:?} (budget: {:?}) {}\n",
-                p99,
-                budgets::OVERLAY_P99_MAX,
-                if p99 <= budgets::OVERLAY_P99_MAX {
-                    "OK"
-                } else {
-                    "EXCEEDED"
-                }
-            ));
-        }
-
-        let error_rate_pct = self.error_rate() * 100.0;
-        report.push_str(&format!(
-            "\nError rate: {:.3}% (budget: <1%)\n",
-            error_rate_pct
-        ));
-
-        report.push_str(&format!(
-            "\nOverall: {}\n",
-            if self.meets_budgets() { "PASS" } else { "FAIL" }
-        ));
-
-        report
-    }
 }
 
 impl Default for ComprehensiveStressResults {
@@ -517,7 +389,8 @@ impl Default for ComprehensiveStressResults {
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum ComprehensiveEvent {
-    WsMessageSent,
+    WsCursorAck { latency: Duration },
+    WsViewportAck { latency: Duration },
     WsMessageReceived { msg_type: &'static str },
     WsError,
     HttpTileRequest { latency: Duration, success: bool },
@@ -613,6 +486,8 @@ impl ComprehensiveStressScenario {
                 true, // is_presenter
                 http_client.clone(),
                 slide.id.clone(),
+                slide.width,
+                slide.height,
                 tx.clone(),
                 ws_sent.clone(),
                 ws_recv.clone(),
@@ -646,6 +521,8 @@ impl ComprehensiveStressScenario {
                 false, // is_presenter
                 http_client.clone(),
                 slide.id.clone(),
+                slide.width,
+                slide.height,
                 tx.clone(),
                 ws_sent.clone(),
                 ws_recv.clone(),
@@ -666,6 +543,8 @@ impl ComprehensiveStressScenario {
         drop(tx);
 
         // Collect events
+        let mut cursor_latencies = LatencyStats::new();
+        let mut viewport_latencies = LatencyStats::new();
         let mut tile_latencies = LatencyStats::new();
         let mut overlay_latencies = LatencyStats::new();
 
@@ -675,6 +554,12 @@ impl ComprehensiveStressScenario {
         while collect_start.elapsed() < collect_duration {
             match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
                 Ok(Some(event)) => match event {
+                    ComprehensiveEvent::WsCursorAck { latency } => {
+                        cursor_latencies.record(latency);
+                    }
+                    ComprehensiveEvent::WsViewportAck { latency } => {
+                        viewport_latencies.record(latency);
+                    }
                     ComprehensiveEvent::HttpTileRequest {
                         latency,
                         success: true,
@@ -709,6 +594,8 @@ impl ComprehensiveStressScenario {
         results.http_requests_failed = http_failed.load(Ordering::SeqCst);
         results.sessions_created = sessions_created.load(Ordering::SeqCst);
         results.sessions_joined = sessions_joined.load(Ordering::SeqCst);
+        results.cursor_latencies = cursor_latencies;
+        results.viewport_latencies = viewport_latencies;
         results.tile_latencies = tile_latencies;
         results.overlay_latencies = overlay_latencies;
         results.duration = start.elapsed();
@@ -717,12 +604,15 @@ impl ComprehensiveStressScenario {
     }
 
     /// Spawn a user task that does both WebSocket and HTTP operations
+    #[allow(clippy::too_many_arguments)]
     fn spawn_user_task(
         &self,
         mut client: LoadTestClient,
         is_presenter: bool,
         http_client: Client,
         slide_id: String,
+        slide_width: u64,
+        slide_height: u64,
         tx: mpsc::Sender<ComprehensiveEvent>,
         ws_sent: Arc<AtomicU64>,
         ws_recv: Arc<AtomicU64>,
@@ -745,6 +635,19 @@ impl ComprehensiveStressScenario {
         let tile_hz = self.config.tile_request_hz;
         let overlay_hz = self.config.overlay_request_hz;
         let http_url = self.config.http_url.clone();
+
+        // Calculate valid tile range based on slide dimensions
+        // DZI convention: max_level = ceil(log2(max(width, height)))
+        // At level N, dimensions are width/2^(max_level-N) x height/2^(max_level-N)
+        let tile_size = 256u64;
+        let max_level = (slide_width.max(slide_height) as f64).log2().ceil() as u32;
+        // Use a level 3-4 below max to get ~50-200 tiles (good for testing)
+        let test_level = max_level.saturating_sub(3);
+        let level_scale = 1u64 << (max_level - test_level);
+        let level_width = slide_width / level_scale.max(1);
+        let level_height = slide_height / level_scale.max(1);
+        let max_tile_x = level_width.div_ceil(tile_size).max(1) as u32;
+        let max_tile_y = level_height.div_ceil(tile_size).max(1) as u32;
 
         tokio::spawn(async move {
             let cursor_interval = if cursor_hz > 0 {
@@ -783,6 +686,11 @@ impl ComprehensiveStressScenario {
             let mut tile_x = 0u32;
             let mut tile_y = 0u32;
 
+            // Track pending operations for latency measurement
+            // Key: seq number, Value: (send_time, is_cursor)
+            let mut pending_ws: std::collections::HashMap<u64, (Instant, bool)> =
+                std::collections::HashMap::new();
+
             loop {
                 if start.elapsed() >= duration {
                     break;
@@ -796,10 +704,11 @@ impl ComprehensiveStressScenario {
                         if x >= 1.0 { x = 0.0; }
                         if y >= 1.0 { y = 0.0; }
 
-                        match client.send_cursor(x * 100000.0, y * 100000.0).await {
-                            Ok(_) => {
+                        let send_time = Instant::now();
+                        match client.send_cursor(x * slide_width as f64, y * slide_height as f64).await {
+                            Ok(seq) => {
                                 ws_sent.fetch_add(1, Ordering::SeqCst);
-                                let _ = tx.send(ComprehensiveEvent::WsMessageSent).await;
+                                pending_ws.insert(seq, (send_time, true)); // true = cursor
                             }
                             Err(_) => {
                                 ws_errors.fetch_add(1, Ordering::SeqCst);
@@ -810,10 +719,11 @@ impl ComprehensiveStressScenario {
 
                     // Presenter sends viewport updates
                     _ = viewport_ticker.tick(), if is_presenter => {
+                        let send_time = Instant::now();
                         match client.send_viewport(0.5, 0.5, 1.0).await {
-                            Ok(_) => {
+                            Ok(seq) => {
                                 ws_sent.fetch_add(1, Ordering::SeqCst);
-                                let _ = tx.send(ComprehensiveEvent::WsMessageSent).await;
+                                pending_ws.insert(seq, (send_time, false)); // false = viewport
                             }
                             Err(_) => {
                                 ws_errors.fetch_add(1, Ordering::SeqCst);
@@ -822,20 +732,20 @@ impl ComprehensiveStressScenario {
                         }
                     }
 
-                    // Both users request tiles
+                    // Both users request tiles - use valid coordinates
                     _ = tile_ticker.tick() => {
                         http_sent.fetch_add(1, Ordering::SeqCst);
-                        let level = 5;
                         let url = format!(
                             "{}/api/slide/{}/tile/{}/{}/{}",
-                            http_url, slide_id, level, tile_x, tile_y
+                            http_url, slide_id, test_level, tile_x % max_tile_x, tile_y % max_tile_y
                         );
 
                         let req_start = Instant::now();
                         match http_client.get(&url).send().await {
                             Ok(resp) => {
                                 let latency = req_start.elapsed();
-                                if resp.status().is_success() || resp.status().as_u16() == 404 {
+                                // Only count actual success (200), not 404s
+                                if resp.status().is_success() {
                                     http_success.fetch_add(1, Ordering::SeqCst);
                                     let _ = tx.send(ComprehensiveEvent::HttpTileRequest {
                                         latency,
@@ -843,6 +753,10 @@ impl ComprehensiveStressScenario {
                                     }).await;
                                 } else {
                                     http_failed.fetch_add(1, Ordering::SeqCst);
+                                    let _ = tx.send(ComprehensiveEvent::HttpTileRequest {
+                                        latency,
+                                        success: false,
+                                    }).await;
                                 }
                             }
                             Err(_) => {
@@ -850,9 +764,9 @@ impl ComprehensiveStressScenario {
                             }
                         }
 
-                        tile_x = (tile_x + 1) % 40;
-                        if tile_x == 0 {
-                            tile_y = (tile_y + 1) % 40;
+                        tile_x = tile_x.wrapping_add(1);
+                        if tile_x % max_tile_x == 0 {
+                            tile_y = tile_y.wrapping_add(1);
                         }
                     }
 
@@ -865,12 +779,14 @@ impl ComprehensiveStressScenario {
                         let url = if is_tissue {
                             format!(
                                 "{}/api/slide/{}/overlay/tissue/{}/{}/{}",
-                                http_url, slide_id, 3, tile_x % 20, tile_y % 20
+                                http_url, slide_id, test_level.saturating_sub(2), tile_x % max_tile_x, tile_y % max_tile_y
                             )
                         } else {
                             format!(
                                 "{}/api/slide/{}/overlay/cells?x={}&y={}&width=5000&height=5000",
-                                http_url, slide_id, (tile_x as f64) * 1000.0, (tile_y as f64) * 1000.0
+                                http_url, slide_id,
+                                ((tile_x % max_tile_x) as f64) * 256.0 * (level_scale as f64),
+                                ((tile_y % max_tile_y) as f64) * 256.0 * (level_scale as f64)
                             )
                         };
 
@@ -878,6 +794,7 @@ impl ComprehensiveStressScenario {
                         match http_client.get(&url).send().await {
                             Ok(resp) => {
                                 let latency = req_start.elapsed();
+                                // Overlays may legitimately 404 if no overlay data exists
                                 if resp.status().is_success() || resp.status().as_u16() == 404 {
                                     http_success.fetch_add(1, Ordering::SeqCst);
                                     let _ = tx.send(ComprehensiveEvent::HttpOverlayRequest {
@@ -894,18 +811,33 @@ impl ComprehensiveStressScenario {
                         }
                     }
 
-                    // Receive WebSocket messages (followers receive presence updates)
+                    // Receive WebSocket messages - track Ack latencies
                     _ = ws_recv_interval.tick() => {
                         match client.recv_timeout(Duration::from_millis(10)).await {
                             Ok(Some(msg)) => {
                                 ws_recv.fetch_add(1, Ordering::SeqCst);
-                                let msg_type = match &msg {
-                                    ServerMessage::PresenceDelta { .. } => "presence",
-                                    ServerMessage::PresenterViewport { .. } => "viewport",
-                                    ServerMessage::Ack { .. } => "ack",
-                                    _ => "other",
-                                };
-                                let _ = tx.send(ComprehensiveEvent::WsMessageReceived { msg_type }).await;
+                                match &msg {
+                                    ServerMessage::Ack { ack_seq, status, .. } => {
+                                        if status == "ok" {
+                                            if let Some((send_time, is_cursor)) = pending_ws.remove(ack_seq) {
+                                                let latency = send_time.elapsed();
+                                                if is_cursor {
+                                                    let _ = tx.send(ComprehensiveEvent::WsCursorAck { latency }).await;
+                                                } else {
+                                                    let _ = tx.send(ComprehensiveEvent::WsViewportAck { latency }).await;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        let msg_type = match &msg {
+                                            ServerMessage::PresenceDelta { .. } => "presence",
+                                            ServerMessage::PresenterViewport { .. } => "viewport",
+                                            _ => "other",
+                                        };
+                                        let _ = tx.send(ComprehensiveEvent::WsMessageReceived { msg_type }).await;
+                                    }
+                                }
                             }
                             Ok(None) => {}
                             Err(_) => {
@@ -914,6 +846,9 @@ impl ComprehensiveStressScenario {
                         }
                     }
                 }
+
+                // Clean up old pending entries (older than 5 seconds - likely missed)
+                pending_ws.retain(|_, (time, _)| time.elapsed() < Duration::from_secs(5));
             }
 
             let _ = client.close().await;
