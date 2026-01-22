@@ -11,7 +11,7 @@ use metrics::{counter, histogram};
 use std::collections::HashMap;
 use std::time::Instant;
 use thiserror::Error;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 /// Session manager errors
