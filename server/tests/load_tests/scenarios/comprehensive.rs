@@ -596,7 +596,7 @@ impl ComprehensiveStressScenario {
                         }
 
                         tile_x = tile_x.wrapping_add(1);
-                        if tile_x % max_tile_x == 0 {
+                        if tile_x.is_multiple_of(max_tile_x) {
                             tile_y = tile_y.wrapping_add(1);
                         }
                     }
@@ -606,7 +606,7 @@ impl ComprehensiveStressScenario {
                         http_sent.fetch_add(1, Ordering::SeqCst);
 
                         // Alternate between tissue tiles and cell queries
-                        let is_tissue = tile_x % 2 == 0;
+                        let is_tissue = tile_x.is_multiple_of(2);
                         let url = if is_tissue {
                             format!(
                                 "{}/api/slide/{}/overlay/tissue/{}/{}/{}",
