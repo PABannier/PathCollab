@@ -1,7 +1,5 @@
 # PathCollab
 
----
-
 <div align="center">
 
 ![PathCollab, a self-hosted collaborative digital pathology viewer](./assets/pathcollab.png)
@@ -12,11 +10,7 @@
 
 **A self-hostable collaborative whole-slide image viewer with real-time cursor presence and overlay rendering**
 
-```bash
-docker run -p 8080:8080 -v /path/to/slides:/slides ghcr.io/pabannier/pathcollab:latest
-```
-
-Open **http://localhost:8080** → Share link → Collaborate instantly
+Demo at <b><a href="https://pathcollab.io">pathcollab.io</a></b>
 
 </div>
 
@@ -24,59 +18,35 @@ Open **http://localhost:8080** → Share link → Collaborate instantly
 
 ## Why PathCollab?
 
-**The Problem**: Pathologists and ML scientists need to review slides together—but they're in different cities. Current options force a brutal tradeoff:
-
-| Option | Fast Rendering | Real-time Collab | AI Overlays | Setup Time |
-|--------|:--------------:|:----------------:|:-----------:|:----------:|
-| Local viewers (PathView, QuPath) | ✅ | ❌ | ⚠️ | Minutes |
-| Screen sharing (Zoom, Teams) | ❌ Laggy | ⚠️ One-way | ❌ | Seconds |
-| Enterprise pathology platforms | ✅ | ✅ | ✅ | Weeks + $$$$ |
-
-**The Solution**: PathCollab is a **presenter-led collaborative viewer** where one host guides up to 20 followers through a whole-slide image. Everyone sees real-time cursors, can snap to the presenter's view, and overlay millions of AI-detected cells—all from a shareable link with **no accounts required**.
+PathCollab is a **presenter-led collaborative viewer** where one host guides up to 20 followers through a whole-slide image. Everyone sees real-time cursors, can snap to the presenter's view, and overlay millions of AI-detected cells—all from a shareable link with **no accounts required**.
 
 | Feature | What It Does |
 |---------|--------------|
 | **Zero-Auth Sessions** | Share a link, start collaborating. No logins, no invites, no IT tickets. Sessions auto-expire in 4 hours. |
-| **Real-Time Presence** | See where everyone is looking—cursors update at 30Hz, viewports at 10Hz. "Follow me here..." actually works. |
+| **Real-Time Presence** | See where everyone is looking. Cursors update at 30Hz, viewports at 10Hz. "Follow me here..." actually works. |
 | **Dual Overlay System** | Render tissue heatmaps (tile-based raster) and cell polygons (vector) simultaneously. WebGL2 handles 1M+ cells at 60fps with LOD. |
-| **Snap to Presenter** | One click to jump to exactly what the presenter sees—smooth 300ms animation, not jarring teleport. |
-| **Docker-Native** | Single `docker run` command. 150MB image. No nginx, no Redis, no docker-compose required. |
+| **Self-Hosted** | Single `docker run` command, to spin up a viewer on your proprietary slides. |
 
 ---
 
 ## Quick Example
 
+![PathCollab Home](./assets/pathcollab-home.png)
+
 ```bash
 # 1. Start PathCollab with your slides directory
-docker run -p 8080:8080 -v ~/slides:/slides -v ~/overlays:/overlays ghcr.io/pabannier/pathcollab:latest
+docker run -p 8080:8080 \
+  -v /path/to/slides:/slides \
+  -v /path/to/overlays:/overlays \       # optional
+  ghcr.io/pabannier/pathcollab:latest
 
 # 2. Open browser
 open http://localhost:8080
+``` 
 
-# 3. Create a session
-#    → Get a shareable link like: http://localhost:8080/s/k3m9p2qdx7#join=...
-
-# 4. Share the link with colleagues
-#    → They open it, instantly see the slide
-#    → Their cursor appears on your screen (and yours on theirs)
-
-# 5. Display cell/tissue overlay (presenter only)
-#    → Load an overlay file
-#    → Tissue heatmap tiles load on-demand as you pan/zoom
-#    → Cell polygons render with automatic LOD (points → boxes → full polygons)
-
-# 6. Use the Layers panel to toggle visibility
-#    → Toggle tissue types (tumor, stroma, necrosis) independently
-#    → Toggle cell types (cancer cells, lymphocytes, fibroblasts)
-#    → Adjust overlay opacity with sliders
-
-# 7. Followers click "Snap to Presenter" to jump to your view
-```
-
-**What it looks like:**
-
-![PathCollab Home](./assets/pathcollab-home.png)
-
+<div align="center">
+Open <b>http://localhost:8080</b> → Share link → Collaborate instantly
+</div>
 
 ---
 
@@ -84,12 +54,12 @@ open http://localhost:8080
 
 | Capability | PathCollab | QuPath | ASAP Viewer | Commercial LIMS |
 |------------|:----------:|:------:|:-----------:|:---------------:|
-| Real-time multi-user | ✅ 20 users | ❌ | ❌ | ✅ |
-| Cursor presence | ✅ 30Hz | ❌ | ❌ | ⚠️ Varies |
-| Overlay rendering | ✅ WebGL2, 1M+ polygons | ✅ Local only | ⚠️ Limited | ✅ |
-| Setup time | ✅ 30 seconds | ⚠️ 5 min | ⚠️ 5 min | ❌ Weeks |
-| Self-hostable | ✅ Docker | ✅ | ✅ | ⚠️ Varies |
-| Cost | ✅ Free | ✅ Free | ✅ Free | ❌ $10K+/year |
+| Real-time multi-user |  20 users | ❌ | ❌ | ✅ |
+| Cursor presence |  30Hz | ❌ | ❌ | ⚠️ Varies |
+| Overlay rendering |  WebGL2, 1M+ polygons |  Local only | ⚠️ Limited | ✅ |
+| Setup time |  30 seconds | ⚠️ 5 min | ⚠️ 5 min | ❌ Weeks |
+| Self-hostable |  Docker | ✅ | ✅ | ⚠️ Varies |
+| Cost |  Free |  Free |  Free | ❌ $10K+/year |
 
 **When to use PathCollab:**
 - Teaching sessions where a pathologist guides students through a case
@@ -104,13 +74,13 @@ open http://localhost:8080
 ### Docker (Recommended)
 
 ```bash
-# Quick start — slides from local directory
+# Quick start: slides from local directory
 docker run -p 8080:8080 -v /path/to/slides:/slides ghcr.io/pabannier/pathcollab:latest
 
-# With persistent overlay cache
+# With cell and tissue overlays
 docker run -p 8080:8080 \
   -v /path/to/slides:/slides:ro \
-  -v pathcollab-cache:/data \
+  -v /path/to/overlays:/overlays:ro \
   ghcr.io/pabannier/pathcollab:latest
 
 # With custom configuration (check the full configuration options below)
@@ -119,32 +89,6 @@ docker run -p 8080:8080 \
   -e MAX_FOLLOWERS=50 \
   -e SESSION_MAX_DURATION_HOURS=8 \
   ghcr.io/pabannier/pathcollab:latest
-```
-
-### Docker Compose (Production)
-
-```yaml
-# docker-compose.yml
-services:
-  pathcollab:
-    image: ghcr.io/pabannier/pathcollab:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - /path/to/slides:/slides:ro
-      - pathcollab-cache:/data
-    environment:
-      - RUST_LOG=pathcollab=info
-      - MAX_FOLLOWERS=20
-      - SESSION_MAX_DURATION_HOURS=4
-    restart: unless-stopped
-
-volumes:
-  pathcollab-cache:
-```
-
-```bash
-docker-compose up -d
 ```
 
 ### From Source
@@ -164,39 +108,6 @@ cd server && cargo build --release
 cd ../web && bun install && bun run build
 ./target/release/pathcollab --slides-dir /path/to/slides
 ```
-
----
-
-## Quick Start
-
-### 1. Start the Server
-
-```bash
-docker run -p 8080:8080 -v ~/slides:/slides ghcr.io/pabannier/pathcollab:latest
-```
-
-Optionally, you can add overlays:
-
-```bash
-docker run -p 8080:8080 -v ~/slides:/slides -v ~/overlays:/overlays ghcr.io/pabannier/pathcollab:latest
-```
-
-### 2. Create a Session
-
-1. Open http://localhost:8080
-2. You're now the **presenter**
-
-### 3. Share with Collaborators
-
-1. Copy the link (includes a secret token in the URL fragment)
-2. Send to colleagues via Slack, email, etc.
-3. They open the link → instantly join as **followers**
-
-### 4. Guide the Session
-
-- **Pan/zoom** normally—followers see your cursor in real-time
-- **Followers** can explore independently, then click **"Snap to Presenter"** to rejoin
-- **Toggle overlays**
 
 ---
 
@@ -457,37 +368,6 @@ docker run -e MAX_FOLLOWERS=50 ...
 
 ---
 
-## Development
-
-### Quick Start
-
-```bash
-./scripts/dev-local.sh
-```
-
-This handles dependency checks, builds, and starts both backend and frontend.
-
-### Manual Setup
-
-```bash
-# Backend (Rust)
-cd server
-sudo apt-get install protobuf-compiler  # Ubuntu/Debian
-cargo run
-
-# Frontend (React)
-cd web
-bun install
-bun run dev
-
-# Tests
-cargo test              # Backend
-bun run test           # Frontend unit tests
-bun run test:e2e       # Playwright E2E tests
-```
-
----
-
 ## Contributing
 
 Contributions welcome! Please:
@@ -504,11 +384,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-<div align="center">
-
-[Report Bug](https://github.com/pabannier/pathcollab/issues) · [Request Feature](https://github.com/pabannier/pathcollab/issues) · [Documentation](docs/)
-
-</div>
