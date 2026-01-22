@@ -441,7 +441,7 @@ impl SlideService for LocalSlideService {
         Ok(meta)
     }
 
-    async fn get_tile(&self, request: &TileRequest) -> Result<Vec<u8>, SlideError> {
+    async fn get_tile(&self, request: &TileRequest) -> Result<Bytes, SlideError> {
         let start = Instant::now();
         counter!("pathcollab_tile_requests_total").increment(1);
 
@@ -456,12 +456,12 @@ impl SlideService for LocalSlideService {
         // Fast path: check tile cache first
         if let Some(cached_tile) = self.tile_cache.get(&cache_key).await {
             histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
-            return Ok(cached_tile.to_vec());
+            return Ok(cached_tile);
         }
 
         // Cache miss - need to compute the tile
         // Helper to record metrics on all exit paths
-        let record_metrics = |result: &Result<Vec<u8>, SlideError>, start: Instant| {
+        let record_metrics = |result: &Result<Bytes, SlideError>, start: Instant| {
             histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
             if result.is_err() {
                 counter!("pathcollab_tile_errors_total").increment(1);
@@ -497,13 +497,12 @@ impl SlideService for LocalSlideService {
         // Read and encode the tile
         let result = self
             .read_tile_jpeg(slide, &metadata, request.level, request.x, request.y)
-            .await;
+            .await
+            .map(Bytes::from);
 
         // Cache the tile on success
         if let Ok(ref tile_data) = result {
-            self.tile_cache
-                .insert(cache_key, Bytes::from(tile_data.clone()))
-                .await;
+            self.tile_cache.insert(cache_key, tile_data.clone()).await;
         }
 
         // Record overall tile latency

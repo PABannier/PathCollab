@@ -1,6 +1,7 @@
 //! SlideService trait definition
 
 use async_trait::async_trait;
+use bytes::Bytes;
 
 use super::types::{SlideError, SlideMetadata, TileRequest};
 
@@ -14,7 +15,7 @@ pub trait SlideService: Send + Sync {
     async fn get_slide(&self, id: &str) -> Result<SlideMetadata, SlideError>;
 
     /// Get a tile as JPEG bytes
-    async fn get_tile(&self, request: &TileRequest) -> Result<Vec<u8>, SlideError>;
+    async fn get_tile(&self, request: &TileRequest) -> Result<Bytes, SlideError>;
 
     /// Check if a slide exists
     async fn slide_exists(&self, id: &str) -> bool {

@@ -4,6 +4,7 @@
 
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
+use bytes::Bytes;
 use pathcollab_server::protocol::SlideInfo;
 use pathcollab_server::server::AppState;
 use pathcollab_server::{
@@ -131,7 +132,7 @@ impl SlideService for MockSlideService {
             .ok_or_else(|| SlideError::NotFound(id.to_string()))
     }
 
-    async fn get_tile(&self, request: &TileRequest) -> Result<Vec<u8>, SlideError> {
+    async fn get_tile(&self, request: &TileRequest) -> Result<Bytes, SlideError> {
         // Verify slide exists
         let metadata = self.get_slide(&request.slide_id).await?;
 
@@ -160,7 +161,7 @@ impl SlideService for MockSlideService {
         }
 
         // Return a test JPEG
-        Ok(Self::create_test_jpeg())
+        Ok(Bytes::from(Self::create_test_jpeg()))
     }
 }
 
