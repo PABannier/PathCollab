@@ -20,6 +20,7 @@
 
 #![allow(clippy::collapsible_if)]
 
+pub mod benchmark;
 pub mod client;
 pub mod scenarios;
 
