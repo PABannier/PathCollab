@@ -68,32 +68,27 @@ export function useViewerViewport({
   // Refs for pending operations
   const pendingSnapRef = useRef(false)
   const lastAppliedViewportRef = useRef<string | null>(null)
-  const resizeThrottleRef = useRef<number | null>(null)
 
-  // Update viewer bounds on resize (throttled to avoid excessive updates)
+  // Update viewer bounds on resize using ResizeObserver for immediate updates
   useEffect(() => {
-    const updateBounds = () => {
-      if (viewerContainerRef.current) {
-        setViewerBounds(viewerContainerRef.current.getBoundingClientRect())
-      }
-    }
+    const container = viewerContainerRef.current
+    if (!container) return
 
-    const throttledUpdateBounds = () => {
-      if (resizeThrottleRef.current) return
-      updateBounds()
-      resizeThrottleRef.current = window.setTimeout(() => {
-        resizeThrottleRef.current = null
-      }, 100) // Throttle to max 10 updates/second
+    const updateBounds = () => {
+      setViewerBounds(container.getBoundingClientRect())
     }
 
     updateBounds() // Initial measurement
-    window.addEventListener('resize', throttledUpdateBounds)
-    return () => {
-      window.removeEventListener('resize', throttledUpdateBounds)
-      if (resizeThrottleRef.current) {
-        clearTimeout(resizeThrottleRef.current)
-      }
-    }
+
+    // ResizeObserver is more immediate than window resize events
+    // and correctly handles container size changes from any source
+    const observer = new ResizeObserver(() => {
+      updateBounds()
+    })
+
+    observer.observe(container)
+
+    return () => observer.disconnect()
   }, [viewerContainerRef])
 
   // Apply presenter viewport to the viewer

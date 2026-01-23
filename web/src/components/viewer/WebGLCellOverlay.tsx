@@ -347,30 +347,6 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     }
   }, [cells, glReady])
 
-  // Calculate viewport transform matrix
-  const transformMatrix = useMemo(() => {
-    if (viewport.zoom <= 0 || slideWidth <= 0 || slideHeight <= 0) {
-      return null
-    }
-
-    const viewportWidth = 1 / viewport.zoom
-    const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
-
-    const viewportLeft = viewport.centerX - viewportWidth / 2
-    const viewportTop = viewport.centerY - viewportHeight / 2
-
-    // Transform: slide coords -> normalized (0-1) -> viewport relative (0-1) -> clip space (-1 to 1)
-    // Combined into a 3x3 matrix (column-major for WebGL)
-    // NOTE: OpenSeadragon uses width-normalized coordinates (image width = 1),
-    // so both X and Y slide coords are normalized by slideWidth
-    const scaleX = 2 / viewportWidth / slideWidth
-    const scaleY = -2 / viewportHeight / slideWidth // Flip Y; use slideWidth for OSD normalization
-    const translateX = (-2 * viewportLeft) / viewportWidth - 1
-    const translateY = (2 * viewportTop) / viewportHeight + 1
-
-    return new Float32Array([scaleX, 0, 0, 0, scaleY, 0, translateX, translateY, 1])
-  }, [viewport, viewerBounds.width, viewerBounds.height, slideWidth, slideHeight])
-
   // Calculate current LOD level based on average cell size
   const lodLevel = useMemo(() => {
     if (cells.length === 0) return 'FULL'
@@ -401,12 +377,51 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
   // Render function
   const render = useCallback(() => {
     const gl = glRef.current
+    const canvas = canvasRef.current
     const program = programRef.current
     const locations = locationsRef.current
 
-    if (!gl || !program || !locations || !transformMatrix) {
+    if (!gl || !canvas || !program || !locations) {
       return
     }
+
+    // Read actual canvas dimensions for transform calculation
+    // This ensures the transform always matches the actual rendered canvas size,
+    // avoiding misalignment during resize when viewerBounds may be stale
+    const canvasWidth = canvas.clientWidth || 1
+    const canvasHeight = canvas.clientHeight || 1
+
+    // Calculate transform matrix using actual canvas dimensions
+    if (viewport.zoom <= 0 || slideWidth <= 0 || slideHeight <= 0) {
+      return
+    }
+
+    const viewportWidth = 1 / viewport.zoom
+    const viewportHeight = canvasHeight / canvasWidth / viewport.zoom
+
+    const viewportLeft = viewport.centerX - viewportWidth / 2
+    const viewportTop = viewport.centerY - viewportHeight / 2
+
+    // Transform: slide coords -> normalized (0-1) -> viewport relative (0-1) -> clip space (-1 to 1)
+    // Combined into a 3x3 matrix (column-major for WebGL)
+    // NOTE: OpenSeadragon uses width-normalized coordinates (image width = 1),
+    // so both X and Y slide coords are normalized by slideWidth
+    const scaleX = 2 / viewportWidth / slideWidth
+    const scaleY = -2 / viewportHeight / slideWidth // Flip Y; use slideWidth for OSD normalization
+    const translateX = (-2 * viewportLeft) / viewportWidth - 1
+    const translateY = (2 * viewportTop) / viewportHeight + 1
+
+    const transformMatrix = new Float32Array([
+      scaleX,
+      0,
+      0,
+      0,
+      scaleY,
+      0,
+      translateX,
+      translateY,
+      1,
+    ])
 
     // Clear canvas
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
@@ -465,7 +480,7 @@ export const WebGLCellOverlay = memo(function WebGLCellOverlay({
     }
     // bufferVersion is intentionally included to trigger re-render when buffers change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transformMatrix, lodLevel, bufferVersion, opacity])
+  }, [viewport, slideWidth, slideHeight, lodLevel, bufferVersion, opacity])
 
   // Render on each animation frame when viewport changes
   useEffect(() => {

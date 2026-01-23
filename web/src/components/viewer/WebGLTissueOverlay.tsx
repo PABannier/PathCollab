@@ -394,27 +394,6 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     // when panning back or re-enabling the overlay. Textures are only cleaned up on unmount.
   }, [tiles, glReady])
 
-  // Calculate viewport transform matrix
-  const transformMatrix = useMemo(() => {
-    if (viewport.zoom <= 0 || slideWidth <= 0) {
-      return null
-    }
-
-    const viewportWidth = 1 / viewport.zoom
-    const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
-
-    const viewportLeft = viewport.centerX - viewportWidth / 2
-    const viewportTop = viewport.centerY - viewportHeight / 2
-
-    // Transform: slide coords -> normalized (0-1) -> viewport relative (0-1) -> clip space (-1 to 1)
-    const scaleX = 2 / viewportWidth / slideWidth
-    const scaleY = -2 / viewportHeight / slideWidth // Flip Y; use slideWidth for OSD normalization
-    const translateX = (-2 * viewportLeft) / viewportWidth - 1
-    const translateY = (2 * viewportTop) / viewportHeight + 1
-
-    return new Float32Array([scaleX, 0, 0, 0, scaleY, 0, translateX, translateY, 1])
-  }, [viewport, viewerBounds.width, viewerBounds.height, slideWidth])
-
   // Build colormap from metadata (Float32Array for CPU-side reference)
   const colormap = useMemo(() => buildColormap(metadata.classes), [metadata.classes])
 
@@ -452,6 +431,8 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
   }, [visibilityData, glReady])
 
   // Calculate viewport bounds in slide coordinates for spatial queries
+  // Note: This uses viewerBounds for tile prefetching decisions, which is acceptable
+  // even if slightly stale - it just affects which tiles we request, not rendering alignment
   const viewportBounds = useMemo((): ViewportBounds | null => {
     if (viewport.zoom <= 0 || slideWidth <= 0) return null
 
@@ -477,12 +458,48 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
   // Render function - optimized to minimize allocations and redundant GL calls
   const render = useCallback(() => {
     const gl = glRef.current
+    const canvas = canvasRef.current
     const program = programRef.current
     const locations = locationsRef.current
 
-    if (!gl || !program || !locations || !transformMatrix || !viewportBounds) {
+    if (!gl || !canvas || !program || !locations || !viewportBounds) {
       return
     }
+
+    // Read actual canvas dimensions for transform calculation
+    // This ensures the transform always matches the actual rendered canvas size,
+    // avoiding misalignment during resize when viewerBounds may be stale
+    const canvasWidth = canvas.clientWidth || 1
+    const canvasHeight = canvas.clientHeight || 1
+
+    // Calculate transform matrix using actual canvas dimensions
+    if (viewport.zoom <= 0 || slideWidth <= 0) {
+      return
+    }
+
+    const viewportWidth = 1 / viewport.zoom
+    const viewportHeight = canvasHeight / canvasWidth / viewport.zoom
+
+    const viewportLeft = viewport.centerX - viewportWidth / 2
+    const viewportTop = viewport.centerY - viewportHeight / 2
+
+    // Transform: slide coords -> normalized (0-1) -> viewport relative (0-1) -> clip space (-1 to 1)
+    const scaleX = 2 / viewportWidth / slideWidth
+    const scaleY = -2 / viewportHeight / slideWidth // Flip Y; use slideWidth for OSD normalization
+    const translateX = (-2 * viewportLeft) / viewportWidth - 1
+    const translateY = (2 * viewportTop) / viewportHeight + 1
+
+    const transformMatrix = new Float32Array([
+      scaleX,
+      0,
+      0,
+      0,
+      scaleY,
+      0,
+      translateX,
+      translateY,
+      1,
+    ])
 
     // Clear canvas
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
@@ -649,7 +666,8 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tiles is intentionally included to trigger re-render when new tiles load
   }, [
-    transformMatrix,
+    viewport,
+    slideWidth,
     viewportBounds,
     colormap,
     visibilityData,
