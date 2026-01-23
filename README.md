@@ -17,7 +17,7 @@ A self-hostable collaborative whole-slide image viewer with real-time cursor pre
 
 ## Why PathCollab?
 
-PathCollab is a **presenter-led collaborative viewer** where one host guides up to 20 followers through a whole-slide image. Everyone sees real-time cursors, can snap to the presenter's view, and overlay millions of AI-detected cells—all from a shareable link with **no accounts required**.
+PathCollab is a **presenter-led collaborative viewer** where one host guides up to 20 followers through a whole-slide image. Everyone sees real-time cursors, can snap to the presenter's view, and overlay millions of cells - all from a shareable link with **no accounts required**.
 
 | Feature | What It Does |
 |---------|--------------|
