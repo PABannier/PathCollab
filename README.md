@@ -380,6 +380,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ---
 
+## In the media
+
+- **January 17th, 2026**: [Rust subreddit](https://www.reddit.com/r/rust/comments/1qlkp3q/media_pathcollab_optimizing_rust_backend_for_a/)
+
+---
+
 ## License
 
 MIT. See [LICENSE](LICENSE) for details.
