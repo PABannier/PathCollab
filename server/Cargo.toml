@@ -54,6 +54,12 @@ rstar = "0.12"
 # Zlib decompression for tissue overlay data
 flate2 = "1.0"
 
+# Zstd decompression for v2 overlay format
+zstd = "0.13"
+
+# Glob pattern matching for overlay discovery
+glob = "0.3"
+
 [build-dependencies]
 prost-build = "0.13"
 

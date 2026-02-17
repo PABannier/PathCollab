@@ -123,12 +123,16 @@ pub struct SlideConfig {
 pub struct OverlayConfig {
     /// Directory containing overlay files
     pub overlays_dir: PathBuf,
+    /// Optional glob pattern for finding overlay files (e.g. "/overlays/**/*/cell_masks.bin").
+    /// The parent directory of each match is used as the slide name.
+    pub overlay_pattern: Option<String>,
 }
 
 impl Default for OverlayConfig {
     fn default() -> Self {
         Self {
             overlays_dir: PathBuf::from("./data/overlays"),
+            overlay_pattern: None,
         }
     }
 }
@@ -282,6 +286,11 @@ impl Config {
         // Overlay config
         if let Ok(path) = env::var("OVERLAY_DIR") {
             config.overlay.overlays_dir = PathBuf::from(path);
+        }
+        if let Ok(pattern) = env::var("OVERLAY_PATTERN") {
+            if !pattern.is_empty() {
+                config.overlay.overlay_pattern = Some(pattern);
+            }
         }
 
         // Static files config
