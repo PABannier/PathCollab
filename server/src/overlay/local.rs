@@ -32,6 +32,9 @@ enum OverlayCacheState {
 /// Local overlay service that reads overlay files from disk
 pub struct LocalOverlayService {
     overlays_dir: PathBuf,
+    /// Pre-built index from glob pattern: slide_name → overlay file path.
+    /// When `Some`, used for lookup instead of directory scanning.
+    glob_index: Option<HashMap<String, PathBuf>>,
     reader: CompositeReader,
     cache: Arc<DashMap<String, OverlayCacheState>>,
 }
@@ -51,22 +54,75 @@ impl LocalOverlayService {
     pub fn new(config: &OverlayConfig) -> Result<Self, OverlayError> {
         let overlays_dir = config.overlays_dir.clone();
 
-        // Create directory if it doesn't exist
-        if !overlays_dir.exists() {
-            std::fs::create_dir_all(&overlays_dir)?;
-            info!("Created overlays directory: {:?}", overlays_dir);
-        }
+        // Build glob index if pattern is set
+        let glob_index = if let Some(ref pattern) = config.overlay_pattern {
+            let index = Self::build_glob_index(pattern);
+            info!(
+                "OVERLAY_PATTERN='{}' matched {} overlay files",
+                pattern,
+                index.len()
+            );
+            Some(index)
+        } else {
+            // Create directory if it doesn't exist (only in non-glob mode)
+            if !overlays_dir.exists() {
+                std::fs::create_dir_all(&overlays_dir)?;
+                info!("Created overlays directory: {:?}", overlays_dir);
+            }
+            None
+        };
 
         Ok(Self {
             overlays_dir,
+            glob_index,
             reader: CompositeReader::new(),
             cache: Arc::new(DashMap::new()),
         })
     }
 
+    /// Build a slide_name → file_path index from a glob pattern.
+    /// The immediate parent directory of each matched file is used as the slide name.
+    /// Known slide extensions (.svs, .ndpi, etc.) are stripped to match slide ID generation.
+    fn build_glob_index(pattern: &str) -> HashMap<String, PathBuf> {
+        let mut index = HashMap::new();
+
+        match glob::glob(pattern) {
+            Ok(paths) => {
+                for entry in paths {
+                    match entry {
+                        Ok(path) => {
+                            if let Some(slide_name) = path
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .and_then(|s| s.to_str())
+                            {
+                                let slide_id = strip_slide_extension_and_sanitize(slide_name);
+                                debug!("Glob matched overlay: {} -> {:?}", slide_id, path);
+                                index.insert(slide_id, path);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Glob error for pattern '{}': {}", pattern, e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Invalid glob pattern '{}': {}", pattern, e);
+            }
+        }
+
+        index
+    }
+
     /// Find overlay file for a given slide ID
     fn find_overlay_file(&self, slide_id: &str) -> Option<PathBuf> {
-        // Try common extensions directly in overlays dir
+        // If glob index is available, use it for lookup
+        if let Some(ref index) = self.glob_index {
+            return index.get(slide_id).cloned();
+        }
+
+        // Fallback: try common extensions directly in overlays dir
         for ext in &["bin", "pb"] {
             let path = self.overlays_dir.join(format!("{}.{}", slide_id, ext));
             if path.exists() {
@@ -252,6 +308,14 @@ impl LocalOverlayService {
 
     /// List all available overlay files
     fn list_overlay_files(&self) -> Vec<String> {
+        // If glob index is available, return its keys
+        if let Some(ref index) = self.glob_index {
+            let mut slide_ids: Vec<String> = index.keys().cloned().collect();
+            slide_ids.sort();
+            return slide_ids;
+        }
+
+        // Fallback: scan overlays directory
         let mut slide_ids = Vec::new();
 
         if let Ok(entries) = std::fs::read_dir(&self.overlays_dir) {
@@ -506,4 +570,27 @@ impl OverlayService for LocalOverlayService {
         // Delegate to the inherent method
         LocalOverlayService::initiate_load(self, slide_id)
     }
+}
+
+/// Known slide file extensions, matching those in `slide/local.rs`.
+const SLIDE_EXTENSIONS: &[&str] = &["svs", "ndpi", "tiff", "tif", "vms", "vmu", "scn", "mrxs"];
+
+/// Strip a known slide extension (e.g. `.svs`) from a directory name and sanitize.
+/// This mirrors how slide IDs are generated: `file_stem()` + `sanitize_id()`.
+/// Example: "TCGA-AB-1234.svs" → "TCGA-AB-1234"
+fn strip_slide_extension_and_sanitize(name: &str) -> String {
+    let stem = SLIDE_EXTENSIONS
+        .iter()
+        .find_map(|ext| name.strip_suffix(&format!(".{}", ext)))
+        .unwrap_or(name);
+
+    stem.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }

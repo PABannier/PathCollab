@@ -9,6 +9,7 @@
 mod index;
 mod local;
 mod reader;
+mod reader_v2;
 pub mod routes;
 mod service;
 mod types;
@@ -24,4 +25,8 @@ pub use types::{
 // Include generated protobuf code
 pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/histotyper.rs"));
+}
+
+pub mod proto_v2 {
+    include!(concat!(env!("OUT_DIR"), "/histotyper_v2.rs"));
 }
