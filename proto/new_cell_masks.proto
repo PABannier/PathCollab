@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package histotyper_v2;
+
+message TileSegmentationData {
+  uint32 x = 1;
+  uint32 y = 2;
+  bytes cells_blob = 3;   // zstd-compressed
+  bytes tissue_blob = 4;  // zstd-compressed
+}
+
+message SlideSegmentationData {
+  string slide_id = 1;
+  string slide_path = 2;
+  float mpp = 3;
+  uint32 max_level = 4;
+  uint32 level = 5;
+  uint32 tile_size = 6;
+  string cell_model_name = 7;
+  string tissue_model_name = 8;
+  repeated string cell_class_names = 9;
+  repeated string tissue_class_names = 10;
+  repeated TileSegmentationData tiles = 11;
+}

@@ -2,8 +2,10 @@
 
 use prost::Message;
 use std::path::Path;
+use tracing::debug;
 
 use super::proto::SlideSegmentationData;
+use super::reader_v2;
 use super::types::OverlayError;
 
 /// Trait for reading annotation files in different formats
@@ -28,8 +30,35 @@ impl AnnotationReader for ProtobufReader {
 
     fn read(&self, path: &Path) -> Result<SlideSegmentationData, OverlayError> {
         let bytes = std::fs::read(path)?;
-        SlideSegmentationData::decode(&*bytes)
-            .map_err(|e| OverlayError::ParseError(format!("Failed to decode protobuf: {}", e)))
+
+        // Try v1 (proto2) first — fails reliably on v2 files due to required fields
+        match SlideSegmentationData::decode(&*bytes) {
+            Ok(data) => {
+                debug!("Decoded overlay as v1 format: {}", path.display());
+                return Ok(data);
+            }
+            Err(v1_err) => {
+                debug!(
+                    "v1 decode failed for {}, trying v2: {}",
+                    path.display(),
+                    v1_err
+                );
+
+                // Try v2 (proto3) decode + convert
+                match super::proto_v2::SlideSegmentationData::decode(&*bytes) {
+                    Ok(v2_data) => {
+                        debug!("Decoded overlay as v2 format: {}", path.display());
+                        return reader_v2::convert_to_v1(&v2_data);
+                    }
+                    Err(v2_err) => {
+                        return Err(OverlayError::ParseError(format!(
+                            "Failed to decode protobuf (v1: {}, v2: {})",
+                            v1_err, v2_err
+                        )));
+                    }
+                }
+            }
+        }
     }
 }
 
