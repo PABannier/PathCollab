@@ -139,3 +139,31 @@ pub struct TissueTileData {
     pub width: u32,
     pub height: u32,
 }
+
+/// Metadata for one named heatmap layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeatmapLayerInfo {
+    pub name: String,
+    pub display_name: Option<String>,
+    pub min_value: f32,
+    pub max_value: f32,
+    pub colormap: String,
+}
+
+/// Metadata about heatmap overlays for a slide.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeatmapOverlayMetadata {
+    pub slide_id: String,
+    pub model_name: String,
+    pub tile_size: u32,
+    pub max_level: u32,
+    pub heatmaps: Vec<HeatmapLayerInfo>,
+    pub tiles: Vec<TissueTileInfo>,
+}
+
+/// Raw heatmap tile data as row-major float32 bytes.
+pub struct HeatmapTileData {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}

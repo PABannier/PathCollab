@@ -53,3 +53,20 @@ export interface TissueOverlayMetadata {
   max_level: number
   tiles: TissueTileInfo[]
 }
+
+export interface HeatmapLayerInfo {
+  name: string
+  display_name: string | null
+  min_value: number
+  max_value: number
+  colormap: string
+}
+
+export interface HeatmapOverlayMetadata {
+  slide_id: string
+  model_name: string
+  tile_size: number
+  max_level: number
+  heatmaps: HeatmapLayerInfo[]
+  tiles: TissueTileInfo[]
+}

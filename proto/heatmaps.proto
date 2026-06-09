@@ -1,0 +1,46 @@
+syntax = "proto2";
+
+package histotyper;
+
+message HeatmapLayerMetadata {
+    required string name         = 1;
+    optional string display_name = 2;
+    optional float  min_value    = 3;
+    optional float  max_value    = 4;
+    optional string colormap     = 5 [default = "viridis"];
+}
+
+message HeatmapLayer {
+    required string name        = 1;
+    required bytes  data        = 2;  // Flattened row-major float32 values
+    required int32  width       = 3;
+    required int32  height      = 4;
+    optional string dtype       = 5 [default = "float32"];
+    optional float  min_value   = 6;
+    optional float  max_value   = 7;
+    optional string colormap    = 8 [default = "viridis"];
+    optional bool   compressed  = 9 [default = false]; // zlib-compressed data bytes
+}
+
+message TileHeatmapData {
+    required string tile_id = 1;
+    required int32  level   = 2;
+    required float  x       = 3;
+    required float  y       = 4;
+    required int32  width   = 5;
+    required int32  height  = 6;
+
+    repeated HeatmapLayer heatmaps = 7;
+}
+
+message SlideHeatmapData {
+    required string slide_id            = 1;
+    required string slide_path          = 2;
+    required float  mpp                 = 3;
+    required int32  max_level           = 4;
+    required string heatmap_model_name  = 5;
+    optional int32  tile_size           = 6 [default = 256];
+
+    repeated HeatmapLayerMetadata heatmaps = 7;
+    repeated TileHeatmapData tiles          = 8;
+}

@@ -1,15 +1,36 @@
-import type { CachedTile, TileBounds } from '../hooks/useTissueOverlay'
-import type { TissueOverlayMetadata } from '../types/overlay'
+export interface TileBounds {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+export interface IndexedCachedTile {
+  level: number
+  x: number
+  y: number
+  width: number
+  height: number
+  data: unknown
+  scaleFactor: number
+  bounds: TileBounds
+  loadTime: number
+}
+
+interface TileIndexMetadata {
+  tile_size: number
+  max_level: number
+}
 
 /** Tile with index metadata for spatial queries */
 export interface IndexedTile {
-  tile: CachedTile
+  tile: IndexedCachedTile
   gridCells: Set<number> // Which grid cells this tile overlaps
 }
 
 /** Result from fallback lookup */
 export interface FallbackResult {
-  tile: CachedTile
+  tile: IndexedCachedTile
   /** Texture coordinates for the portion of the fallback tile to sample */
   texCoords: {
     u0: number
@@ -52,7 +73,7 @@ export class TissueTileIndex {
   private cellHeight: number
   private queryCache: QueryCache | null = null
 
-  constructor(_metadata: TissueOverlayMetadata, slideWidth: number, slideHeight: number) {
+  constructor(_metadata: TileIndexMetadata, slideWidth: number, slideHeight: number) {
     this.cellWidth = slideWidth / GRID_SIZE
     this.cellHeight = slideHeight / GRID_SIZE
   }
@@ -86,7 +107,7 @@ export class TissueTileIndex {
   }
 
   /** Add a tile to the index */
-  addTile(tile: CachedTile): IndexedTile {
+  addTile(tile: IndexedCachedTile): IndexedTile {
     const key = this.tileKey(tile.level, tile.x, tile.y)
 
     // Check if already indexed

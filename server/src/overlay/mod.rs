@@ -17,8 +17,9 @@ pub use local::LocalOverlayService;
 pub use routes::{OverlayAppState, overlay_routes};
 pub use service::OverlayService;
 pub use types::{
-    CellMask, OverlayError, OverlayMetadata, Point, RegionRequest, TissueClassInfo,
-    TissueOverlayMetadata, TissueTileData, TissueTileInfo,
+    CellMask, HeatmapLayerInfo, HeatmapOverlayMetadata, HeatmapTileData, OverlayError,
+    OverlayMetadata, Point, RegionRequest, TissueClassInfo, TissueOverlayMetadata, TissueTileData,
+    TissueTileInfo,
 };
 
 // Include generated protobuf code

@@ -28,6 +28,7 @@ import { useHashParams } from '../hooks/useHashParams'
 import { useSlideInfo } from '../hooks/useSlideInfo'
 import { useCellOverlay } from '../hooks/useCellOverlay'
 import { useTissueOverlay } from '../hooks/useTissueOverlay'
+import { useHeatmapOverlay } from '../hooks/useHeatmapOverlay'
 import { useAutoCreateSession } from '../hooks/useAutoCreateSession'
 import { useCursorTracking } from './Session/useCursorTracking'
 import { useSessionKeyboardShortcuts } from './Session/useSessionKeyboardShortcuts'
@@ -47,6 +48,9 @@ export function Session() {
   const [tissueOverlaysEnabled, setTissueOverlaysEnabled] = useState(false)
   const [tissueOverlayOpacity, setTissueOverlayOpacity] = useState(0.7)
   const [visibleTissueClasses, setVisibleTissueClasses] = useState<Set<number>>(new Set())
+  const [heatmapOverlaysEnabled, setHeatmapOverlaysEnabled] = useState(false)
+  const [heatmapOverlayOpacity, setHeatmapOverlayOpacity] = useState(0.75)
+  const [selectedHeatmapName, setSelectedHeatmapName] = useState<string | undefined>()
 
   // Parse secrets from URL hash fragment (never sent to server)
   const { joinSecret, presenterKey } = useHashParams()
@@ -180,6 +184,26 @@ export function Session() {
     enabled: tissueOverlaysEnabled && !!slide,
   })
 
+  // Heatmap overlay data
+  const {
+    metadata: heatmapMetadata,
+    activeHeatmapName,
+    tiles: heatmapTiles,
+    tileIndex: heatmapTileIndex,
+    currentLevel: heatmapCurrentLevel,
+    isLoading: isLoadingHeatmap,
+    hasOverlay: hasHeatmapOverlay,
+    isOverlayLoading: isHeatmapOverlayLoading,
+  } = useHeatmapOverlay({
+    slideId: slide?.id,
+    heatmapName: selectedHeatmapName,
+    viewport: currentViewport,
+    viewerBounds,
+    slideWidth: slide?.width ?? 0,
+    slideHeight: slide?.height ?? 0,
+    enabled: heatmapOverlaysEnabled && !!slide,
+  })
+
   // Initialize visible cell types when metadata loads
   // This is intentional state sync from external data (server response) to local state
   useEffect(() => {
@@ -196,6 +220,17 @@ export function Session() {
       setVisibleTissueClasses(new Set(tissueMetadata.classes.map((c) => c.id)))
     }
   }, [tissueMetadata?.classes])
+
+  useEffect(() => {
+    if (!heatmapMetadata?.heatmaps.length) return
+    if (
+      !selectedHeatmapName ||
+      !heatmapMetadata.heatmaps.some((h) => h.name === selectedHeatmapName)
+    ) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing server state to local state
+      setSelectedHeatmapName(heatmapMetadata.heatmaps[0].name)
+    }
+  }, [heatmapMetadata?.heatmaps, selectedHeatmapName])
 
   // Filter cells by visible types
   const cells = useMemo(() => {
@@ -264,6 +299,23 @@ export function Session() {
     },
     [isPresenter, session, tissueOverlaysEnabled, tissueOverlayOpacity, updateTissueOverlay]
   )
+
+  const handleHeatmapOverlaysChange = useCallback((enabled: boolean) => {
+    setHeatmapOverlaysEnabled(enabled)
+  }, [])
+
+  const handleHeatmapOverlayOpacityChange = useCallback((opacity: number) => {
+    setHeatmapOverlayOpacity(opacity)
+  }, [])
+
+  const handleSelectedHeatmapChange = useCallback((name: string) => {
+    setSelectedHeatmapName(name)
+  }, [])
+
+  const activeHeatmap = useMemo(() => {
+    if (!heatmapMetadata || !activeHeatmapName) return null
+    return heatmapMetadata.heatmaps.find((heatmap) => heatmap.name === activeHeatmapName) ?? null
+  }, [heatmapMetadata, activeHeatmapName])
 
   // Sync follower state when presenter cell overlay changes
   // This is intentional state sync: followers receive presenter's overlay state via WebSocket
@@ -417,6 +469,15 @@ export function Session() {
               tissueClasses={tissueMetadata?.classes ?? []}
               visibleTissueClasses={visibleTissueClasses}
               onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
+              heatmapOverlaysEnabled={heatmapOverlaysEnabled}
+              onHeatmapOverlaysChange={handleHeatmapOverlaysChange}
+              hasHeatmapOverlay={hasHeatmapOverlay && !isHeatmapOverlayLoading}
+              isHeatmapOverlayLoading={isHeatmapOverlayLoading || isLoadingHeatmap}
+              heatmapOpacity={heatmapOverlayOpacity}
+              onHeatmapOpacityChange={handleHeatmapOverlayOpacityChange}
+              heatmaps={heatmapMetadata?.heatmaps ?? []}
+              selectedHeatmapName={activeHeatmapName}
+              onSelectedHeatmapChange={handleSelectedHeatmapChange}
             />
           )}
 
@@ -456,6 +517,13 @@ export function Session() {
           tissueCurrentLevel={tissueCurrentLevel}
           tissueOverlayOpacity={tissueOverlayOpacity}
           visibleTissueClasses={visibleTissueClasses}
+          heatmapOverlaysEnabled={heatmapOverlaysEnabled}
+          heatmapMetadata={heatmapMetadata}
+          activeHeatmap={activeHeatmap}
+          heatmapTiles={heatmapTiles}
+          heatmapTileIndex={heatmapTileIndex}
+          heatmapCurrentLevel={heatmapCurrentLevel}
+          heatmapOverlayOpacity={heatmapOverlayOpacity}
         />
       </div>
 

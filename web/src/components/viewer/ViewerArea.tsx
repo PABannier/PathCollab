@@ -2,9 +2,16 @@ import { type RefObject, useMemo, useState, useCallback, useEffect } from 'react
 import { SlideViewer, type SlideInfo, type SlideViewerHandle, ViewportLoader } from './index'
 import { WebGLCellOverlay } from './WebGLCellOverlay'
 import { WebGLTissueOverlay } from './WebGLTissueOverlay'
+import { WebGLHeatmapOverlay } from './WebGLHeatmapOverlay'
 import { CursorLayer } from './CursorLayer'
-import type { CellMask, TissueOverlayMetadata } from '../../types/overlay'
+import type {
+  CellMask,
+  HeatmapLayerInfo,
+  HeatmapOverlayMetadata,
+  TissueOverlayMetadata,
+} from '../../types/overlay'
 import type { CachedTile } from '../../hooks/useTissueOverlay'
+import type { CachedHeatmapTile } from '../../hooks/useHeatmapOverlay'
 import type { TissueTileIndex } from '../../utils/TissueTileIndex'
 import { MinimapOverlay } from './MinimapOverlay'
 import { PresetEmptyState } from '../ui/EmptyState'
@@ -90,6 +97,20 @@ export interface ViewerAreaProps {
   tissueOverlayOpacity?: number
   /** Visible tissue class IDs */
   visibleTissueClasses?: Set<number>
+  /** Whether heatmap overlays are enabled */
+  heatmapOverlaysEnabled?: boolean
+  /** Heatmap overlay metadata */
+  heatmapMetadata?: HeatmapOverlayMetadata | null
+  /** Active heatmap layer */
+  activeHeatmap?: HeatmapLayerInfo | null
+  /** Cached heatmap tiles */
+  heatmapTiles?: Map<string, CachedHeatmapTile>
+  /** Spatial index for heatmap tiles */
+  heatmapTileIndex?: TissueTileIndex | null
+  /** Current heatmap tile level */
+  heatmapCurrentLevel?: number
+  /** Opacity for heatmap overlays (0-1) */
+  heatmapOverlayOpacity?: number
 }
 
 /**
@@ -127,6 +148,12 @@ export function ViewerArea({
   tissueCurrentLevel,
   tissueOverlayOpacity,
   visibleTissueClasses,
+  heatmapOverlaysEnabled,
+  activeHeatmap,
+  heatmapTiles,
+  heatmapTileIndex,
+  heatmapCurrentLevel,
+  heatmapOverlayOpacity,
 }: ViewerAreaProps) {
   // Real-time viewport for overlay rendering (updated at 60fps during animation)
   const [realtimeViewport, setRealtimeViewport] = useState<RenderViewport>({
@@ -187,6 +214,26 @@ export function ViewerArea({
           onAnimationFrame={handleAnimationFrame}
         />
       )}
+
+      {/* Tissue overlay (WebGL-accelerated, rendered below cell overlay) */}
+      {heatmapOverlaysEnabled &&
+        viewerBounds &&
+        slide &&
+        activeHeatmap &&
+        heatmapTiles &&
+        heatmapTileIndex &&
+        heatmapCurrentLevel !== undefined && (
+          <WebGLHeatmapOverlay
+            heatmap={activeHeatmap}
+            tiles={heatmapTiles}
+            tileIndex={heatmapTileIndex}
+            currentLevel={heatmapCurrentLevel}
+            viewerBounds={viewerBounds}
+            viewport={realtimeViewport}
+            slideWidth={slide.width}
+            opacity={heatmapOverlayOpacity}
+          />
+        )}
 
       {/* Tissue overlay (WebGL-accelerated, rendered below cell overlay) */}
       {tissueOverlaysEnabled &&

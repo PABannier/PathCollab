@@ -276,6 +276,102 @@ pub async fn get_tissue_tile(
     }
 }
 
+/// GET /api/slide/:id/overlay/heatmaps/metadata - Get heatmap overlay metadata
+pub async fn get_heatmap_metadata(
+    State(state): State<OverlayAppState>,
+    Path(id): Path<String>,
+) -> Response {
+    let (exists, ready) = state.overlay_service.get_heatmap_status(&id);
+
+    if !exists {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(OverlayErrorResponse {
+                error: format!("No heatmap overlay found for slide '{}'", id),
+                code: "not_found".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    if !ready {
+        state.overlay_service.initiate_heatmap_load(&id);
+        return (
+            StatusCode::ACCEPTED,
+            Json(OverlayLoadingResponse {
+                slide_id: id,
+                status: "loading".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    match state.overlay_service.get_heatmap_metadata(&id) {
+        Ok(metadata) => (StatusCode::OK, Json(metadata)).into_response(),
+        Err(e) => {
+            tracing::debug!("No heatmap metadata for slide {}: {}", id, e);
+            OverlayErrorResponse::from(e).into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HeatmapTilePathParams {
+    pub id: String,
+    pub heatmap_name: String,
+    pub level: u32,
+    pub x: u32,
+    pub y: u32,
+}
+
+/// GET /api/slide/:id/overlay/heatmaps/:heatmap_name/:level/:x/:y - Get raw heatmap tile data
+pub async fn get_heatmap_tile(
+    State(state): State<OverlayAppState>,
+    Path(params): Path<HeatmapTilePathParams>,
+) -> Response {
+    match state.overlay_service.get_heatmap_tile(
+        &params.id,
+        &params.heatmap_name,
+        params.level,
+        params.x,
+        params.y,
+    ) {
+        Ok(tile_data) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                "Content-Type",
+                HeaderValue::from_static("application/octet-stream"),
+            );
+            headers.insert(
+                "X-Tile-Width",
+                HeaderValue::from_str(&tile_data.width.to_string()).unwrap(),
+            );
+            headers.insert(
+                "X-Tile-Height",
+                HeaderValue::from_str(&tile_data.height.to_string()).unwrap(),
+            );
+            headers.insert(
+                "Cache-Control",
+                HeaderValue::from_static("public, max-age=31536000, immutable"),
+            );
+
+            (StatusCode::OK, headers, Body::from(tile_data.data)).into_response()
+        }
+        Err(e) => {
+            tracing::debug!(
+                "Heatmap tile not found: slide={}, heatmap={}, level={}, x={}, y={}: {}",
+                params.id,
+                params.heatmap_name,
+                params.level,
+                params.x,
+                params.y,
+                e
+            );
+            OverlayErrorResponse::from(e).into_response()
+        }
+    }
+}
+
 /// Build overlay API routes
 pub fn overlay_routes(state: OverlayAppState) -> Router {
     Router::new()
@@ -289,6 +385,14 @@ pub fn overlay_routes(state: OverlayAppState) -> Router {
         .route(
             "/slide/:id/overlay/tissue/:level/:x/:y",
             get(get_tissue_tile),
+        )
+        .route(
+            "/slide/:id/overlay/heatmaps/metadata",
+            get(get_heatmap_metadata),
+        )
+        .route(
+            "/slide/:id/overlay/heatmaps/:heatmap_name/:level/:x/:y",
+            get(get_heatmap_tile),
         )
         .with_state(state)
 }

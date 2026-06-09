@@ -12,12 +12,13 @@ use tracing::{debug, info, warn};
 use crate::config::OverlayConfig;
 
 use super::index::OverlaySpatialIndex;
-use super::proto::SlideSegmentationData;
+use super::proto::{SlideHeatmapData, SlideSegmentationData};
 use super::reader::{AnnotationReader, CompositeReader};
 use super::service::OverlayService;
 use super::types::{
-    CellMask, OverlayError, OverlayMetadata, RegionRequest, TissueClassInfo, TissueOverlayMetadata,
-    TissueTileData, TissueTileInfo,
+    CellMask, HeatmapLayerInfo, HeatmapOverlayMetadata, HeatmapTileData, OverlayError,
+    OverlayMetadata, RegionRequest, TissueClassInfo, TissueOverlayMetadata, TissueTileData,
+    TissueTileInfo,
 };
 
 /// Cache state for overlay loading
@@ -29,11 +30,18 @@ enum OverlayCacheState {
     Ready(Arc<CachedOverlay>),
 }
 
+#[derive(Clone)]
+enum HeatmapCacheState {
+    Loading,
+    Ready(Arc<CachedHeatmapOverlay>),
+}
+
 /// Local overlay service that reads overlay files from disk
 pub struct LocalOverlayService {
     overlays_dir: PathBuf,
     reader: CompositeReader,
     cache: Arc<DashMap<String, OverlayCacheState>>,
+    heatmap_cache: Arc<DashMap<String, HeatmapCacheState>>,
 }
 
 /// Cached overlay data including metadata and spatial index
@@ -43,6 +51,12 @@ struct CachedOverlay {
     /// Raw protobuf data for tissue tile access
     raw_data: Arc<SlideSegmentationData>,
     /// Tile lookup map: (level, x, y) -> tile index
+    tile_map: HashMap<(u32, u32, u32), usize>,
+}
+
+struct CachedHeatmapOverlay {
+    metadata: HeatmapOverlayMetadata,
+    raw_data: Arc<SlideHeatmapData>,
     tile_map: HashMap<(u32, u32, u32), usize>,
 }
 
@@ -61,6 +75,7 @@ impl LocalOverlayService {
             overlays_dir,
             reader: CompositeReader::new(),
             cache: Arc::new(DashMap::new()),
+            heatmap_cache: Arc::new(DashMap::new()),
         })
     }
 
@@ -76,6 +91,27 @@ impl LocalOverlayService {
 
         // Try subdirectory structure: {slide_id}/cell_masks.bin
         for filename in &["cell_masks.bin", "cell_masks.pb"] {
+            let path = self.overlays_dir.join(slide_id).join(filename);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+
+        None
+    }
+
+    fn find_heatmap_file(&self, slide_id: &str) -> Option<PathBuf> {
+        for filename in &[
+            format!("{}.heatmaps.pb", slide_id),
+            format!("{}.heatmaps.bin", slide_id),
+        ] {
+            let path = self.overlays_dir.join(filename);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+
+        for filename in &["heatmaps.pb", "heatmaps.bin"] {
             let path = self.overlays_dir.join(slide_id).join(filename);
             if path.exists() {
                 return Some(path);
@@ -221,6 +257,109 @@ impl LocalOverlayService {
         }))
     }
 
+    fn load_heatmap_overlay(
+        &self,
+        slide_id: &str,
+    ) -> Result<Arc<CachedHeatmapOverlay>, OverlayError> {
+        if let Some(entry) = self.heatmap_cache.get(slide_id) {
+            return match entry.value() {
+                HeatmapCacheState::Loading => Err(OverlayError::NotFound(slide_id.to_string())),
+                HeatmapCacheState::Ready(cached) => Ok(cached.clone()),
+            };
+        }
+
+        let path = self
+            .find_heatmap_file(slide_id)
+            .ok_or_else(|| OverlayError::NotFound(slide_id.to_string()))?;
+
+        debug!("Loading heatmap overlay from: {:?}", path);
+        let data = self.reader.read_heatmap(&path)?;
+        let metadata = Self::build_heatmap_metadata(slide_id, &data)?;
+        let tile_map = Self::build_heatmap_tile_map(&data);
+
+        let cached = Arc::new(CachedHeatmapOverlay {
+            metadata,
+            raw_data: Arc::new(data),
+            tile_map,
+        });
+
+        self.heatmap_cache.insert(
+            slide_id.to_string(),
+            HeatmapCacheState::Ready(cached.clone()),
+        );
+
+        info!(
+            "Loaded heatmap overlay for slide '{}': {} layers",
+            slide_id,
+            cached.metadata.heatmaps.len()
+        );
+
+        Ok(cached)
+    }
+
+    pub fn get_heatmap_status(&self, slide_id: &str) -> (bool, bool) {
+        if let Some(entry) = self.heatmap_cache.get(slide_id) {
+            return match entry.value() {
+                HeatmapCacheState::Loading => (true, false),
+                HeatmapCacheState::Ready(_) => (true, true),
+            };
+        }
+
+        (self.find_heatmap_file(slide_id).is_some(), false)
+    }
+
+    pub fn initiate_heatmap_load(&self, slide_id: &str) {
+        if self.heatmap_cache.contains_key(slide_id) {
+            return;
+        }
+
+        let path = match self.find_heatmap_file(slide_id) {
+            Some(p) => p,
+            None => return,
+        };
+
+        self.heatmap_cache
+            .insert(slide_id.to_string(), HeatmapCacheState::Loading);
+
+        let cache = self.heatmap_cache.clone();
+        let slide_id = slide_id.to_string();
+        let reader = CompositeReader::new();
+
+        tokio::task::spawn_blocking(move || {
+            match Self::do_heatmap_load_blocking(&reader, &path, &slide_id) {
+                Ok(cached) => {
+                    cache.insert(slide_id.clone(), HeatmapCacheState::Ready(cached.clone()));
+                    info!(
+                        "Background loaded heatmap overlay for slide '{}': {} layers",
+                        slide_id,
+                        cached.metadata.heatmaps.len()
+                    );
+                }
+                Err(e) => {
+                    cache.remove(&slide_id);
+                    warn!("Failed to load heatmap overlay for '{}': {}", slide_id, e);
+                }
+            }
+        });
+    }
+
+    fn do_heatmap_load_blocking(
+        reader: &CompositeReader,
+        path: &PathBuf,
+        slide_id: &str,
+    ) -> Result<Arc<CachedHeatmapOverlay>, OverlayError> {
+        debug!("Background loading heatmap overlay from: {:?}", path);
+        let data = reader.read_heatmap(path)?;
+        let metadata = Self::build_heatmap_metadata(slide_id, &data)?;
+        let tile_map = Self::build_heatmap_tile_map(&data);
+
+        Ok(Arc::new(CachedHeatmapOverlay {
+            metadata,
+            raw_data: Arc::new(data),
+            tile_map,
+        }))
+    }
+
     /// Build tile lookup map for O(1) tile access
     fn build_tile_map(data: &SlideSegmentationData) -> HashMap<(u32, u32, u32), usize> {
         let mut map = HashMap::new();
@@ -231,6 +370,90 @@ impl LocalOverlayService {
             map.insert((level, x, y), idx);
         }
         map
+    }
+
+    fn build_heatmap_tile_map(data: &SlideHeatmapData) -> HashMap<(u32, u32, u32), usize> {
+        let mut map = HashMap::new();
+        for (idx, tile) in data.tiles.iter().enumerate() {
+            map.insert((tile.level as u32, tile.x as u32, tile.y as u32), idx);
+        }
+        map
+    }
+
+    fn build_heatmap_metadata(
+        slide_id: &str,
+        data: &SlideHeatmapData,
+    ) -> Result<HeatmapOverlayMetadata, OverlayError> {
+        let mut heatmaps: Vec<HeatmapLayerInfo> = data
+            .heatmaps
+            .iter()
+            .map(|layer| HeatmapLayerInfo {
+                name: layer.name.clone(),
+                display_name: layer.display_name.clone(),
+                min_value: layer.min_value.unwrap_or(0.0),
+                max_value: layer.max_value.unwrap_or(1.0),
+                colormap: layer
+                    .colormap
+                    .clone()
+                    .unwrap_or_else(|| "viridis".to_string()),
+            })
+            .collect();
+
+        if heatmaps.is_empty() {
+            let first_tile = data.tiles.first().ok_or_else(|| {
+                OverlayError::NotFound(format!("No heatmap tiles for slide '{}'", slide_id))
+            })?;
+
+            heatmaps = first_tile
+                .heatmaps
+                .iter()
+                .map(|layer| HeatmapLayerInfo {
+                    name: layer.name.clone(),
+                    display_name: None,
+                    min_value: layer.min_value.unwrap_or(0.0),
+                    max_value: layer.max_value.unwrap_or(1.0),
+                    colormap: layer
+                        .colormap
+                        .clone()
+                        .unwrap_or_else(|| "viridis".to_string()),
+                })
+                .collect();
+        }
+
+        if heatmaps.is_empty() {
+            return Err(OverlayError::NotFound(format!(
+                "No heatmap layers for slide '{}'",
+                slide_id
+            )));
+        }
+
+        let tiles: Vec<TissueTileInfo> = data
+            .tiles
+            .iter()
+            .filter(|t| !t.heatmaps.is_empty())
+            .map(|t| TissueTileInfo {
+                level: t.level as u32,
+                x: t.x as u32,
+                y: t.y as u32,
+                width: t.width as u32,
+                height: t.height as u32,
+            })
+            .collect();
+
+        let tile_size = data
+            .tile_size
+            .filter(|size| *size > 0)
+            .map(|size| size as u32)
+            .unwrap_or_else(|| tiles.first().map(|t| t.width.max(t.height)).unwrap_or(256));
+
+        Ok(HeatmapOverlayMetadata {
+            slide_id: slide_id.to_string(),
+            model_name: data.heatmap_model_name.clone(),
+            tile_size,
+            max_level: data.max_level as u32,
+            heatmaps,
+            tiles,
+        })
     }
 
     /// Build metadata from segmentation data
@@ -390,6 +613,71 @@ impl LocalOverlayService {
         })
     }
 
+    /// Get heatmap overlay metadata including layer names and tile grid.
+    pub fn get_heatmap_metadata(
+        &self,
+        slide_id: &str,
+    ) -> Result<HeatmapOverlayMetadata, OverlayError> {
+        let cached = self.load_heatmap_overlay(slide_id)?;
+        Ok(cached.metadata.clone())
+    }
+
+    /// Get raw heatmap tile data for a named layer.
+    pub fn get_heatmap_tile(
+        &self,
+        slide_id: &str,
+        heatmap_name: &str,
+        level: u32,
+        x: u32,
+        y: u32,
+    ) -> Result<HeatmapTileData, OverlayError> {
+        let cached = self.load_heatmap_overlay(slide_id)?;
+
+        let tile_idx = cached.tile_map.get(&(level, x, y)).ok_or_else(|| {
+            OverlayError::NotFound(format!(
+                "Heatmap tile not found: level={}, x={}, y={}",
+                level, x, y
+            ))
+        })?;
+
+        let tile = &cached.raw_data.tiles[*tile_idx];
+        let layer = tile
+            .heatmaps
+            .iter()
+            .find(|layer| layer.name == heatmap_name)
+            .ok_or_else(|| {
+                OverlayError::NotFound(format!(
+                    "Heatmap layer '{}' not found in tile: level={}, x={}, y={}",
+                    heatmap_name, level, x, y
+                ))
+            })?;
+
+        let dtype = layer
+            .dtype
+            .clone()
+            .unwrap_or_else(|| "float32".to_string())
+            .to_lowercase();
+        if dtype != "float32" {
+            return Err(OverlayError::UnsupportedFormat(format!(
+                "Unsupported heatmap dtype '{}'; expected float32",
+                dtype
+            )));
+        }
+
+        let data = Self::decompress_heatmap_data(
+            &layer.data,
+            layer.width as usize,
+            layer.height as usize,
+            layer.compressed.unwrap_or(false),
+        )?;
+
+        Ok(HeatmapTileData {
+            data,
+            width: layer.width as u32,
+            height: layer.height as u32,
+        })
+    }
+
     /// Decompress zlib-compressed tissue data, or return as-is if not compressed
     fn decompress_tissue_data(
         data: &[u8],
@@ -435,6 +723,36 @@ impl LocalOverlayService {
             );
             Ok(data.to_vec())
         }
+    }
+
+    fn decompress_heatmap_data(
+        data: &[u8],
+        width: usize,
+        height: usize,
+        compressed: bool,
+    ) -> Result<Vec<u8>, OverlayError> {
+        let expected_size = width * height * std::mem::size_of::<f32>();
+
+        let decoded = if compressed || (data.len() >= 2 && data[0] == 0x78) {
+            let mut decoder = ZlibDecoder::new(data);
+            let mut decompressed = Vec::with_capacity(expected_size);
+            decoder.read_to_end(&mut decompressed)?;
+            decompressed
+        } else {
+            data.to_vec()
+        };
+
+        if decoded.len() != expected_size {
+            return Err(OverlayError::ParseError(format!(
+                "Heatmap data size {} does not match expected {} ({}x{} float32)",
+                decoded.len(),
+                expected_size,
+                width,
+                height
+            )));
+        }
+
+        Ok(decoded)
     }
 
     /// Check if tissue data is available for a slide

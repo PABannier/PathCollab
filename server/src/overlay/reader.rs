@@ -3,7 +3,7 @@
 use prost::Message;
 use std::path::Path;
 
-use super::proto::SlideSegmentationData;
+use super::proto::{SlideHeatmapData, SlideSegmentationData};
 use super::types::OverlayError;
 
 /// Trait for reading annotation files in different formats
@@ -13,6 +13,9 @@ pub trait AnnotationReader: Send + Sync {
 
     /// Read and parse the annotation file
     fn read(&self, path: &Path) -> Result<SlideSegmentationData, OverlayError>;
+
+    /// Read and parse a heatmap annotation file.
+    fn read_heatmap(&self, path: &Path) -> Result<SlideHeatmapData, OverlayError>;
 }
 
 /// Protobuf reader for .bin and .pb files
@@ -31,6 +34,13 @@ impl AnnotationReader for ProtobufReader {
         SlideSegmentationData::decode(&*bytes)
             .map_err(|e| OverlayError::ParseError(format!("Failed to decode protobuf: {}", e)))
     }
+
+    fn read_heatmap(&self, path: &Path) -> Result<SlideHeatmapData, OverlayError> {
+        let bytes = std::fs::read(path)?;
+        SlideHeatmapData::decode(&*bytes).map_err(|e| {
+            OverlayError::ParseError(format!("Failed to decode heatmap protobuf: {}", e))
+        })
+    }
 }
 
 /// JSON reader (stub for future implementation)
@@ -44,6 +54,12 @@ impl AnnotationReader for JsonReader {
     fn read(&self, _path: &Path) -> Result<SlideSegmentationData, OverlayError> {
         Err(OverlayError::UnsupportedFormat(
             "JSON format not yet implemented".into(),
+        ))
+    }
+
+    fn read_heatmap(&self, _path: &Path) -> Result<SlideHeatmapData, OverlayError> {
+        Err(OverlayError::UnsupportedFormat(
+            "JSON heatmap format not yet implemented".into(),
         ))
     }
 }
@@ -87,5 +103,16 @@ impl AnnotationReader for CompositeReader {
                 ))
             })?
             .read(path)
+    }
+
+    fn read_heatmap(&self, path: &Path) -> Result<SlideHeatmapData, OverlayError> {
+        self.find_reader(path)
+            .ok_or_else(|| {
+                OverlayError::UnsupportedFormat(format!(
+                    "No reader available for file: {}",
+                    path.display()
+                ))
+            })?
+            .read_heatmap(path)
     }
 }

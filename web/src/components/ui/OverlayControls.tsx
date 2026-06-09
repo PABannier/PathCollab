@@ -1,5 +1,5 @@
 import { Toggle } from './Toggle'
-import type { TissueClassInfo } from '../../types/overlay'
+import type { HeatmapLayerInfo, TissueClassInfo } from '../../types/overlay'
 
 interface OverlayControlsProps {
   /** Whether cell overlays are enabled */
@@ -40,6 +40,24 @@ interface OverlayControlsProps {
   visibleTissueClasses?: Set<number>
   /** Callback when visible tissue classes change */
   onVisibleTissueClassesChange?: (classes: Set<number>) => void
+  /** Whether heatmap overlays are enabled */
+  heatmapOverlaysEnabled?: boolean
+  /** Callback when heatmap overlay toggle changes */
+  onHeatmapOverlaysChange?: (enabled: boolean) => void
+  /** Whether heatmap overlay data is available */
+  hasHeatmapOverlay?: boolean
+  /** Whether heatmap overlay is currently loading */
+  isHeatmapOverlayLoading?: boolean
+  /** Current heatmap opacity value (0-1) */
+  heatmapOpacity?: number
+  /** Callback when heatmap opacity changes */
+  onHeatmapOpacityChange?: (opacity: number) => void
+  /** Available heatmap layers */
+  heatmaps?: HeatmapLayerInfo[]
+  /** Selected heatmap layer name */
+  selectedHeatmapName?: string | null
+  /** Callback when selected heatmap layer changes */
+  onSelectedHeatmapChange?: (name: string) => void
 }
 
 /**
@@ -66,6 +84,15 @@ export function OverlayControls({
   tissueClasses = [],
   visibleTissueClasses = new Set(),
   onVisibleTissueClassesChange,
+  heatmapOverlaysEnabled = false,
+  onHeatmapOverlaysChange,
+  hasHeatmapOverlay = false,
+  isHeatmapOverlayLoading = false,
+  heatmapOpacity = 0.75,
+  onHeatmapOpacityChange,
+  heatmaps = [],
+  selectedHeatmapName,
+  onSelectedHeatmapChange,
 }: OverlayControlsProps) {
   const handleCellTypeToggle = (cellType: string) => {
     const newVisible = new Set(visibleCellTypes)
@@ -105,6 +132,7 @@ export function OverlayControls({
 
   // Check if tissue controls are available
   const tissueControlsAvailable = onTissueOverlaysChange !== undefined
+  const heatmapControlsAvailable = onHeatmapOverlaysChange !== undefined
 
   return (
     <div className="mb-4">
@@ -344,6 +372,85 @@ export function OverlayControls({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Heatmap Overlays Toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-sm ${hasHeatmapOverlay || isHeatmapOverlayLoading ? 'text-gray-300' : 'text-gray-500'}`}
+            >
+              Heatmap overlays
+            </span>
+            {isHeatmapOverlayLoading && (
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
+                </svg>
+                <span className="text-xs">(loading)</span>
+              </span>
+            )}
+            {heatmapControlsAvailable && !hasHeatmapOverlay && !isHeatmapOverlayLoading && (
+              <span className="text-xs text-gray-500">(unavailable)</span>
+            )}
+          </div>
+          <Toggle
+            checked={heatmapOverlaysEnabled}
+            onChange={onHeatmapOverlaysChange ?? (() => {})}
+            aria-label={
+              heatmapOverlaysEnabled ? 'Disable heatmap overlays' : 'Enable heatmap overlays'
+            }
+            size="sm"
+            disabled={!heatmapControlsAvailable || !hasHeatmapOverlay || isHeatmapOverlayLoading}
+          />
+        </div>
+
+        {heatmapOverlaysEnabled && hasHeatmapOverlay && (
+          <div className="pl-2 border-l-2 border-gray-700 space-y-3 mt-2">
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-gray-400 w-14">Layer</label>
+              <select
+                value={selectedHeatmapName ?? heatmaps[0]?.name ?? ''}
+                onChange={(e) => onSelectedHeatmapChange?.(e.target.value)}
+                className="min-w-0 flex-1 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-200"
+              >
+                {heatmaps.map((heatmap) => (
+                  <option key={heatmap.name} value={heatmap.name}>
+                    {(heatmap.display_name ?? heatmap.name).replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-gray-400 w-14">Opacity</label>
+              <input
+                type="range"
+                min="0.1"
+                max="1"
+                step="0.05"
+                value={heatmapOpacity}
+                onChange={(e) => onHeatmapOpacityChange?.(parseFloat(e.target.value))}
+                className="flex-1 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+              />
+              <span className="text-xs text-gray-400 w-8 text-right">
+                {Math.round(heatmapOpacity * 100)}%
+              </span>
+            </div>
           </div>
         )}
       </div>

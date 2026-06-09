@@ -552,7 +552,7 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
 
     // First pass: render current-level tiles that are loaded
     for (const indexedTile of visibleTiles) {
-      const tile = indexedTile.tile
+      const tile = indexedTile.tile as CachedTile
       const key = `${tile.level}-${tile.x}-${tile.y}`
       const tileTexture = texturesRef.current.get(key)
 
@@ -607,7 +607,8 @@ export const WebGLTissueOverlay = memo(function WebGLTissueOverlay({
       const fallback = tileIndex.findFallback(tile.level, tile.x, tile.y, bounds)
       if (!fallback) continue
 
-      const fallbackKey = `${fallback.tile.level}-${fallback.tile.x}-${fallback.tile.y}`
+      const fallbackTile = fallback.tile as CachedTile
+      const fallbackKey = `${fallbackTile.level}-${fallbackTile.x}-${fallbackTile.y}`
       const fallbackTexture = texturesRef.current.get(fallbackKey)
       if (!fallbackTexture) continue
 
