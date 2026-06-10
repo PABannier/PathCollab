@@ -60,7 +60,7 @@ RUN apt-get update && apt-get install -y \
     && add-apt-repository -y ppa:openslide/openslide \
     && apt-get update && apt-get install -y \
         pkg-config libssl-dev libopenslide-dev libclang-dev \
-        libglib2.0-dev libcairo2-dev libdicom-dev \
+        libglib2.0-dev libcairo2-dev libdicom-dev libsqlite3-dev libxml2-dev \
         libjpeg-dev libpng-dev libtiff-dev libopenjp2-7-dev \
     && rm -rf /var/lib/apt/lists/*
 
