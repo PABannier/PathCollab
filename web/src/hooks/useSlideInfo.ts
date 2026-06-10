@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { SlideInfo } from '../components/viewer/SlideViewer'
+import type { SlideInfo } from '../components/viewer/FoveaViewer'
 import type { DefaultSlide } from './useDefaultSlide'
 
 /** Re-export SlideInfo for convenience */

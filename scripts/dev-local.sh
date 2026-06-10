@@ -46,6 +46,37 @@ if ! command -v bun &> /dev/null; then
 fi
 echo "  [OK] Bun"
 
+# -----------------------------------------------------------------------------
+# Build the fovea rendering engine (Rust -> WASM) that the frontend depends on.
+# -----------------------------------------------------------------------------
+FOVEA_DIR="$PROJECT_ROOT/vendor/fovea"
+FOVEA_JS="$FOVEA_DIR/packages/fovea-js"
+
+if [ ! -f "$FOVEA_DIR/Cargo.toml" ]; then
+    echo ""
+    echo "fovea submodule missing — initializing..."
+    git -C "$PROJECT_ROOT" submodule update --init --recursive
+fi
+
+if ! rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown; then
+    echo "Installing wasm32-unknown-unknown target..."
+    rustup target add wasm32-unknown-unknown
+fi
+
+if ! command -v wasm-bindgen &> /dev/null; then
+    echo "Installing wasm-bindgen-cli 0.2.108 (one-time)..."
+    cargo install wasm-bindgen-cli --version 0.2.108 --locked
+fi
+
+if [ "${FOVEA_REBUILD:-0}" = "1" ] || [ ! -f "$FOVEA_JS/pkg/fovea_viewer_bg.wasm" ] || [ ! -f "$FOVEA_JS/dist/index.js" ]; then
+    echo "Building fovea engine (WASM + @fovea/viewer)..."
+    (cd "$FOVEA_DIR" && node scripts/build-wasm.mjs)
+    (cd "$FOVEA_JS" && bun install >/dev/null 2>&1 && bun run build)
+    echo "  [OK] fovea engine built"
+else
+    echo "  [OK] fovea engine already built (set FOVEA_REBUILD=1 to force)"
+fi
+
 # Default slides directory (matches config.rs default)
 SLIDES_DIR="${1:-$PROJECT_ROOT/data/slides}"
 
@@ -75,8 +106,6 @@ fi
 export RUST_LOG="${RUST_LOG:-pathcollab=debug,tower_http=info}"
 export SLIDE_SOURCE=local
 export SLIDES_DIR="$SLIDES_DIR"
-export SLIDE_TILE_SIZE=256
-export SLIDE_JPEG_QUALITY=85
 export HOST=0.0.0.0
 export PORT=8080
 

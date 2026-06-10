@@ -3,7 +3,7 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::{StatusCode, header},
+    http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
 };
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use super::service::SlideService;
-use super::types::{SlideError, SlideListItem, SlideMetadata, TileRequest};
+use super::types::{SlideError, SlideListItem, SlideMetadata};
 
 /// Application state containing the slide service
 #[derive(Clone)]
@@ -31,9 +31,6 @@ impl From<SlideError> for SlideErrorResponse {
         let code = match &e {
             SlideError::NotFound(_) => "not_found",
             SlideError::OpenError(_) => "open_error",
-            SlideError::TileError(_) => "tile_error",
-            SlideError::InvalidLevel(_) => "invalid_level",
-            SlideError::InvalidTileCoordinates { .. } => "invalid_coordinates",
             SlideError::ServiceUnavailable(_) => "service_unavailable",
             SlideError::IoError(_) => "io_error",
         };
@@ -48,7 +45,6 @@ impl IntoResponse for SlideErrorResponse {
     fn into_response(self) -> Response {
         let status = match self.code.as_str() {
             "not_found" => StatusCode::NOT_FOUND,
-            "invalid_level" | "invalid_coordinates" => StatusCode::BAD_REQUEST,
             "service_unavailable" => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -96,83 +92,6 @@ pub async fn get_slide(
     Ok(Json(metadata))
 }
 
-/// GET /api/slide/:id/dzi - Get DZI XML descriptor for OpenSeadragon
-pub async fn get_dzi_descriptor(
-    State(state): State<SlideAppState>,
-    Path(id): Path<String>,
-) -> Result<Response, SlideErrorResponse> {
-    let metadata = state.slide_service.get_slide(&id).await.map_err(|e| {
-        tracing::warn!("Failed to get slide {} for DZI: {}", id, e);
-        SlideErrorResponse::from(e)
-    })?;
-
-    // Generate DZI XML descriptor
-    // DZI format: https://docs.microsoft.com/en-us/previous-versions/windows/silverlight/dotnet-windows-silverlight/cc645077(v=vs.95)
-    let dzi_xml = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<Image xmlns="http://schemas.microsoft.com/deepzoom/2008"
-       Format="jpeg"
-       Overlap="0"
-       TileSize="{}">
-    <Size Width="{}" Height="{}"/>
-</Image>"#,
-        metadata.tile_size, metadata.width, metadata.height
-    );
-
-    Ok((
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "application/xml"),
-            (header::CACHE_CONTROL, "public, max-age=3600"),
-        ],
-        dzi_xml,
-    )
-        .into_response())
-}
-
-/// GET /api/slide/:id/tile/:level/:x/:y - Get a tile as JPEG
-pub async fn get_tile(
-    State(state): State<SlideAppState>,
-    Path((id, level, x, y)): Path<(String, u32, u32, u32)>,
-) -> Result<Response, SlideErrorResponse> {
-    let request = TileRequest {
-        slide_id: id.clone(),
-        level,
-        x,
-        y,
-    };
-
-    let jpeg_bytes = state.slide_service.get_tile(&request).await.map_err(|e| {
-        // Only log as error if it's not a simple "not found" or "invalid coords"
-        match &e {
-            SlideError::NotFound(_) | SlideError::InvalidTileCoordinates { .. } => {
-                tracing::debug!("Tile not found: {} level={} x={} y={}", id, level, x, y);
-            }
-            _ => {
-                tracing::error!(
-                    "Failed to get tile: {} level={} x={} y={}: {}",
-                    id,
-                    level,
-                    x,
-                    y,
-                    e
-                );
-            }
-        }
-        SlideErrorResponse::from(e)
-    })?;
-
-    Ok((
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, "image/jpeg"),
-            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
-        ],
-        jpeg_bytes,
-    )
-        .into_response())
-}
-
 /// GET /api/slides/default - Get the default slide to display
 ///
 /// Returns the first available slide from the slides directory.
@@ -209,7 +128,5 @@ pub fn slide_routes(state: SlideAppState) -> Router {
         .route("/slides", get(list_slides))
         .route("/slides/default", get(get_default_slide))
         .route("/slide/:id", get(get_slide))
-        .route("/slide/:id/dzi", get(get_dzi_descriptor))
-        .route("/slide/:id/tile/:level/:x/:y", get(get_tile))
         .with_state(state)
 }

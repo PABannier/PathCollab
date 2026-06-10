@@ -15,9 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libopenslide-dev protobuf-compiler
+        run: |
+          # fovea-pack enables openslide-rs's `openslide4` feature, which needs
+          # OpenSlide 4 — only 3.4.1 is in the Ubuntu repos, so pull 4 from the
+          # OpenSlide team PPA. openslide.pc lists its deps as public Requires,
+          # so each one's -dev .pc file must be present for pkg-config to resolve.
+          sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:openslide/openslide
+          sudo apt-get update
+          sudo apt-get install -y \
+            libopenslide-dev libclang-dev pkg-config build-essential protobuf-compiler \
+            libglib2.0-dev libcairo2-dev libdicom-dev libsqlite3-dev libxml2-dev \
+            libjpeg-dev libpng-dev libtiff-dev libopenjp2-7-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -36,11 +50,14 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      # Scope fmt/clippy to PathCollab's own crate; the vendored fovea submodule
+      # is third-party (it has its own CI) and must not be reformatted or linted
+      # here — newer toolchains flag style/lints fovea was clean under.
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: cargo fmt -p pathcollab-server -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy -p pathcollab-server --no-deps --all-targets --all-features -- -D warnings
 
       - name: Build
         run: cargo build
@@ -51,38 +68,67 @@ jobs:
   frontend-tests:
     name: Frontend
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./web
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The web app depends on @fovea/viewer (file:../vendor/fovea/packages/fovea-js),
+      # whose dist/ + wasm pkg/ are gitignored, so build the fovea engine first.
+      - name: Install Rust toolchain (fovea wasm)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo (fovea wasm)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            vendor/fovea/target/
+          key: ${{ runner.os }}-fovea-wasm-${{ hashFiles('vendor/fovea/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-fovea-wasm-
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
+      - name: Build fovea engine (wasm + @fovea/viewer)
+        working-directory: vendor/fovea
+        run: |
+          node scripts/build-wasm.mjs
+          cd packages/fovea-js
+          bun install
+          bun run build
+
       - name: Install dependencies
+        working-directory: web
         run: bun install --frozen-lockfile
 
       - name: Lint
+        working-directory: web
         run: bun run lint
 
       - name: Type check
+        working-directory: web
         run: bun run tsc --noEmit
 
       - name: Build
-        run: bun run build
         working-directory: web
+        run: bun run build
         continue-on-error: true
 
       - name: Run frontend tests
-        run: bun run test:run
         working-directory: web
+        run: bun run test:run
 
       - name: Run frontend tests with coverage
-        run: bun run test:coverage
         working-directory: web
+        run: bun run test:coverage
         continue-on-error: true
 
   # Docker build verification
@@ -91,6 +137,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

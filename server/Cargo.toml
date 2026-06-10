@@ -27,12 +27,16 @@ anyhow.workspace = true
 uuid.workspace = true
 futures-util = "0.3"
 sha2 = "0.10"
-bytes = "1"
 async-trait = "0.1"
 
-# Slide reading (local OpenSlide mode)
+# Fovea rendering engine: serves slide tiles, cell chunks, and heatmaps in the
+# fovea manifest/tile contract. PathCollab forwards /api/fovea/* to fovea-pack's
+# router; all tiling/overlay decoding/caching lives here, not in PathCollab.
+fovea-pack = { path = "../vendor/fovea/crates/fovea-pack" }
+
+# Slide reading (local OpenSlide mode) — catalog metadata only; rendering tiles
+# are produced by fovea-pack.
 openslide-rs = { version = "2", features = ["image"] }
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 # Metrics / Observability
 metrics = "0.24"
@@ -41,21 +45,6 @@ metrics-exporter-prometheus = "0.16"
 # Efficient data structures
 indexmap = "2"
 dashmap = "6"
-
-# Concurrent LRU cache for tiles
-moka = { version = "0.12", features = ["future"] }
-
-# Protobuf parsing for overlays
-prost = "0.13"
-
-# Spatial indexing for region queries
-rstar = "0.12"
-
-# Zlib decompression for tissue overlay data
-flate2 = "1.0"
-
-[build-dependencies]
-prost-build = "0.13"
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"

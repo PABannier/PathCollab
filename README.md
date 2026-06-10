@@ -92,17 +92,28 @@ docker run -p 8080:8080 \
 
 ### From Source
 
+# Rendering is powered by the [fovea](https://github.com/) WebGPU engine, vendored
+# as a git submodule at `vendor/fovea`. A WebGPU-capable browser (recent
+# Chrome/Edge, or Safari 18+) is required to view slides.
+
 ```bash
-# Prerequisites: Rust 1.85+, Bun 1.3+, protobuf-compiler
+# Prerequisites: Rust 1.85+ (with the wasm32-unknown-unknown target and
+# wasm-bindgen-cli 0.2.108), Bun 1.3+. OpenSlide is built from source via the
+# fovea-pack dependency (apt: libopenslide-dev, libclang-dev, pkg-config).
 
-# Clone
-git clone https://github.com/pabannier/pathcollab.git
+# Clone (with the fovea submodule)
+git clone --recurse-submodules https://github.com/pabannier/pathcollab.git
 cd pathcollab
+# (or, if already cloned: git submodule update --init --recursive)
 
-# Quick start (handles everything)
+# Quick start (builds the fovea WASM engine, backend, and frontend)
 ./scripts/dev-local.sh
 
 # Or manually:
+#   1. Build the fovea engine (WASM + @fovea/viewer):
+(cd vendor/fovea && node scripts/build-wasm.mjs)
+(cd vendor/fovea/packages/fovea-js && bun install && bun run build)
+#   2. Build the backend + frontend:
 cd server && cargo build --release
 cd ../web && bun install && bun run build
 ./target/release/pathcollab --slides-dir /path/to/slides
@@ -260,13 +271,17 @@ Connect to `/ws` for real-time communication. Messages are JSON.
 | `GET` | `/health` | Health check (returns 200 if healthy) |
 | `GET` | `/metrics` | JSON metrics |
 | `GET` | `/metrics/prometheus` | Prometheus-format metrics |
-| `GET` | `/dzi/slide/:id.dzi` | DZI metadata for OpenSeadragon |
-| `GET` | `/dzi/slide/:id_:z_:x_:y.jpg` | Slide tile JPEG |
-| `GET` | `/api/slide/:id/overlays` | List available overlays for slide |
-| `GET` | `/api/slide/:id/overlay/metadata` | Cell overlay metadata (bounds, classes) |
-| `GET` | `/api/slide/:id/overlay/cells?x=&y=&width=&height=` | Cell polygons in viewport region |
-| `GET` | `/api/slide/:id/overlay/tissue/metadata` | Tissue overlay metadata (tile grid, classes) |
-| `GET` | `/api/slide/:id/overlay/tissue/:level/:x/:y` | Raw tissue tile (zlib-decompressed class indices) |
+| `GET` | `/api/slides` | List available slides (catalog) |
+| `GET` | `/api/slide/:id` | Slide metadata |
+| `GET` | `/api/fovea/:id/slide/manifest.json` | Fovea slide tile-pyramid manifest |
+| `GET` | `/api/fovea/:id/slide/images/level_:l/:x_:y.jpg` | Slide tile (fovea engine) |
+| `GET` | `/api/fovea/:id/cells/manifest.json` | Cell overlay manifest (classes, chunks) |
+| `GET` | `/api/fovea/:id/cells/chunks/:x_:y.fovc` | Cell polygon chunk (binary) |
+| `GET` | `/api/fovea/:id/heatmap/manifest.json` | Density heatmap manifest |
+| `GET` | `/api/fovea/:id/heatmap/level_:l/:x_:y.bin` | Density heatmap tile (binary) |
+
+All `/api/fovea/*` rendering data is served by forwarding to the embedded
+[fovea-pack](vendor/fovea) engine — PathCollab does no tiling itself.
 
 ---
 

@@ -1,0 +1,24 @@
+# Rust build outputs
+target/
+vendor/fovea/target/
+
+# Node / Bun
+node_modules/
+web/node_modules/
+web/dist/
+vendor/fovea/node_modules/
+vendor/fovea/packages/*/node_modules/
+# fovea build artifacts are produced inside the image (wasm-builder / fovea-ts stages)
+vendor/fovea/packages/fovea-js/pkg/
+vendor/fovea/packages/fovea-js/dist/
+vendor/fovea/examples/
+
+# Git / editor / misc
+.git/
+**/.DS_Store
+*.log
+
+# Local data
+slides/
+overlays/
+data/

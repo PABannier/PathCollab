@@ -1,11 +1,7 @@
-import { type RefObject, useMemo, useState, useCallback, useEffect } from 'react'
+import { type RefObject, useCallback, useMemo } from 'react'
 import { SlideViewer, type SlideInfo, type SlideViewerHandle, ViewportLoader } from './index'
-import { WebGLCellOverlay } from './WebGLCellOverlay'
-import { WebGLTissueOverlay } from './WebGLTissueOverlay'
+import type { CellClass } from './foveaViewport'
 import { CursorLayer } from './CursorLayer'
-import type { CellMask, TissueOverlayMetadata } from '../../types/overlay'
-import type { CachedTile } from '../../hooks/useTissueOverlay'
-import type { TissueTileIndex } from '../../utils/TissueTileIndex'
 import { MinimapOverlay } from './MinimapOverlay'
 import { PresetEmptyState } from '../ui/EmptyState'
 import { ReturnToPresenterButton } from '../ui/ReturnToPresenterButton'
@@ -72,29 +68,22 @@ export interface ViewerAreaProps {
   onShowHelp: () => void
   /** Whether cell overlays are enabled */
   cellOverlaysEnabled?: boolean
-  /** Cell mask data for overlay */
-  cells?: CellMask[]
   /** Opacity for cell overlays (0-1) */
   cellOverlayOpacity?: number
-  /** Whether tissue overlays are enabled */
+  /** Currently visible cell-type names */
+  visibleCellTypes?: Set<string>
+  /** Cell classes (id + name) from the fovea cell manifest, for color/visibility */
+  cellClasses?: CellClass[]
+  /** Whether tissue overlay (density heatmap) is enabled */
   tissueOverlaysEnabled?: boolean
-  /** Tissue overlay metadata */
-  tissueMetadata?: TissueOverlayMetadata | null
-  /** Cached tissue tiles */
-  tissueTiles?: Map<string, CachedTile>
-  /** Spatial index for tissue tiles */
-  tissueTileIndex?: TissueTileIndex | null
-  /** Current tissue tile level */
-  tissueCurrentLevel?: number
-  /** Opacity for tissue overlays (0-1) */
+  /** Opacity for tissue overlay (0-1) */
   tissueOverlayOpacity?: number
-  /** Visible tissue class IDs */
-  visibleTissueClasses?: Set<number>
 }
 
 /**
- * Main viewer area component containing the slide viewer and all overlays.
- * Handles loading states, cursor layer, minimap, and return-to-presenter button.
+ * Main viewer area. The slide, cell overlay, and tissue/density heatmap are all
+ * rendered by the fovea engine inside FoveaViewer; this component composes the
+ * collaboration layers (cursors, minimap) on top.
  */
 export function ViewerArea({
   containerRef,
@@ -118,39 +107,19 @@ export function ViewerArea({
   onReturnToPresenter,
   onShowHelp,
   cellOverlaysEnabled,
-  cells,
   cellOverlayOpacity,
+  visibleCellTypes,
+  cellClasses,
   tissueOverlaysEnabled,
-  tissueMetadata,
-  tissueTiles,
-  tissueTileIndex,
-  tissueCurrentLevel,
   tissueOverlayOpacity,
-  visibleTissueClasses,
 }: ViewerAreaProps) {
-  // Real-time viewport for overlay rendering (updated at 60fps during animation)
-  const [realtimeViewport, setRealtimeViewport] = useState<RenderViewport>({
-    centerX: currentViewport.centerX,
-    centerY: currentViewport.centerY,
-    zoom: currentViewport.zoom,
-  })
+  // Project slide-pixel coords to screen via fovea's exact camera transform.
+  const slideToScreen = useCallback(
+    (x: number, y: number) => viewerRef.current?.slideToScreen(x, y) ?? null,
+    [viewerRef]
+  )
 
-  // Sync realtimeViewport with currentViewport when it changes (for non-animated updates)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setRealtimeViewport({
-      centerX: currentViewport.centerX,
-      centerY: currentViewport.centerY,
-      zoom: currentViewport.zoom,
-    })
-  }, [currentViewport.centerX, currentViewport.centerY, currentViewport.zoom])
-
-  // Handle real-time viewport updates during animation
-  const handleAnimationFrame = useCallback((viewport: RenderViewport) => {
-    setRealtimeViewport(viewport)
-  }, [])
-
-  // Memoize normalized cursors for minimap to avoid creating new array/objects on every render
+  // Memoize normalized cursors for minimap to avoid new array/objects each render
   const normalizedCursors = useMemo(() => {
     if (!slide) return []
     return cursors.map((c) => ({
@@ -178,47 +147,18 @@ export function ViewerArea({
         />
       )}
 
-      {/* Slide viewer */}
+      {/* Slide viewer (fovea: tiles + cell overlay + density heatmap) */}
       {slide && (
         <SlideViewer
           ref={viewerRef}
           slide={slide}
           onViewportChange={onViewportChange}
-          onAnimationFrame={handleAnimationFrame}
-        />
-      )}
-
-      {/* Tissue overlay (WebGL-accelerated, rendered below cell overlay) */}
-      {tissueOverlaysEnabled &&
-        viewerBounds &&
-        slide &&
-        tissueMetadata &&
-        tissueTiles &&
-        tissueTileIndex &&
-        tissueCurrentLevel !== undefined &&
-        visibleTissueClasses && (
-          <WebGLTissueOverlay
-            metadata={tissueMetadata}
-            tiles={tissueTiles}
-            tileIndex={tissueTileIndex}
-            currentLevel={tissueCurrentLevel}
-            viewerBounds={viewerBounds}
-            viewport={realtimeViewport}
-            slideWidth={slide.width}
-            opacity={tissueOverlayOpacity}
-            visibleClasses={visibleTissueClasses}
-          />
-        )}
-
-      {/* Cell overlay (WebGL-accelerated with LOD) */}
-      {cellOverlaysEnabled && viewerBounds && slide && cells && cells.length > 0 && (
-        <WebGLCellOverlay
-          cells={cells}
-          viewerBounds={viewerBounds}
-          viewport={realtimeViewport}
-          slideWidth={slide.width}
-          slideHeight={slide.height}
-          opacity={cellOverlayOpacity}
+          cellOverlaysEnabled={cellOverlaysEnabled}
+          cellOverlayOpacity={cellOverlayOpacity}
+          visibleCellTypes={visibleCellTypes}
+          cellClasses={cellClasses}
+          tissueOverlaysEnabled={tissueOverlaysEnabled}
+          tissueOverlayOpacity={tissueOverlayOpacity}
         />
       )}
 
@@ -228,8 +168,7 @@ export function ViewerArea({
           cursors={cursors}
           viewerBounds={viewerBounds}
           viewport={currentViewport}
-          slideWidth={slide.width}
-          slideHeight={slide.height}
+          slideToScreen={slideToScreen}
           currentUserId={currentUserId}
         />
       )}

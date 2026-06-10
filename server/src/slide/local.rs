@@ -1,33 +1,26 @@
 //! Local slide service using OpenSlide
 
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
 use async_trait::async_trait;
-use bytes::Bytes;
-use image::codecs::jpeg::JpegEncoder;
-use image::{ImageEncoder, RgbaImage};
-use metrics::{counter, histogram};
-use openslide_rs::{Address, OpenSlide, Region, Size};
+use openslide_rs::OpenSlide;
 use tracing::{debug, error, info, warn};
 
 use crate::config::SlideConfig;
 
 use super::cache::SlideCache;
 use super::service::SlideService;
-use super::tile_cache::{TileCache, TileCacheConfig, TileKey};
-use super::types::{SlideError, SlideMetadata, TileRequest};
+use super::types::{SlideError, SlideMetadata};
 
 /// Supported slide file extensions
 const SLIDE_EXTENSIONS: &[&str] = &["svs", "ndpi", "tiff", "tif", "vms", "vmu", "scn", "mrxs"];
 
-/// Local slide service using OpenSlide
+/// Local slide catalog using OpenSlide for metadata. Rendering tiles are served
+/// by the fovea forwarder, not here.
 pub struct LocalSlideService {
     slides_dir: PathBuf,
     cache: SlideCache,
-    tile_cache: TileCache,
     tile_size: u32,
-    jpeg_quality: u8,
 }
 
 impl LocalSlideService {
@@ -49,25 +42,15 @@ impl LocalSlideService {
             )));
         }
 
-        // Create tile cache with configured size
-        let tile_cache_config = TileCacheConfig {
-            max_size_bytes: config.tile_cache_size_bytes,
-            ..Default::default()
-        };
-        let tile_cache = TileCache::new(tile_cache_config);
-
         info!(
-            "Initialized local slide service with directory: {:?}, tile cache: {}MB",
-            slides_dir,
-            config.tile_cache_size_bytes / (1024 * 1024)
+            "Initialized local slide catalog with directory: {:?}",
+            slides_dir
         );
 
         Ok(Self {
             slides_dir: slides_dir.clone(),
             cache: SlideCache::new(config.max_cached_slides),
-            tile_cache,
             tile_size: config.tile_size,
-            jpeg_quality: config.jpeg_quality,
         })
     }
 
@@ -195,201 +178,6 @@ impl LocalSlideService {
         let max_dim = std::cmp::max(width, height);
         (max_dim as f64).log2().ceil() as u32 + 1
     }
-
-    /// Convert DZI level and tile coordinates to OpenSlide read parameters
-    ///
-    /// Returns: (openslide_level, x_level0, y_level0, read_width, read_height, scale_factor, target_tile_width, target_tile_height)
-    #[allow(clippy::type_complexity)]
-    fn dzi_to_openslide_params(
-        &self,
-        slide: &OpenSlide,
-        metadata: &SlideMetadata,
-        dzi_level: u32,
-        tile_x: u32,
-        tile_y: u32,
-    ) -> Result<(u32, u32, u32, u32, u32, f64, u32, u32), SlideError> {
-        let dzi_max_level = metadata.num_levels - 1;
-
-        if dzi_level > dzi_max_level {
-            return Err(SlideError::InvalidLevel(dzi_level));
-        }
-
-        // Calculate the scale factor for this DZI level
-        // At dzi_max_level (full res), scale = 1
-        // At dzi_max_level - 1, scale = 2
-        // At dzi_max_level - n, scale = 2^n
-        let levels_from_max = dzi_max_level - dzi_level;
-        let dzi_scale = 2.0_f64.powi(levels_from_max as i32);
-
-        // Calculate dimensions at this DZI level
-        let level_width = (metadata.width as f64 / dzi_scale).ceil() as u32;
-        let level_height = (metadata.height as f64 / dzi_scale).ceil() as u32;
-
-        // Calculate tile bounds at this level
-        let tile_x_start = tile_x * self.tile_size;
-        let tile_y_start = tile_y * self.tile_size;
-
-        // Validate tile coordinates - return error for out-of-bounds requests
-        if tile_x_start >= level_width || tile_y_start >= level_height {
-            return Err(SlideError::InvalidTileCoordinates {
-                level: dzi_level,
-                x: tile_x,
-                y: tile_y,
-            });
-        }
-
-        // Calculate actual tile size (may be smaller at edges)
-        let actual_tile_width = std::cmp::min(self.tile_size, level_width - tile_x_start);
-        let actual_tile_height = std::cmp::min(self.tile_size, level_height - tile_y_start);
-
-        // Convert tile coordinates to level 0 (full resolution) coordinates
-        let x_level0 = (tile_x_start as f64 * dzi_scale) as u32;
-        let y_level0 = (tile_y_start as f64 * dzi_scale) as u32;
-
-        // Find the best OpenSlide level to read from
-        let os_level_count = slide.get_level_count().unwrap_or(1);
-        let mut best_os_level = 0u32;
-        let mut best_downsample = 1.0f64;
-
-        for l in 0..os_level_count {
-            let downsample = slide.get_level_downsample(l).unwrap_or(1.0);
-            // Find the level with the largest downsample that's <= our target
-            if downsample <= dzi_scale && downsample >= best_downsample {
-                best_os_level = l;
-                best_downsample = downsample;
-            }
-        }
-
-        // Calculate how much we need to read (at the OpenSlide level)
-        // and how much we need to scale the result
-        let os_to_dzi_scale = dzi_scale / best_downsample;
-        let read_width = (actual_tile_width as f64 * os_to_dzi_scale).ceil() as u32;
-        let read_height = (actual_tile_height as f64 * os_to_dzi_scale).ceil() as u32;
-
-        Ok((
-            best_os_level,
-            x_level0,
-            y_level0,
-            read_width,
-            read_height,
-            os_to_dzi_scale,
-            actual_tile_width,
-            actual_tile_height,
-        ))
-    }
-
-    /// Read a tile from the slide and encode as JPEG
-    ///
-    /// This operation is CPU-bound (image decoding/encoding) and involves blocking I/O
-    /// (OpenSlide file reads), so we run it in spawn_blocking to avoid starving the
-    /// async executor.
-    async fn read_tile_jpeg(
-        &self,
-        slide: std::sync::Arc<OpenSlide>,
-        metadata: &SlideMetadata,
-        level: u32,
-        x: u32,
-        y: u32,
-    ) -> Result<Vec<u8>, SlideError> {
-        let (os_level, x_l0, y_l0, read_w, read_h, scale_factor, target_w, target_h) =
-            self.dzi_to_openslide_params(&slide, metadata, level, x, y)?;
-
-        debug!(
-            "Reading tile: level={}, x={}, y={} -> os_level={}, pos=({},{}), read={}x{}, target={}x{}, scale={}",
-            level, x, y, os_level, x_l0, y_l0, read_w, read_h, target_w, target_h, scale_factor
-        );
-
-        // Clone values needed for the blocking task
-        let jpeg_quality = self.jpeg_quality;
-
-        // Run the blocking I/O and CPU-intensive work in spawn_blocking
-        let result = tokio::task::spawn_blocking(move || {
-            // Read the region from OpenSlide
-            let read_start = Instant::now();
-            let region = Region {
-                address: Address { x: x_l0, y: y_l0 },
-                level: os_level,
-                size: Size {
-                    w: read_w,
-                    h: read_h,
-                },
-            };
-
-            let rgba_image: RgbaImage = slide.read_image_rgba(&region).map_err(|e| {
-                SlideError::TileError(format!(
-                    "Failed to read region at level {} ({},{}): {}",
-                    level, x, y, e
-                ))
-            })?;
-            histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "read")
-                .record(read_start.elapsed());
-
-            // Resize if we need to scale down
-            let final_image = if scale_factor > 1.001 {
-                let resize_start = Instant::now();
-                let resized = image::imageops::resize(
-                    &rgba_image,
-                    target_w,
-                    target_h,
-                    image::imageops::FilterType::Lanczos3,
-                );
-                histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "resize")
-                    .record(resize_start.elapsed());
-                resized
-            } else {
-                rgba_image
-            };
-
-            // Encode to JPEG
-            let encode_start = Instant::now();
-            let result = encode_jpeg_inner(&final_image, jpeg_quality);
-            histogram!("pathcollab_tile_phase_duration_seconds", "phase" => "encode")
-                .record(encode_start.elapsed());
-
-            result
-        })
-        .await
-        .map_err(|e| SlideError::TileError(format!("Task join error: {}", e)))??;
-
-        Ok(result)
-    }
-}
-
-/// Encode RGBA image to JPEG
-///
-/// Converts RGBA to RGB without cloning the entire image - we only allocate
-/// the RGB buffer needed for JPEG encoding.
-///
-/// Pre-allocates JPEG buffer based on expected output size to avoid reallocations.
-fn encode_jpeg_inner(rgba: &RgbaImage, jpeg_quality: u8) -> Result<Vec<u8>, SlideError> {
-    let (width, height) = rgba.dimensions();
-    let pixel_count = (width * height) as usize;
-
-    // Convert RGBA to RGB without cloning - preallocate exact size needed
-    // Each pixel: 4 bytes RGBA -> 3 bytes RGB
-    let rgba_raw = rgba.as_raw();
-    let mut rgb_data: Vec<u8> = Vec::with_capacity(pixel_count * 3);
-
-    // Copy RGB channels, skipping alpha (every 4th byte)
-    for chunk in rgba_raw.chunks_exact(4) {
-        rgb_data.push(chunk[0]); // R
-        rgb_data.push(chunk[1]); // G
-        rgb_data.push(chunk[2]); // B
-        // Skip chunk[3] (alpha)
-    }
-
-    // Pre-allocate JPEG buffer based on estimated compressed size
-    // Use ~15:1 compression ratio estimate with 20% margin for safety
-    // This avoids multiple reallocations during encoding
-    let estimated_jpeg_size = (pixel_count * 3) / 12; // ~12:1 ratio with margin
-    let mut buffer = Vec::with_capacity(estimated_jpeg_size.max(4096)); // At least 4KB
-
-    let encoder = JpegEncoder::new_with_quality(&mut buffer, jpeg_quality);
-    encoder
-        .write_image(&rgb_data, width, height, image::ExtendedColorType::Rgb8)
-        .map_err(|e| SlideError::TileError(format!("JPEG encoding failed: {}", e)))?;
-
-    Ok(buffer)
 }
 
 #[async_trait]
@@ -440,76 +228,6 @@ impl SlideService for LocalSlideService {
 
         Ok(meta)
     }
-
-    async fn get_tile(&self, request: &TileRequest) -> Result<Bytes, SlideError> {
-        let start = Instant::now();
-        counter!("pathcollab_tile_requests_total").increment(1);
-
-        // Create cache key for this tile
-        let cache_key = TileKey {
-            slide_id: request.slide_id.clone(),
-            level: request.level,
-            x: request.x,
-            y: request.y,
-        };
-
-        // Fast path: check tile cache first
-        if let Some(cached_tile) = self.tile_cache.get(&cache_key).await {
-            histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
-            return Ok(cached_tile);
-        }
-
-        // Cache miss - need to compute the tile
-        // Helper to record metrics on all exit paths
-        let record_metrics = |result: &Result<Bytes, SlideError>, start: Instant| {
-            histogram!("pathcollab_tile_duration_seconds").record(start.elapsed());
-            if result.is_err() {
-                counter!("pathcollab_tile_errors_total").increment(1);
-            }
-        };
-
-        // Get cached metadata or load slide
-        let metadata = if let Some(meta) = self.cache.get_metadata(&request.slide_id) {
-            meta
-        } else {
-            // Slow path: need to load slide
-            match self.get_slide(&request.slide_id).await {
-                Ok(m) => std::sync::Arc::new(m),
-                Err(e) => {
-                    let result = Err(e);
-                    record_metrics(&result, start);
-                    return result;
-                }
-            }
-        };
-
-        // Get cached slide handle (already cached by get_slide above or from previous request)
-        let slide = match self.cache.get_cached(&request.slide_id).await {
-            Some(s) => s,
-            None => {
-                // This should not happen since get_slide succeeded, but handle gracefully
-                let result = Err(SlideError::NotFound(request.slide_id.clone()));
-                record_metrics(&result, start);
-                return result;
-            }
-        };
-
-        // Read and encode the tile
-        let result = self
-            .read_tile_jpeg(slide, &metadata, request.level, request.x, request.y)
-            .await
-            .map(Bytes::from);
-
-        // Cache the tile on success
-        if let Ok(ref tile_data) = result {
-            self.tile_cache.insert(cache_key, tile_data.clone()).await;
-        }
-
-        // Record overall tile latency
-        record_metrics(&result, start);
-
-        result
-    }
 }
 
 /// Sanitize a string to create a valid ID
@@ -531,20 +249,10 @@ mod tests {
 
     #[test]
     fn test_calculate_dzi_levels() {
-        let _config = SlideConfig {
-            source_mode: crate::config::SlideSourceMode::Local,
-            slides_dir: PathBuf::from("/tmp"),
-            tile_size: 256,
-            jpeg_quality: 85,
-            max_cached_slides: 10,
-            tile_cache_size_bytes: 256 * 1024 * 1024,
-        };
         let service = LocalSlideService {
             slides_dir: PathBuf::from("/tmp"),
             cache: SlideCache::new(10),
-            tile_cache: TileCache::new(TileCacheConfig::default()),
             tile_size: 256,
-            jpeg_quality: 85,
         };
 
         // 1x1 -> 1 level

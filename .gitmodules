@@ -1,0 +1,3 @@
+[submodule "vendor/fovea"]
+	path = vendor/fovea
+	url = https://github.com/PABannier/fovea.git
