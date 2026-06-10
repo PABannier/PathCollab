@@ -4,6 +4,9 @@
 # Web
 node_modules/
 
+# Local slide/overlay data (runtime; populated via SLIDES_DIR / OVERLAY_DIR)
+data/
+
 # Rust (server)
 target/
 # Generated fixture images (regenerate with scripts/generate_fixtures.py)

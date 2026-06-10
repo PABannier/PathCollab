@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { SlideViewerHandle } from '../components/viewer'
 import { Sidebar, StatusBar } from '../components/layout'
@@ -26,8 +26,7 @@ import { useShareUrl } from '../hooks/useShareUrl'
 import { useViewerViewport } from '../hooks/useViewerViewport'
 import { useHashParams } from '../hooks/useHashParams'
 import { useSlideInfo } from '../hooks/useSlideInfo'
-import { useCellOverlay } from '../hooks/useCellOverlay'
-import { useTissueOverlay } from '../hooks/useTissueOverlay'
+import { useCellOverlayMeta } from '../hooks/useCellOverlayMeta'
 import { useAutoCreateSession } from '../hooks/useAutoCreateSession'
 import { useCursorTracking } from './Session/useCursorTracking'
 import { useSessionKeyboardShortcuts } from './Session/useSessionKeyboardShortcuts'
@@ -146,62 +145,25 @@ export function Session() {
     setIsFollowing,
   })
 
-  // Cell overlay data
-  const {
-    cells: allCells,
-    isLoading: isLoadingCells,
-    hasOverlay,
-    isOverlayLoading,
-    overlayMetadata,
-  } = useCellOverlay({
-    slideId: slide?.id,
-    viewport: currentViewport,
-    viewerBounds,
-    slideWidth: slide?.width ?? 0,
-    slideHeight: slide?.height ?? 0,
-    enabled: cellOverlaysEnabled && !!slide,
-  })
+  // Cell overlay metadata (cell polygons are streamed + rendered by the fovea
+  // engine; this only provides the type list / count / classes for the UI + engine).
+  const { hasOverlay, isOverlayLoading, cellTypes, cellClasses, cellCount } = useCellOverlayMeta(
+    slide?.id
+  )
 
-  // Tissue overlay data
-  const {
-    metadata: tissueMetadata,
-    tiles: tissueTiles,
-    tileIndex: tissueTileIndex,
-    currentLevel: tissueCurrentLevel,
-    isLoading: isLoadingTissue,
-    hasOverlay: hasTissueOverlay,
-    isOverlayLoading: isTissueOverlayLoading,
-  } = useTissueOverlay({
-    slideId: slide?.id,
-    viewport: currentViewport,
-    viewerBounds,
-    slideWidth: slide?.width ?? 0,
-    slideHeight: slide?.height ?? 0,
-    enabled: tissueOverlaysEnabled && !!slide,
-  })
+  // The tissue overlay is fovea's density heatmap, derived from the cells, so it
+  // is available exactly when a cell overlay is. It has no per-class controls.
+  const hasTissueOverlay = hasOverlay
+  const isTissueOverlayLoading = isOverlayLoading
 
-  // Initialize visible cell types when metadata loads
+  // Initialize visible cell types when the class list loads
   // This is intentional state sync from external data (server response) to local state
   useEffect(() => {
-    if (overlayMetadata?.cell_types) {
+    if (cellTypes.length > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing server state to local state
-      setVisibleCellTypes(new Set(overlayMetadata.cell_types))
+      setVisibleCellTypes(new Set(cellTypes))
     }
-  }, [overlayMetadata?.cell_types])
-
-  // Initialize visible tissue classes when metadata loads
-  useEffect(() => {
-    if (tissueMetadata?.classes) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing server state to local state
-      setVisibleTissueClasses(new Set(tissueMetadata.classes.map((c) => c.id)))
-    }
-  }, [tissueMetadata?.classes])
-
-  // Filter cells by visible types
-  const cells = useMemo(() => {
-    if (visibleCellTypes.size === 0) return []
-    return allCells.filter((cell) => visibleCellTypes.has(cell.cell_type))
-  }, [allCells, visibleCellTypes])
+  }, [cellTypes])
 
   // Wrapper functions that broadcast when presenter changes overlay settings
   const handleCellOverlaysChange = useCallback(
@@ -290,7 +252,7 @@ export function Session() {
   }, [isPresenter, presenterTissueOverlay])
 
   // Presence tracking
-  const { startTracking, stopTracking, updateCursorPosition, convertToSlideCoords } = usePresence({
+  const { startTracking, stopTracking, updateCursorPosition } = usePresence({
     enabled: !!session && !!slide,
     cursorUpdateHz: 30,
     onCursorUpdate: updateCursor,
@@ -298,12 +260,20 @@ export function Session() {
     slideHeight: slide?.height ?? 0,
   })
 
+  // Convert a pointer (clientX/clientY) to slide-pixel coords via fovea's exact
+  // camera transform, so the cursor we broadcast matches what we actually point at.
+  const pointerToSlide = useCallback(
+    (clientX: number, clientY: number) =>
+      viewerRef.current?.screenToSlide(clientX, clientY) ?? null,
+    []
+  )
+
   // Cursor tracking (footer position + session updates)
   const { footerCursorPos, handleMouseMove, handleMouseLeave } = useCursorTracking({
     session,
     viewerBounds,
     currentViewport,
-    convertToSlideCoords,
+    convertToSlideCoords: pointerToSlide,
     updateCursorPosition,
     startTracking,
     stopTracking,
@@ -402,10 +372,10 @@ export function Session() {
               onCellOverlaysChange={handleCellOverlaysChange}
               hasCellOverlay={hasOverlay && !isOverlayLoading}
               isOverlayLoading={isOverlayLoading}
-              cellCount={overlayMetadata?.cell_count}
+              cellCount={cellCount}
               opacity={cellOverlayOpacity}
               onOpacityChange={handleCellOverlayOpacityChange}
-              cellTypes={overlayMetadata?.cell_types ?? []}
+              cellTypes={cellTypes}
               visibleCellTypes={visibleCellTypes}
               onVisibleCellTypesChange={handleVisibleCellTypesChange}
               tissueOverlaysEnabled={tissueOverlaysEnabled}
@@ -414,7 +384,7 @@ export function Session() {
               isTissueOverlayLoading={isTissueOverlayLoading}
               tissueOpacity={tissueOverlayOpacity}
               onTissueOpacityChange={handleTissueOverlayOpacityChange}
-              tissueClasses={tissueMetadata?.classes ?? []}
+              tissueClasses={[]}
               visibleTissueClasses={visibleTissueClasses}
               onVisibleTissueClassesChange={handleVisibleTissueClassesChange}
             />
@@ -447,15 +417,11 @@ export function Session() {
           onReturnToPresenter={handleReturnToPresenter}
           onShowHelp={() => setShowHelp(true)}
           cellOverlaysEnabled={cellOverlaysEnabled}
-          cells={cells}
           cellOverlayOpacity={cellOverlayOpacity}
+          visibleCellTypes={visibleCellTypes}
+          cellClasses={cellClasses}
           tissueOverlaysEnabled={tissueOverlaysEnabled}
-          tissueMetadata={tissueMetadata}
-          tissueTiles={tissueTiles}
-          tissueTileIndex={tissueTileIndex}
-          tissueCurrentLevel={tissueCurrentLevel}
           tissueOverlayOpacity={tissueOverlayOpacity}
-          visibleTissueClasses={visibleTissueClasses}
         />
       </div>
 
@@ -465,9 +431,7 @@ export function Session() {
         latency={latency}
         currentViewport={currentViewport}
         footerCursorPos={footerCursorPos}
-        isLoadingCells={
-          (cellOverlaysEnabled && isLoadingCells) || (tissueOverlaysEnabled && isLoadingTissue)
-        }
+        isLoadingCells={(cellOverlaysEnabled || tissueOverlaysEnabled) && isOverlayLoading}
       />
 
       {/* Keyboard shortcuts help modal */}

@@ -42,6 +42,9 @@ pub struct Config {
     /// Overlay configuration
     pub overlay: OverlayConfig,
 
+    /// Fovea rendering-data configuration
+    pub fovea: FoveaConfig,
+
     /// Static file serving configuration
     pub static_files: StaticFilesConfig,
 }
@@ -100,22 +103,18 @@ impl Default for StaticFilesConfig {
     }
 }
 
-/// Slide-related configuration
+/// Slide-related configuration (catalog metadata only; rendering tiles are
+/// produced by fovea-pack via [`FoveaConfig`]).
 #[derive(Debug, Clone)]
 pub struct SlideConfig {
     /// Slide source mode
     pub source_mode: SlideSourceMode,
     /// Directory containing slide files (for local mode)
     pub slides_dir: PathBuf,
-    /// Tile size for serving
+    /// Tile size reported in catalog metadata
     pub tile_size: u32,
-    /// JPEG quality for tile encoding (1-100)
-    pub jpeg_quality: u8,
-    /// Maximum number of cached slide handles
+    /// Maximum number of cached OpenSlide handles (for metadata reads)
     pub max_cached_slides: usize,
-    /// Maximum tile cache size in bytes (default: 256MB)
-    /// Set to 0 to disable tile caching
-    pub tile_cache_size_bytes: u64,
 }
 
 /// Overlay-related configuration
@@ -133,6 +132,41 @@ impl Default for OverlayConfig {
     }
 }
 
+/// Fovea rendering-data configuration. These feed `fovea_pack::SourceOptions`
+/// when a slide's renderable sources (tile pyramid, cell chunks, heatmap) are
+/// prepared and served via `/api/fovea/*`.
+#[derive(Debug, Clone)]
+pub struct FoveaConfig {
+    /// Served slide tile edge length in pixels.
+    pub tile_size: u32,
+    /// Spatial cell chunk edge length in level-0 slide pixels.
+    pub chunk_size: u32,
+    /// Maximum polygon vertices retained per cell (0 = no cap).
+    pub max_vertices_per_cell: u16,
+    /// Build and serve a density heatmap from the cells when cells are present.
+    pub heatmap: bool,
+    /// Level-0 slide pixels represented by one heatmap pixel.
+    pub heatmap_bin_size: u32,
+    /// Served heatmap tile edge length in heatmap pixels.
+    pub heatmap_tile_size: u32,
+    /// Maximum RAM (MB) for each slide's encoded tile cache.
+    pub tile_cache_mb: usize,
+}
+
+impl Default for FoveaConfig {
+    fn default() -> Self {
+        Self {
+            tile_size: 512,
+            chunk_size: 4096,
+            max_vertices_per_cell: 256,
+            heatmap: true,
+            heatmap_bin_size: 128,
+            heatmap_tile_size: 256,
+            tile_cache_mb: 512,
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -145,6 +179,7 @@ impl Default for Config {
             presence: PresenceConfig::default(),
             slide: SlideConfig::default(),
             overlay: OverlayConfig::default(),
+            fovea: FoveaConfig::default(),
             static_files: StaticFilesConfig::default(),
         }
     }
@@ -177,9 +212,7 @@ impl Default for SlideConfig {
             // Use relative path for dev-friendly defaults (auto-created if missing)
             slides_dir: PathBuf::from("./data/slides"),
             tile_size: 256,
-            jpeg_quality: 85,
             max_cached_slides: 10,
-            tile_cache_size_bytes: 256 * 1024 * 1024, // 256 MB
         }
     }
 }
@@ -263,25 +296,45 @@ impl Config {
                 config.slide.tile_size = size;
             }
         }
-        if let Ok(val) = env::var("SLIDE_JPEG_QUALITY") {
-            if let Ok(quality) = val.parse::<u8>() {
-                config.slide.jpeg_quality = quality.clamp(1, 100);
-            }
-        }
         if let Ok(val) = env::var("SLIDE_CACHE_SIZE") {
             if let Ok(size) = val.parse() {
                 config.slide.max_cached_slides = size;
-            }
-        }
-        if let Ok(val) = env::var("TILE_CACHE_SIZE_MB") {
-            if let Ok(mb) = val.parse::<u64>() {
-                config.slide.tile_cache_size_bytes = mb * 1024 * 1024;
             }
         }
 
         // Overlay config
         if let Ok(path) = env::var("OVERLAY_DIR") {
             config.overlay.overlays_dir = PathBuf::from(path);
+        }
+
+        // Fovea rendering config
+        if let Ok(val) = env::var("FOVEA_TILE_SIZE") {
+            if let Ok(size) = val.parse() {
+                config.fovea.tile_size = size;
+            }
+        }
+        if let Ok(val) = env::var("FOVEA_CHUNK_SIZE") {
+            if let Ok(size) = val.parse() {
+                config.fovea.chunk_size = size;
+            }
+        }
+        if let Ok(val) = env::var("FOVEA_MAX_VERTICES_PER_CELL") {
+            if let Ok(v) = val.parse() {
+                config.fovea.max_vertices_per_cell = v;
+            }
+        }
+        if let Ok(val) = env::var("FOVEA_HEATMAP") {
+            config.fovea.heatmap = val.to_lowercase() == "true" || val == "1";
+        }
+        if let Ok(val) = env::var("FOVEA_HEATMAP_BIN_SIZE") {
+            if let Ok(v) = val.parse() {
+                config.fovea.heatmap_bin_size = v;
+            }
+        }
+        if let Ok(val) = env::var("FOVEA_TILE_CACHE_MB") {
+            if let Ok(v) = val.parse() {
+                config.fovea.tile_cache_mb = v;
+            }
         }
 
         // Static files config

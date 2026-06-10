@@ -12,9 +12,10 @@ interface Cursor {
 interface CursorLayerProps {
   cursors: Cursor[]
   viewerBounds: DOMRect | null
+  /** Re-render trigger: cursors are re-projected whenever the viewport changes. */
   viewport: { centerX: number; centerY: number; zoom: number }
-  slideWidth: number
-  slideHeight: number
+  /** Slide-pixel → canvas-relative CSS px, using fovea's exact camera transform. */
+  slideToScreen: (slideX: number, slideY: number) => { x: number; y: number } | null
   currentUserId?: string
 }
 
@@ -22,48 +23,41 @@ export const CursorLayer = memo(function CursorLayer({
   cursors,
   viewerBounds,
   viewport,
-  slideWidth,
-  slideHeight,
+  slideToScreen,
   currentUserId,
 }: CursorLayerProps) {
-  // Convert slide coordinates to screen coordinates
+  // Project each cursor's slide-pixel position to canvas-relative screen pixels
+  // using fovea's own transform, so cursors land exactly where fovea renders that
+  // slide point — identical for presenter and followers regardless of window size.
   const screenCursors = useMemo(() => {
-    if (!viewerBounds || viewport.zoom <= 0 || !Number.isFinite(viewport.zoom)) return []
-    if (slideWidth <= 0 || slideHeight <= 0) return []
-    if (viewerBounds.width <= 0 || viewerBounds.height <= 0) return []
+    if (!viewerBounds || viewerBounds.width <= 0 || viewerBounds.height <= 0) return []
 
-    const viewportWidth = 1 / viewport.zoom
-    const viewportHeight = viewerBounds.height / viewerBounds.width / viewport.zoom
+    const marginX = viewerBounds.width * 0.1
+    const marginY = viewerBounds.height * 0.1
 
     return cursors
       .filter((cursor) => cursor.participant_id !== currentUserId)
       .map((cursor) => {
-        // Convert slide coordinates to normalized coordinates
-        // OpenSeadragon uses width-normalized coords (image width = 1)
-        const normalizedX = cursor.x / slideWidth
-        const normalizedY = cursor.y / slideWidth
+        const screen = slideToScreen(cursor.x, cursor.y)
+        if (!screen) return null
 
-        // Calculate position relative to viewport
-        const relX = (normalizedX - (viewport.centerX - viewportWidth / 2)) / viewportWidth
-        const relY = (normalizedY - (viewport.centerY - viewportHeight / 2)) / viewportHeight
-
-        // Skip if outside viewport
-        if (relX < -0.1 || relX > 1.1 || relY < -0.1 || relY > 1.1) {
+        // Skip cursors well outside the visible canvas
+        if (
+          screen.x < -marginX ||
+          screen.x > viewerBounds.width + marginX ||
+          screen.y < -marginY ||
+          screen.y > viewerBounds.height + marginY
+        ) {
           return null
         }
 
-        // Convert to screen coordinates
-        const screenX = viewerBounds.left + relX * viewerBounds.width
-        const screenY = viewerBounds.top + relY * viewerBounds.height
-
-        return {
-          ...cursor,
-          screenX,
-          screenY,
-        }
+        return { ...cursor, screenX: screen.x, screenY: screen.y }
       })
       .filter((c): c is NonNullable<typeof c> => c !== null)
-  }, [cursors, viewerBounds, viewport, slideWidth, slideHeight, currentUserId])
+    // `viewport` isn't read directly, but it's kept as a dependency on purpose:
+    // slideToScreen reads fovea's live camera, so we re-project on viewport change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cursors, viewerBounds, viewport, slideToScreen, currentUserId])
 
   if (!viewerBounds) return null
 
@@ -75,7 +69,7 @@ export const CursorLayer = memo(function CursorLayer({
       {screenCursors.map((cursor) => (
         <g
           key={cursor.participant_id}
-          transform={`translate(${cursor.screenX - viewerBounds.left}, ${cursor.screenY - viewerBounds.top})`}
+          transform={`translate(${cursor.screenX}, ${cursor.screenY})`}
           style={{
             transition: 'transform 16ms linear', // Match 60fps for smooth cursor tracking
           }}
