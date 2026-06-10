@@ -46,16 +46,30 @@ COPY web/ ./
 RUN bun run build
 
 # ---- Stage 4: backend (Rust Axum + fovea-pack path dependency) ----
-FROM rust:1.89-slim-bookworm AS backend-builder
+# fovea-pack enables openslide-rs's openslide4 feature, so OpenSlide 4 is needed.
+# It only exists in the OpenSlide team PPA (every Debian/Ubuntu repo ships 3.4.1),
+# so build on Ubuntu 24.04 with the PPA. openslide.pc lists its deps as public
+# Requires, so each one's -dev package must be present for pkg-config to resolve.
+FROM ubuntu:24.04 AS backend-builder
 
 WORKDIR /app
 
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    libopenslide-dev \
-    libclang-dev \
+        software-properties-common curl ca-certificates build-essential \
+    && add-apt-repository -y ppa:openslide/openslide \
+    && apt-get update && apt-get install -y \
+        pkg-config libssl-dev libopenslide-dev libclang-dev \
+        libglib2.0-dev libcairo2-dev libdicom-dev \
+        libjpeg-dev libpng-dev libtiff-dev libopenjp2-7-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Rust toolchain via rustup, pinned to match the wasm-builder stage.
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain 1.89.0 --profile minimal
 
 COPY Cargo.toml Cargo.lock* ./
 COPY server/Cargo.toml ./server/
@@ -76,16 +90,20 @@ RUN touch server/src/main.rs server/src/lib.rs \
     && cargo build --release --package pathcollab-server
 
 # ---- Stage 5: runtime ----
-FROM debian:bookworm-slim
+# Ubuntu 24.04 + the OpenSlide PPA to match the OpenSlide 4 the backend links
+# against (the 4.x runtime lib is libopenslide1, not libopenslide0).
+FROM ubuntu:24.04
 
 WORKDIR /app
 
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    curl \
-    libopenslide0 \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /var/cache/apt/*
+        software-properties-common ca-certificates curl \
+    && add-apt-repository -y ppa:openslide/openslide \
+    && apt-get update && apt-get install -y libopenslide1 \
+    && apt-get purge -y software-properties-common \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 COPY --from=backend-builder /app/target/release/pathcollab /usr/local/bin/pathcollab
 COPY --from=frontend-builder /app/web/dist /app/static
