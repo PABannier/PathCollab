@@ -92,9 +92,9 @@ docker run -p 8080:8080 \
 
 ### From Source
 
-# Rendering is powered by the [fovea](https://github.com/) WebGPU engine, vendored
-# as a git submodule at `vendor/fovea`. A WebGPU-capable browser (recent
-# Chrome/Edge, or Safari 18+) is required to view slides.
+Rendering is powered by the [fovea](https://github.com/) WebGPU engine, vendored
+as a git submodule at `vendor/fovea`. A WebGPU-capable browser (recent
+Chrome/Edge, or Safari 18+) is required to view slides.
 
 ```bash
 # Prerequisites: Rust 1.85+ (with the wasm32-unknown-unknown target and
